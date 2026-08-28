@@ -3,12 +3,27 @@ import {
   checkTransition,
   nextActions,
   primaryAction,
+  proofreadResponsibilities,
   stageOf,
   transitions,
   waitingOn,
 } from '../src/domain/workflow.js';
 
 describe('稿件状态机', () => {
+  it('declares one proofread responsibility for each review stage', () => {
+    expect(proofreadResponsibilities.map((item) => item.pass)).toEqual([
+      'first',
+      'second',
+      'third',
+    ]);
+    expect(proofreadResponsibilities.map((item) => item.stage)).toEqual([
+      'editor',
+      'department-head',
+      'supervising-leader',
+    ]);
+    expect(proofreadResponsibilities.every((item) => item.responsibilities.length > 0)).toBe(true);
+  });
+
   it('refuses the jump the workbench exists to prevent', () => {
     const refusal = checkTransition({ from: 'draft', to: 'signed', actor: 'editor' });
     expect(refusal?.code).toBe('illegal_transition');

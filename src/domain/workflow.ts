@@ -8,7 +8,7 @@
  *
  * Pure data + pure functions: no IO, no HTTP, no database.
  */
-import type { ManuscriptStatus, ReviewStage } from './contracts.js';
+import type { ManuscriptStatus, ProofreadPass, ReviewStage } from './contracts.js';
 
 /** 三个角色写死（方案 §十三）。`system` is the machine writing its own verdict. */
 export const workflowRoles = ['editor', 'department-head', 'supervising-leader'] as const;
@@ -20,6 +20,35 @@ export const roleLabels: Readonly<Record<WorkflowRole, string>> = {
   'department-head': '部门主任',
   'supervising-leader': '分管领导',
 };
+
+export interface ProofreadResponsibility {
+  pass: ProofreadPass;
+  stage: Extract<ReviewStage, 'editor' | 'department-head' | 'supervising-leader'>;
+  label: string;
+  responsibilities: readonly string[];
+}
+
+/** 三审与三校的职责声明；供状态机、规则层和界面共用。 */
+export const proofreadResponsibilities: readonly ProofreadResponsibility[] = [
+  {
+    pass: 'first',
+    stage: 'editor',
+    label: '一校',
+    responsibilities: ['错别字', '语病', '标点', '格式'],
+  },
+  {
+    pass: 'second',
+    stage: 'department-head',
+    label: '二校',
+    responsibilities: ['数据', '人名', '职务', '地名', '术语', '排版一致性'],
+  },
+  {
+    pass: 'third',
+    stage: 'supervising-leader',
+    label: '三校',
+    responsibilities: ['导向', '事实判断', '通读', '排版效果', '整体一致性'],
+  },
+];
 
 export const isWorkflowRole = (value: unknown): value is WorkflowRole =>
   typeof value === 'string' && (workflowRoles as readonly string[]).includes(value);
