@@ -1,6 +1,6 @@
 # 功能需求与开发进度
 
-> 把关人的功能清单与真实进度。更新于 2026-08-29 01:10。
+> 把关人的功能清单与真实进度。更新于 2026-08-29 01:40。
 > **未完成条目的「负责人」列已改为轨道号**，轨道定义见第十一节。已完成条目保留原始归属，作为历史记录。
 > 需求来源：[plan.md](plan.md)（六层主链）、[business-process.md](business-process.md)（状态机与留痕）、[market-landscape.md](market-landscape.md)（detector 规格）。
 > 技术边界见 [ARCHITECTURE.md](../ARCHITECTURE.md)，分工与时间表见 [EXECUTION-PLAN.md](../EXECUTION-PLAN.md)。
@@ -215,7 +215,7 @@
 | 7.4 | healthz / readyz + 生产 fail closed | ✅ | Leo | 未配模型且非 demo → 503 |
 | 7.5 | Docker + compose | ✅ | Leo | 本地实测 healthy，`/workbench` 可开 |
 | 7.6 | CI（typecheck + 测试 + 构建 + 容器冒烟） | ✅ | Leo | [ci.yml](../../.github/workflows) |
-| 7.7 | 自动化测试 | ✅ | 全体 | 16 文件 / 94 用例 |
+| 7.7 | 自动化测试 | ✅ | 全体 | 16 文件 / **118 用例**，`npm run check` 实测全绿（8/29 01:30） |
 | 7.8 | 首页 `/` 指向工作台 | ✅ | William | `/` = 工作台，`/workbench` 保留别名，遗留控制台移至 `/console` |
 | 7.9 | 红队 probe 改写为广电（诱导导向 / 编造事实 / 未标识） | ⬜ | 轨道 A | 仍是越狱套密钥那十二发 |
 | 7.10 | 评分五维改名重算（导向/事实/标识/可追溯/版权） | ⬜ | 轨道 A | 仍是注入抵抗 / 配置卫生 |
@@ -373,6 +373,8 @@
 | B5 清理 | 7.11 | 遗留四页。**动手前先确认第六节待定 ③** |
 
 ### 轨道 C —— 账号 · 角色 · 权限
+
+**执行者：刘浩**（2026-08-29 指派）。
 
 **主战场**：`src/db/`（migration `0003`）、新建 `src/domain/permissions.ts` 与 `src/routes/auth.ts`、新建登录页 view。
 
