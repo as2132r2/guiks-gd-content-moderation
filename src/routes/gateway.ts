@@ -5,6 +5,7 @@
 import { Hono } from 'hono';
 import { config } from '../config.js';
 import { scanRequest, scanResponse } from '../lib/detectors.js';
+import { admissionScan, preflightScan } from '../lib/gatekeeping-scan.js';
 import { applyGuardrail, evaluateGuardrails } from '../lib/guardrails.js';
 import { nextId, recordAudit, recordGuardrail, recordUsage } from '../lib/store.js';
 import { callUpstream, type ChatMessage } from '../lib/upstream.js';
@@ -18,16 +19,28 @@ export interface GatewayResult {
   model: string;
   findings: Finding[];
   tokens: { in: number; out: number };
+  /** 入口准入 硬拦: the model was not called at all. */
+  blocked?: boolean;
 }
 
-/** Run a set of chat messages through the gateway (in-process). */
+/**
+ * Run a set of chat messages through the gateway (in-process).
+ *
+ * With `opts.gatekeeping`, the 广电 入口准入 runs on the way in — and its 硬拦 档
+ * short-circuits here: the model is never called. This is where 「绕不过网关就绕
+ * 不过准入」 becomes true in code. A source-independent slice of 输出预检 also runs
+ * on the reply for 留痕.
+ */
 export async function throughGateway(
   messages: ChatMessage[],
-  opts: { target?: string; model?: string } = {},
+  opts: { target?: string; model?: string; gatekeeping?: boolean } = {},
 ): Promise<GatewayResult> {
   const target = opts.target ?? config.targetLabel;
   const model = opts.model ?? config.upstreamModel;
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+
+  const admission = opts.gatekeeping ? admissionScan(lastUser) : null;
+  const inTokens = messages.reduce((n, m) => n + approx(m.content), 0);
 
   const reqEvent: AuditEvent = {
     id: nextId('req'),
@@ -35,13 +48,31 @@ export async function throughGateway(
     direction: 'request',
     target,
     model,
-    tokens: { in: messages.reduce((n, m) => n + approx(m.content), 0), out: 0 },
+    tokens: { in: inTokens, out: 0 },
     summary: oneLine(lastUser) || '(空请求)',
     body: lastUser,
-    findings: scanRequest(lastUser),
+    findings: [...scanRequest(lastUser), ...(admission?.findings ?? [])],
   };
   for (const f of reqEvent.findings) f.eventId = reqEvent.id;
   recordAudit(reqEvent);
+
+  // 硬拦: 不给调用，模型一次都不碰。零成本的那一档治理。
+  if (admission?.blocked) {
+    const respEvent: AuditEvent = {
+      id: nextId('res'),
+      ts: Date.now(),
+      direction: 'response',
+      target,
+      model,
+      latencyMs: 0,
+      tokens: { in: 0, out: 0 },
+      summary: oneLine(admission.message),
+      body: admission.message,
+      findings: [],
+    };
+    recordAudit(respEvent);
+    return { reply: admission.message, model, findings: reqEvent.findings, tokens: { in: inTokens, out: 0 }, blocked: true };
+  }
 
   const t0 = Date.now();
   const { text, tokens } = await callUpstream(messages, model);
@@ -57,7 +88,7 @@ export async function throughGateway(
     tokens,
     summary: oneLine(text),
     body: text,
-    findings: scanResponse(text),
+    findings: [...scanResponse(text), ...(opts.gatekeeping ? preflightScan(text) : [])],
   };
   for (const f of respEvent.findings) f.eventId = respEvent.id;
   recordAudit(respEvent);
@@ -67,6 +98,7 @@ export async function throughGateway(
     model,
     findings: [...reqEvent.findings, ...respEvent.findings],
     tokens: { in: reqEvent.tokens?.in ?? 0, out: respEvent.tokens?.out ?? 0 },
+    blocked: false,
   };
 }
 
@@ -138,7 +170,26 @@ gatewayRoutes.post('/gateway/v1/messages', async (c) => {
     // keep the raw value if it isn't valid percent-encoding
   }
   const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-  const { reply, findings, tokens } = await throughGateway(messages, { model: body.model });
+  const { reply, findings, tokens, blocked } = await throughGateway(messages, {
+    model: body.model,
+    gatekeeping: true,
+  });
+
+  // 入口准入·硬拦：模型未被调用，直接回绝（completion_tokens = 0 即是证据）。
+  if (blocked) {
+    recordUsage(user, tokens.in, 0, 1);
+    return c.json({
+      id: nextId('chatcmpl'),
+      object: 'chat.completion',
+      model: body.model ?? config.upstreamModel,
+      choices: [
+        { index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'content_filter' },
+      ],
+      bohe_gatekeeping: { gate: 'admission', decision: 'blocked', action: 'block' },
+      usage: { prompt_tokens: tokens.in, completion_tokens: 0 },
+    });
+  }
+
   const verdict = evaluateGuardrails(findings, user, { message: lastUserMsg, reply });
   for (const ev of verdict.events) recordGuardrail(ev);
   recordUsage(user, tokens.in, tokens.out, verdict.events.length);
