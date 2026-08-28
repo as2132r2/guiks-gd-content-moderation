@@ -229,6 +229,75 @@ describe('工作台主链', () => {
     });
   });
 
+  it('rebuilds the AI 参与度 curve from the audit trail', async () => {
+    const { body } = await create();
+    const id = body.manuscript.id;
+    await move(id, { to: 'generated', role: 'editor' });
+    await move(id, { to: 'preflight', role: 'editor' });
+
+    const generated = await view(id);
+    // 两个产物各一个起点，都是 100%。
+    expect(generated.provenance).toHaveLength(2);
+    expect(generated.provenance.every((point) => point.event === 'generated')).toBe(true);
+    expect(generated.provenance.every((point) => point.share === 1)).toBe(true);
+
+    const script = generated.artifacts[0]!;
+    const sentences = script.segments.map((segment) => segment.text);
+    sentences[1] = '会议在县融媒体中心召开，县领导出席并讲话。';
+    await postJson(`/api/workbench/${id}/artifacts/${script.artifact.id}/revise`, {
+      role: 'editor',
+      content: sentences.join('\n'),
+    });
+
+    const revised = await view(id);
+    expect(revised.provenance).toHaveLength(3);
+    const last = revised.provenance[revised.provenance.length - 1]!;
+    expect(last.event).toBe('revised');
+    expect(last.actor).toContain('编辑');
+    // 折线画的是稿件级比例，终点必须等于页面上的大数字，否则演示时会被看出来对不上。
+    expect(last.share).toBe(revised.aiShare);
+    expect(last.share).toBeLessThan(1);
+    // 改的是播报稿，它自己的比例比稿件整体更低。
+    expect(last.artifactShare).toBeLessThan(last.share);
+    expect(last.segmentCount).toBe(revised.segmentCount);
+    // 序列必须按时间排好，折线才画得对。
+    const stamps = revised.provenance.map((point) => point.at);
+    expect([...stamps].sort((a, b) => a - b)).toEqual(stamps);
+  });
+
+  it('records who signed and what the AI 参与度 was at that moment', async () => {
+    const { body } = await create();
+    const id = body.manuscript.id;
+    await move(id, { to: 'generated', role: 'editor' });
+    await move(id, { to: 'preflight', role: 'editor' });
+
+    const beforeSign = await view(id);
+    expect(beforeSign.signOff).toBeUndefined();
+
+    await move(id, { to: 'first-review', role: 'editor' });
+    await move(id, { to: 'second-review', role: 'editor' });
+    await move(id, { to: 'final-review', role: 'department-head' });
+    await move(id, { to: 'signed', role: 'supervising-leader' });
+
+    const signed = await view(id);
+    expect(signed.signOff).toBeDefined();
+    expect(signed.signOff!.actor).toContain('分管领导');
+    // 一路没人改过，签发时仍是 100% —— 这正是要暴露给台领导的情况。
+    expect(signed.signOff!.aiShare).toBe(1);
+    expect(signed.signOff!.at).toBeGreaterThan(0);
+  });
+
+  it('serves the workbench at the root path, not the legacy console', async () => {
+    const root = await app.request('/');
+    expect(root.status).toBe(200);
+    const html = await root.text();
+    expect(html).toContain('把关人 · 稿件工作台');
+    expect(html).not.toContain('AuditGate');
+
+    // 遗留控制台仍在，只是不再是首页。
+    expect((await app.request('/console')).status).toBe(200);
+  });
+
   it('serves the workbench page without any external resource', async () => {
     const response = await app.request('/workbench');
     expect(response.status).toBe(200);

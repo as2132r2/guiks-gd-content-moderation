@@ -223,6 +223,62 @@ export function renderWorkbench(): string {
 
   .placeholder { border:1px dashed var(--line-strong); border-radius:var(--radius); padding:22px; color:var(--faint); }
   .placeholder h3 { color:var(--muted); font-family:var(--serif); margin:0 0 8px; font-size:15px; }
+
+  /* ---------- ⑥ 追溯图谱 ---------- */
+  .signoff {
+    display:grid; grid-template-columns:1fr 1fr; gap:18px;
+    background:var(--panel); border:1px solid var(--accent);
+    border-radius:var(--radius); padding:18px 20px; margin-bottom:16px;
+    background-image:linear-gradient(180deg,var(--accent-soft),transparent 70%);
+  }
+  .signoff.hot { border-color:var(--warn); background-image:linear-gradient(180deg,var(--warn-soft),transparent 70%); }
+  .signoff .so-k { font-size:11px; font-family:var(--mono); letter-spacing:.6px; color:var(--faint); text-transform:uppercase; }
+  .signoff .so-v { font-family:var(--serif); font-size:20px; margin-top:3px; }
+  .signoff .so-v.big { font-family:var(--mono); font-size:30px; font-variant-numeric:tabular-nums; color:var(--accent-deep); }
+  .signoff.hot .so-v.big { color:var(--warn); }
+  .signoff .so-t { font-size:12px; color:var(--muted); margin-top:5px; }
+  @media (max-width:820px) { .signoff { grid-template-columns:1fr; } }
+
+  .chart { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:10px 6px; color:var(--ink); }
+  .chart svg { display:block; width:100%; height:auto; }
+  .chart .fill { fill:var(--accent-soft); stroke:none; }
+  .chart .line { fill:none; stroke:var(--accent); stroke-width:2; stroke-linejoin:round; }
+  .chart .dot { fill:var(--panel); stroke:var(--accent); stroke-width:2; }
+  .chart .dot.last { fill:var(--accent); }
+  .chart .ax, .chart .cap { font-family:var(--mono); font-size:10px; fill:var(--faint); }
+  .chart .cap.dim { fill:var(--faint); opacity:.7; }
+  .chart .val { font-family:var(--mono); font-size:12px; font-weight:600; fill:var(--accent-deep); }
+
+  .smap { background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+  .smap-hd { display:flex; justify-content:space-between; gap:12px; font-size:12px; margin-bottom:9px; }
+  .smap-hd .dim { color:var(--faint); font-family:var(--mono); }
+  .cells { display:flex; flex-wrap:wrap; gap:4px; }
+  .cell { width:26px; height:14px; border-radius:3px; display:block; cursor:help; }
+  .cell.o-ai { background:var(--ai); }
+  .cell.o-ai-edited { background:var(--ai-edited); }
+  .cell.o-human { background:var(--human); }
+  .cell.o-source { background:var(--source); }
+
+  .chain { display:flex; flex-wrap:wrap; gap:8px; }
+  .link {
+    flex:1 1 190px; background:var(--panel-2); border:1px solid var(--line);
+    border-left:3px solid var(--accent); border-radius:0 8px 8px 0; padding:10px 13px;
+  }
+  .link.back { border-left-color:var(--warn); }
+  .link .stage { font-size:12px; color:var(--faint); font-family:var(--mono); }
+  .link .actor { font-size:14px; margin-top:2px; }
+  .link .verdict { font-size:12px; color:var(--muted); margin-top:3px; font-family:var(--mono); }
+  .link .reason { font-size:12px; color:var(--warn); margin-top:6px; line-height:1.5; }
+
+  .hit { background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:10px 13px; margin-bottom:8px; }
+  .hit .top { display:flex; gap:9px; align-items:baseline; flex-wrap:wrap; }
+  .hit .tag { font-family:var(--mono); font-size:10px; padding:1px 7px; border-radius:20px; border:1px solid var(--line-strong); color:var(--faint); }
+  .hit .ttl { font-size:13px; font-weight:500; }
+  .hit .dim { color:var(--faint); font-family:var(--mono); font-size:11px; margin-left:auto; }
+  .hit .dt { font-size:12px; color:var(--muted); margin-top:4px; }
+  .hit .dt b { color:var(--ink); font-family:var(--mono); }
+  .hit .dt b.warn { color:var(--warn); }
+  .hit code { font-family:var(--mono); font-size:11px; color:var(--accent-deep); }
 </style>
 </head>
 <body>
@@ -597,11 +653,161 @@ export function renderWorkbench(): string {
     return out;
   }
 
+  // ——————————————————— ⑥ 追溯图谱 ———————————————————
+
+  var STAGE_LABEL = {
+    'admission':'入口准入', 'preflight':'输出预检',
+    'editor':'初审 · 编辑', 'department-head':'复审 · 部门主任', 'supervising-leader':'终审 · 分管领导'
+  };
+  var DECISION_LABEL = {
+    'approved':'通过', 'changes-requested':'退回', 'rejected':'拒绝',
+    'reason-required':'补充依据后放行', 'pending-human-review':'待人工复核', 'blocked':'不予受理'
+  };
+
+  /**
+   * AI 参与度的折线。少数几个点，所以画成带标注的阶梯，而不是一条抽象曲线——
+   * 每个拐点都要说清是谁、在哪一步把它推低的。
+   */
+  function shareChart(points) {
+    if (points.length === 0) return '';
+    var W = 660, H = 150, padX = 46, padTop = 22, padBottom = 40;
+    var innerW = W - padX * 2, innerH = H - padTop - padBottom;
+    var n = points.length;
+    var px = function (i) { return n === 1 ? padX + innerW / 2 : padX + innerW * (i / (n - 1)); };
+    var py = function (v) { return padTop + innerH * (1 - v); };
+
+    var grid = [0, 0.5, 1].map(function (v) {
+      return '<line x1="' + padX + '" y1="' + py(v) + '" x2="' + (W - padX) + '" y2="' + py(v) +
+             '" stroke="currentColor" stroke-opacity=".14" stroke-dasharray="' + (v === 0 || v === 1 ? '0' : '3 4') + '"/>' +
+             '<text x="' + (padX - 8) + '" y="' + (py(v) + 4) + '" text-anchor="end" class="ax">' + (v * 100) + '%</text>';
+    }).join('');
+
+    var path = points.map(function (p, i) { return (i === 0 ? 'M' : 'L') + px(i) + ' ' + py(p.share); }).join(' ');
+    var area = path + ' L' + px(n - 1) + ' ' + py(0) + ' L' + px(0) + ' ' + py(0) + ' Z';
+
+    var dots = points.map(function (p, i) {
+      var last = i === n - 1;
+      return '<circle cx="' + px(i) + '" cy="' + py(p.share) + '" r="' + (last ? 5.5 : 4) + '" class="dot' + (last ? ' last' : '') + '"/>' +
+        '<text x="' + px(i) + '" y="' + (py(p.share) - 12) + '" text-anchor="middle" class="val">' + pct(p.share) + '</text>' +
+        '<text x="' + px(i) + '" y="' + (H - 20) + '" text-anchor="middle" class="cap">' +
+          esc(p.event === 'generated' ? 'AI 生成' : '人工改稿') + '</text>' +
+        '<text x="' + px(i) + '" y="' + (H - 7) + '" text-anchor="middle" class="cap dim">' + esc(p.actor) + '</text>';
+    }).join('');
+
+    return '<div class="chart"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+      'aria-label="AI 参与度从 ' + pct(points[0].share) + ' 变化到 ' + pct(points[n - 1].share) + '">' +
+      grid +
+      (n > 1 ? '<path d="' + area + '" class="fill"/>' : '') +
+      '<path d="' + path + '" class="line"/>' + dots +
+      '</svg></div>';
+  }
+
+  /** 每句一格。一眼看出这篇稿子里人到底动了多少。 */
+  function sentenceMap(view) {
+    if (view.artifacts.length === 0) return '<div class="empty">还没有产物。</div>';
+    return view.artifacts.map(function (item) {
+      if (item.segments.length === 0) return '';
+      var counts = {};
+      item.segments.forEach(function (s) { counts[s.origin] = (counts[s.origin] || 0) + 1; });
+      return '<div class="smap">' +
+        '<div class="smap-hd"><span>' + esc(KIND_LABEL[item.artifact.kind] || item.artifact.kind) + '</span>' +
+          '<span class="dim">' + item.segments.length + ' 句 · AI 参与度 ' +
+          (item.artifact.aiShare == null ? '未测量' : pct(item.artifact.aiShare)) + '</span></div>' +
+        '<div class="cells">' + item.segments.map(function (s) {
+          return '<i class="cell o-' + esc(s.origin) + '" title="' +
+            esc((ORIGIN_LABEL[s.origin] || s.origin) + '：' + s.text) + '"></i>';
+        }).join('') + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  /** 责任链：谁在哪一级放行的，退回理由是什么。 */
+  function responsibility(view) {
+    if (view.reviews.length === 0) return '<div class="empty">还没有审核记录。</div>';
+    return '<div class="chain">' + view.reviews.map(function (r) {
+      var cls = r.decision === 'changes-requested' || r.decision === 'rejected' ? 'back' : 'fwd';
+      return '<div class="link ' + cls + '">' +
+        '<div class="stage">' + esc(STAGE_LABEL[r.stage] || r.stage) + '</div>' +
+        '<div class="actor">' + esc(r.actor) + '</div>' +
+        '<div class="verdict">' + esc(DECISION_LABEL[r.decision] || r.decision) + ' · ' + clock(r.createdAt) + '</div>' +
+        (r.reason ? '<div class="reason">' + esc(r.reason) + '</div>' : '') +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  /** 规则命中：准入那一路和预检那一路分开讲，因为它们的后果不一样。 */
+  function ruleHits(view) {
+    var hits = (view.trace || []).filter(function (e) { return e.kind === 'rule-hit'; });
+    if (hits.length === 0) return '<div class="empty">没有规则命中。</div>';
+    return hits.map(function (e) {
+      var d = e.data || {};
+      if (e.actor === '入口准入') {
+        var verdict = d.decision === 'blocked' ? '硬拦，模型未被调用'
+                    : d.decision === 'reason-required' ? '要理由' : '仅留痕放行';
+        return '<div class="hit"><div class="top"><span class="tag">入口准入</span>' +
+          '<span class="ttl">' + esc(verdict) + '</span><span class="dim">' + clock(e.createdAt) + '</span></div>' +
+          '<div class="dt">判定 <code>' + esc(String(d.reasonCode || '')) + '</code>' +
+          '　模型调用 <b>' + (d.modelInvoked ? '1 次' : '0 次') + '</b>' +
+          (d.offDutyUse ? '　<b class="warn">另标：非业务用途</b>' : '') + '</div>' +
+          ((d.hits || []).length ? '<div class="dt dim">命中 ' + esc((d.hits || []).join('、')) + '</div>' : '') +
+          '</div>';
+      }
+      var rules = (d.rules || []);
+      var tally = {};
+      rules.forEach(function (r) { tally[r] = (tally[r] || 0) + 1; });
+      return '<div class="hit"><div class="top"><span class="tag">输出预检</span>' +
+        '<span class="ttl">' + esc(KIND_LABEL[d.kind] || d.kind || '') + '</span>' +
+        '<span class="dim">' + clock(e.createdAt) + '</span></div>' +
+        '<div class="dt">拦下 <b>' + (d.block || 0) + '</b>　标红 <b>' + (d.redact || 0) +
+        '</b>　留痕 <b>' + (d.flag || 0) + '</b></div>' +
+        (rules.length ? '<div class="dt dim">' + Object.keys(tally).map(function (k) {
+          return esc(CATEGORY_LABEL[k] || k) + ' ×' + tally[k];
+        }).join('　') + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  var CATEGORY_LABEL = {
+    'banned-term':'禁用词', 'caution-term':'慎用词', 'leader-title':'领导表述规范',
+    'inconsistency':'与原通稿不一致', 'ai-label':'AI 生成内容标识', 'judgment':'导向与事实判断'
+  };
+
   function tracePanel(view) {
-    return '<div class="placeholder"><h3>⑥ AI 参与度追溯</h3>' +
-      '<p style="margin:0">这一屏是整条链路的收口：每句话谁写的、命中过哪些规则、被谁在哪一级放行、谁最终签发。' +
-      '完整的追溯图谱还没建，当前先看右栏的 AI 参与度与留痕时间线。</p></div>' +
-      productionPanel(Object.assign({}, view, { stage: 'preflight' }));
+    var out = '<div class="card"><h3>⑥ AI 参与度追溯</h3>' +
+      '<p>整条链路的收口：每句话谁写的、命中过哪些规则、被谁在哪一级放行、谁最终签发。' +
+      '这些数字只有站在生产现场才拿得到——拿到成品的审校产品给不出它们。</p></div>';
+
+    // 签发卡。签发时的 AI 参与度是给台领导的抓手，不是合规记录。
+    if (view.signOff) {
+      var s = view.signOff.aiShare;
+      var hot = s != null && s >= 0.9;
+      out += '<div class="signoff' + (hot ? ' hot' : '') + '">' +
+        '<div class="so-main"><div class="so-k">签发</div>' +
+          '<div class="so-v">' + esc(view.signOff.actor) + '</div>' +
+          '<div class="so-t">' + clock(view.signOff.at) + '</div></div>' +
+        '<div class="so-main"><div class="so-k">签发时 AI 参与度</div>' +
+          '<div class="so-v big">' + (s == null ? '未测量' : pct(s)) + '</div>' +
+          '<div class="so-t">' + (hot
+            ? '几乎没人改过——三审三校是否走过场，这个数字说了算。'
+            : '人工确实介入过，责任链可查。') + '</div></div>' +
+        '</div>';
+    }
+
+    out += '<h2 class="hd">AI 参与度怎么变的</h2>';
+    out += view.provenance.length > 0
+      ? shareChart(view.provenance) +
+        '<p class="hint">口径：(ai + ai-edited×0.5) / 总句数。每次流转由系统逐句比对上一版重算，' +
+        '句子来源不由填报的人决定。</p>'
+      : '<div class="empty">还没有可测量的变动。</div>';
+
+    out += '<h2 class="hd">句级来源图谱</h2>' +
+      '<div class="legend">' + Object.keys(ORIGIN_LABEL).map(function (key) {
+        return '<span><i style="background:' + ORIGIN_COLOR[key] + '"></i>' + ORIGIN_LABEL[key] + '</span>';
+      }).join('') + '</div>' + sentenceMap(view);
+
+    out += '<h2 class="hd">责任链</h2>' + responsibility(view);
+    out += '<h2 class="hd">规则命中</h2>' + ruleHits(view);
+    return out;
   }
 
   function actionsBar(view) {
