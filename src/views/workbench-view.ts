@@ -1,4 +1,4 @@
-// 把关人 · 稿件工作台 —— 六步主链的单页宿主。
+// guiks-gd-content-moderation · 稿件工作台 —— 六步主链的单页宿主。
 //
 // Self-contained HTML document: all CSS + JS inline, zero external resources
 // (no CDN, no web fonts, no remote images) so it renders offline on congested
@@ -23,7 +23,7 @@ export function renderWorkbench(): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
-<title>把关人 · 稿件工作台</title>
+<title>guiks-gd-content-moderation · 稿件工作台</title>
 <style>
   :root {
     --bg:#0E1512; --panel:#141D19; --panel-2:#18231E; --panel-3:#1D2A24;
@@ -368,7 +368,7 @@ export function renderWorkbench(): string {
 
 <header class="topbar">
   <div class="brand">
-    <div class="name"><span class="dot"></span>把关人 · 稿件工作台</div>
+    <div class="name"><span class="dot"></span>guiks-gd-content-moderation · 稿件工作台</div>
     <div class="sub">county media · production &amp; gatekeeping</div>
   </div>
   <span class="demo-badge">模拟 / 脱敏素材</span>
@@ -616,7 +616,7 @@ export function renderWorkbench(): string {
   function productionPanel(view) {
     if (view.artifacts.length === 0) {
       return '<div class="card"><h3>③ 稿件生成</h3>' +
-        '<p>按本台风格，从这份通稿生成播报稿与短视频文案。生成走把关人网关，业务代码拿不到模型密钥，所以这次调用一定会被审计到。</p>' +
+        '<p>按本台风格，从这份通稿生成播报稿与短视频文案。生成走统一模型网关，业务代码拿不到模型密钥，所以这次调用一定会被审计到。</p>' +
         '</div>';
     }
 
@@ -1014,7 +1014,7 @@ export function renderWorkbench(): string {
     out += '<h2 class="hd">责任链</h2>' + responsibility(view);
     out += '<h2 class="hd">规则命中</h2>' + ruleHits(view);
     out += '<div class="actions-bar" style="margin-top:18px">' +
-      '<button class="btn" id="contrast-on">对照组：关掉把关人会怎样</button>' +
+      '<button class="btn" id="contrast-on">对照组：绕过治理链路会怎样</button>' +
       '<span class="hint">同一份通稿，减去把关。收口那一镜。</span></div>';
     return out;
   }
@@ -1084,11 +1084,11 @@ export function renderWorkbench(): string {
     var c = state.contrast;
     if (!c) return '<div class="empty">正在取对照数据…</div>';
 
-    var out = '<div class="card"><h3>对照组 · 关掉把关人</h3>' +
+    var out = '<div class="card"><h3>对照组 · 绕过治理链路</h3>' +
       '<p>同一份通稿，减去把关。下面每个数字都指回真实留痕，不是模拟出来的。</p></div>';
 
     out += '<div class="vs">' +
-      '<div class="vs-hd off">关掉把关人</div><div class="vs-hd on">把关人</div>' +
+      '<div class="vs-hd off">绕过治理</div><div class="vs-hd on">guiks-gd-content-moderation</div>' +
       CONTRAST_ROWS.map(function (row) {
         return '<div class="vs-k">' + esc(row.k) + '</div>' +
           '<div class="vs-c off">' + esc(row.off(c)) + '</div>' +
@@ -1098,7 +1098,7 @@ export function renderWorkbench(): string {
 
     if (c.without.issuesShipped > 0) {
       out += '<h2 class="hd">本来会播出去的稿子</h2>' +
-        '<p class="hint">这是模型<strong>原样写出来</strong>的那一版。关掉把关人就没有预检标注，' +
+        '<p class="hint">这是模型<strong>原样写出来</strong>的那一版。绕过平台治理就没有预检标注，' +
         '编辑根本不知道要改哪里——所以下面这些问题直接进了播出流程：' +
         '禁用词 ' + c.without.bannedTermsShipped +
         ' 处、与原通稿不符 ' + c.without.inconsistenciesShipped +

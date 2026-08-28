@@ -69,7 +69,7 @@ export async function generateBroadcastArtifacts(input: {
   const out: GeneratedArtifact[] = [];
   for (const task of TASKS) {
     const { reply, telemetry } = await throughGateway(buildMessages(task, input.sourceText), {
-      target: `把关人·生产层（${input.actor}）`,
+      target: `guiks-gd-content-moderation · 生产层（${input.actor}）`,
       trace: {
         manuscriptId: input.manuscriptId,
         actor: input.actor,

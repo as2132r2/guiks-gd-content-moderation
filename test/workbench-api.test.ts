@@ -532,7 +532,7 @@ describe('工作台主链', () => {
     expect(contrast.with.traceEvents).toBe(live.trace.length);
     expect(contrast.with.signedBy).toContain('分管领导');
 
-    // 关掉把关人这一侧全是零和「不知道」。
+    // 绕过平台治理这一侧全是零和「不知道」。
     expect(contrast.without).toMatchObject({
       admissionChecked: false,
       aiShareKnown: false,
@@ -568,7 +568,7 @@ describe('工作台主链', () => {
     const root = await app.request('/');
     expect(root.status).toBe(200);
     const html = await root.text();
-    expect(html).toContain('把关人 · 稿件工作台');
+    expect(html).toContain('guiks-gd-content-moderation · 稿件工作台');
     expect(html).not.toContain('AuditGate');
     expect(html).toContain('id="countersign-party"');
     expect(html).toContain('id="countersign-opinion"');
@@ -586,7 +586,7 @@ describe('工作台主链', () => {
     const response = await app.request('/workbench');
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain('把关人 · 稿件工作台');
+    expect(html).toContain('guiks-gd-content-moderation · 稿件工作台');
     expect(html).toContain('模拟 / 脱敏素材');
     expect(html).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
   });
