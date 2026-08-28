@@ -176,7 +176,12 @@ export type StreamEventName =
   | 'score'
   | 'status'
   | 'guardrail'
-  | 'usage';
+  | 'usage'
+  // Broadcast workflow events. Kept in the same SSE channel so the current
+  // console and the new manuscript workbench can coexist during the pivot.
+  | 'manuscript'
+  | 'workflow'
+  | 'trace';
 
 export interface StatusEvent {
   state: 'idle' | 'monitoring' | 'redteam' | 'done';

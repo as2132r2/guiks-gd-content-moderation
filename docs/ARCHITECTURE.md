@@ -48,7 +48,16 @@ src/db/           SQLite、Drizzle schema、repository
 test/             确定性规则、接口、演示主链回归
 ```
 
-目录会随第一批 PR 创建；共享契约先定，页面和检测并行开发。
+共享契约已落在 `src/domain/contracts.ts`，页面、Gateway、规则模块只能通过这些类型和底座 API 交换主链数据。
+
+## 数据与运行保证
+
+- SQLite 默认路径为 `./data/app.db`，Docker 内为 `/app/data/app.db`。
+- 应用启动时自动执行幂等迁移，开启外键、5 秒 busy timeout 和 WAL。
+- 稿件、产物、审核决定、状态变化和追溯使用事务写入。
+- `/healthz` 只判断进程存活；`/readyz` 同时判断数据库和模型配置。
+- Docker 使用 Node 22、多阶段构建、非 root 用户和独立持久卷。
+- `APP_MODE=production` 且未配置模型时，除非显式允许 Mock，否则 `/readyz` 返回 503。
 
 ## 黑客松内明确不做
 

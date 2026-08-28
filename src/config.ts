@@ -3,8 +3,43 @@
 // deliberately set the env vars.
 import { getScenario } from './lib/scenarios.js';
 
+function integerEnv(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}`);
+  }
+  return value;
+}
+
+function booleanEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+  throw new Error(`${name} must be true or false`);
+}
+
+function appModeEnv(): 'demo' | 'production' {
+  const value = process.env.APP_MODE?.trim() || 'demo';
+  if (value === 'demo' || value === 'production') return value;
+  throw new Error('APP_MODE must be demo or production');
+}
+
+const appMode = appModeEnv();
+
 export const config = {
-  port: Number(process.env.PORT ?? 3300),
+  port: integerEnv('PORT', 3300, 1, 65535),
+  appMode,
+
+  /** Persistent workflow database. Use :memory: only in tests. */
+  databasePath:
+    process.env.DATABASE_PATH?.trim() || (process.env.NODE_ENV === 'test' ? ':memory:' : './data/app.db'),
+
+  /** Demo mode may use the deterministic mock; production must opt in. */
+  allowMockUpstream: booleanEnv('ALLOW_MOCK_UPSTREAM', appMode !== 'production'),
+  failClosed: booleanEnv('FAIL_CLOSED', true),
 
   /** Default target label shown in the console's "接管目标" field. */
   targetLabel: process.env.TARGET_LABEL ?? getScenario().label,
@@ -33,7 +68,7 @@ export const config = {
   targetModel: process.env.TARGET_MODEL ?? 'gpt-4o-mini',
 
   /** Cap how much traffic we keep in memory for the demo. */
-  maxAudits: Number(process.env.MAX_AUDITS ?? 500),
+  maxAudits: integerEnv('MAX_AUDITS', 500, 50, 10_000),
 } as const;
 
 export const usingMockUpstream = () => config.upstreamUrl.trim() === '';

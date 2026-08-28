@@ -18,7 +18,7 @@
 
 第一版保持单仓库、单服务、单容器。模型 Gateway 是代码级硬边界：业务模块不得直接访问模型供应商。
 
-## 当前基线
+## 当前底座
 
 当前代码保留了原 AuditGate 已验证的：
 
@@ -28,7 +28,11 @@
 - SSE 事件流
 - 逐用户用量
 - 红队与报告
-- 43 个自动化测试
+- 广电主链共享契约（稿件、产物、审次、决定、追溯）
+- SQLite/Drizzle 持久化与自动迁移
+- 稿件工作流 REST API 与 SSE 事件
+- `healthz` 存活检查和 `readyz` 数据库/模型就绪检查
+- 48 个自动化测试与 GitHub Actions
 
 这些能力将从“通用 AI 保密审计”改造为“县级融媒适播预检与生产追溯”。原说明保存在 [docs/legacy-auditgate-readme.md](docs/legacy-auditgate-readme.md)，组长方案保存在 [docs/design/broadcast-pivot.html](docs/design/broadcast-pivot.html)。
 
@@ -36,6 +40,7 @@
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 
@@ -43,8 +48,31 @@ npm run dev
 
 ```bash
 npm run check
+npm run build
 docker compose up --build
 ```
+
+默认使用内置确定性 Mock，不需要 API Key。真实模型只需在 `.env` 设置统一的
+`UPSTREAM_URL`、`UPSTREAM_KEY` 和 `UPSTREAM_MODEL`；业务代码不得自行读取这些变量。
+
+Docker 会以非 root 用户运行，并把 SQLite 数据保存在命名卷
+`moderation-data`。`docker compose down` 不会删除数据；只有明确执行
+`docker compose down -v` 才会删除该卷。
+
+## 底座 API
+
+- `GET /healthz`：进程存活
+- `GET /readyz`：SQLite 与模型配置就绪状态
+- `GET /api/meta`：无密钥的运行信息
+- `GET/POST /api/manuscripts`：稿件列表与创建
+- `GET /api/manuscripts/:id`：稿件、产物、审核和追溯聚合
+- `POST /api/manuscripts/:id/artifacts`：保存播报稿或短视频文案
+- `POST /api/manuscripts/:id/reviews`：保存准入/预检/三审决定
+- `PATCH /api/manuscripts/:id/status`：推进工作流状态
+- `POST /api/manuscripts/:id/trace`：追加模型、规则或系统追溯事件
+- `GET /events`：SSE 实时事件流
+
+请求与响应示例见 [底座 API 契约](docs/API.md)。
 
 ## 开发入口
 
