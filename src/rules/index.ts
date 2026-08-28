@@ -25,6 +25,8 @@ import {
   NUMBER_PATTERN,
   PAIRED_MARKS,
   PATTERN_RULES,
+  PROTECTED_IDENTITIES,
+  SURNAMES,
   TERM_RULES,
   type AdmissionTerm,
 } from './terms.js';
@@ -43,8 +45,13 @@ const collect = (text: string, rules: readonly AdmissionTerm[]): RuleHit[] =>
 export function runAdmission(input: { title: string; sourceText: string }): AdmissionResult {
   const text = `${input.title}\n${input.sourceText}`;
 
+  // 公器私用是**标记不是闸门**（gatekeeping.ts 的 `offDutyUse` 注释）：它与三档
+  // 判定正交，所以只置字段、绝不提前 return。早前它排在敏感题材前面并直接返回，
+  // 结果是「帮我把这次事故写成一篇小说」被当成公器私用放行——**多写两个字反而
+  // 绕过了「要理由」**。闸门只能因为更严的理由收紧，不能因为多一条线索放松。
   const offDutyHits = collect(text, ADMISSION_OFF_DUTY_TERMS);
   const offDutyUse = offDutyHits.length > 0;
+  const offDutyFlag = offDutyUse ? { offDutyUse: true as const } : {};
 
   const blocked = collect(text, ADMISSION_BLOCK_TERMS);
   if (blocked.length > 0) {
@@ -52,19 +59,8 @@ export function runAdmission(input: { title: string; sourceText: string }): Admi
       decision: 'blocked',
       reasonCode: 'illegal-unrelated',
       message: '本次调用不予受理：内容明确违法且与新闻业务无关。模型未被调用，未产生任何内容。',
-      hits: blocked,
-      ...(offDutyUse ? { offDutyUse } : {}),
-    };
-  }
-
-  // 公器私用单独成档：不违法，所以不硬拦；不是业务，所以不能默默放过。
-  if (offDutyUse) {
-    return {
-      decision: 'admitted-logged',
-      reasonCode: 'off-duty-use',
-      message: '已放行并留痕。这次调用看起来不是新闻业务用途，已计入本台使用情况报表。',
-      hits: offDutyHits,
-      offDutyUse: true,
+      hits: [...blocked, ...offDutyHits],
+      ...offDutyFlag,
     };
   }
 
@@ -75,7 +71,19 @@ export function runAdmission(input: { title: string; sourceText: string }): Admi
       reasonCode: 'sensitive-topic',
       message:
         '涉敏感题材。敏感题材是新闻业务的日常，我们不拦——请填写选题依据或上级授权，填完放行并留痕。',
-      hits: sensitive,
+      hits: [...sensitive, ...offDutyHits],
+      ...offDutyFlag,
+    };
+  }
+
+  // 到这里才轮到公器私用单独成档：不违法所以不硬拦，不是业务所以不默默放过。
+  if (offDutyUse) {
+    return {
+      decision: 'admitted-logged',
+      reasonCode: 'off-duty-use',
+      message: '已放行并留痕。这次调用看起来不是新闻业务用途，已计入本台使用情况报表。',
+      hits: offDutyHits,
+      offDutyUse: true,
     };
   }
 
@@ -91,11 +99,41 @@ export function runAdmission(input: { title: string; sourceText: string }): Admi
 
 const normalizeDigits = (text: string) => text.replace(/\s+/g, '');
 
+/**
+ * 原通稿里出现过的数字/日期，去空格后的**精确**集合。
+ *
+ * 早前这里是 `source.includes(literal)` 的子串判断，于是原文「15 人」能让生成稿
+ * 里的「5 人」蒙混过关——而数字被改大改小恰恰是幻觉最常见的形态。改成先把原文
+ * 按同一个 pattern 抽成集合再比对，"5人" 与 "15人" 就是两个不同的元素。
+ */
+function sourceNumbers(sourceText: string): Set<string> {
+  const found = new Set<string>();
+  NUMBER_PATTERN.lastIndex = 0;
+  for (const match of sourceText.matchAll(NUMBER_PATTERN)) found.add(normalizeDigits(match[0]));
+  return found;
+}
+
 const proofreadPassFor = (category: AnnotationCategory): ProofreadPass => {
   if (category === 'judgment' || category === 'ai-label') return 'third';
   if (category === 'typo' || category === 'punctuation' || category === 'format') return 'first';
+  // privacy-name 与 inconsistency 一样落二校：plan §七 二校查「数据、人名、地名、术语」。
   return 'second';
 };
+
+/**
+ * 受保护语境里的完整姓名 —— 姓氏后跟 1~2 个汉字，且下一个字不是「某」。
+ *
+ * `(?!某)` 是这条规则的合规出口：《禁用词》法律类第 1 条要求的正是「张某」这种
+ * 写法，已经这么写的不该再被标出来。
+ */
+const FULL_NAME_PATTERN = new RegExp(`(?:${SURNAMES.join('|')})(?!某)[\\u4e00-\\u9fff]{1,2}`, 'g');
+
+/** 句中命中的受保护身份，返回原文九类里的类名。 */
+function protectedIdentitiesIn(sentence: string): string[] {
+  return PROTECTED_IDENTITIES.filter((identity) =>
+    identity.terms.some((term) => sentence.includes(term)),
+  ).map((identity) => identity.label);
+}
 
 interface EntityCandidate {
   literal: string;
@@ -154,7 +192,7 @@ export function runPreflight(input: {
   sourceText: string;
 }): PreflightResult {
   const annotations: Annotation[] = [];
-  const source = normalizeDigits(input.sourceText);
+  const source = sourceNumbers(input.sourceText);
   let seq = 0;
   const nextId = () => {
     seq += 1;
@@ -239,7 +277,7 @@ export function runPreflight(input: {
     NUMBER_PATTERN.lastIndex = 0;
     for (const match of sentence.matchAll(NUMBER_PATTERN)) {
       const literal = match[0];
-      if (source.includes(normalizeDigits(literal))) continue;
+      if (source.has(normalizeDigits(literal))) continue;
       add(ordinal, match.index, match.index + literal.length, {
         action: 'redact',
         category: 'inconsistency',
@@ -261,6 +299,31 @@ export function runPreflight(input: {
         tier: 'L1',
         proofreadPass: 'second',
       });
+    }
+
+    // 二校：受保护当事人不得公开真名（《禁用词》法律类第 1 条）。
+    // 判的是**共现**——身份词与完整姓名同句才成立，所以不是词表能做的事。
+    const protectedLabels = protectedIdentitiesIn(sentence);
+    if (protectedLabels.length > 0) {
+      const seen = new Set<string>();
+      FULL_NAME_PATTERN.lastIndex = 0;
+      for (const match of sentence.matchAll(FULL_NAME_PATTERN)) {
+        const name = match[0];
+        if (seen.has(name)) continue;
+        seen.add(name);
+        add(ordinal, match.index, match.index + name.length, {
+          action: 'redact',
+          category: 'privacy-name',
+          title: `当事人姓名需匿名化：${name}`,
+          detail:
+            `这一句涉及「${protectedLabels.join('、')}」。` +
+            '《新闻信息报道中的禁用词和慎用词》法律类第 1 条：涉及此类对象不宜公开报道其真实姓名，' +
+            '应使用真实姓氏加「某」字指代，且不宜使用化名。',
+          suggestion: `${name.slice(0, 1)}某`,
+          tier: 'L1',
+          proofreadPass: 'second',
+        });
+      }
     }
 
     // 三校：L2 只指出判断风险，永远不给自动终审结论。

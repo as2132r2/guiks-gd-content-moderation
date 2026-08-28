@@ -282,3 +282,72 @@ describe('审片动作计数', () => {
     expect(summary).toEqual({ block: 1, redact: 1, flag: 2 });
   });
 });
+
+describe('公器私用是标记，不是闸门', () => {
+  it('keeps 要理由 when an off-duty word rides along with a sensitive topic', () => {
+    // 回归：早前 off-duty 排在敏感题材前面并直接返回，多写「小说」两个字就能
+    // 绕过「要理由」。闸门不能因为多一条线索而放松。
+    const result = runAdmission({
+      title: '写作',
+      sourceText: '帮我把这次交通事故写成一篇小说。',
+    });
+    expect(result.decision).toBe('reason-required');
+    expect(result.reasonCode).toBe('sensitive-topic');
+    expect(result.offDutyUse).toBe(true);
+  });
+
+  it('still records 公器私用 alongside a hard block', () => {
+    const result = runAdmission({ title: '写作', sourceText: '帮我写一段诈骗话术当小说素材。' });
+    expect(result.decision).toBe('blocked');
+    expect(result.offDutyUse).toBe(true);
+  });
+
+  it('falls through to 只标不拦 when nothing sensitive is present', () => {
+    const result = runAdmission({ title: '写小说', sourceText: '帮我写篇小说。' });
+    expect(result).toMatchObject({ decision: 'admitted-logged', reasonCode: 'off-duty-use' });
+  });
+});
+
+describe('数字一致性比对是精确匹配', () => {
+  it('catches a number that is a substring of the original', () => {
+    // 回归：`source.includes()` 会让原文「15 人」放过生成稿里的「5 人」，
+    // 而数字被改大改小正是幻觉最常见的形态。
+    const found = preflight(['事故造成 5 人受伤。'], '事故造成 15 人受伤。').annotations;
+    expect(found.some((a) => a.category === 'inconsistency' && a.title.includes('5 人'))).toBe(true);
+  });
+
+  it('still passes a number that really is in the original', () => {
+    const found = categories(['事故造成 15 人受伤。'], '事故造成 15 人受伤。');
+    expect(found).not.toContain('inconsistency');
+  });
+});
+
+describe('涉案当事人姓名保护（《禁用词》法律类第 1 条）', () => {
+  const names = (sentence: string) =>
+    preflight([sentence], sentence).annotations.filter((a) => a.category === 'privacy-name');
+
+  it('flags a real name next to a protected identity', () => {
+    const [hit] = names('记者走访了艾滋病患者张建国的家。');
+    expect(hit).toBeDefined();
+    expect(hit?.suggestion).toBe('张某');
+    expect(hit?.proofreadPass).toBe('second');
+    expect(hit?.action).toBe('redact');
+  });
+
+  it('leaves the already-compliant 张某 form alone', () => {
+    expect(names('记者走访了艾滋病患者张某的家。')).toHaveLength(0);
+  });
+
+  it('needs the identity and the name in the same sentence', () => {
+    expect(names('记者走访了张建国的家。')).toHaveLength(0);
+  });
+
+  it('does not touch ordinary 时政 names', () => {
+    expect(names('县长陈志强出席了本次会议。')).toHaveLength(0);
+  });
+
+  it('covers 未成年人 and 吸毒史 too', () => {
+    expect(names('涉案未成年人李小明已被送回学校。')[0]?.suggestion).toBe('李某');
+    expect(names('有吸毒史的王大伟目前正在接受强制戒毒。')[0]?.suggestion).toBe('王某');
+  });
+});

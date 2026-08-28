@@ -419,6 +419,8 @@ workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
       issuesShipped: shipped.length,
       bannedTermsShipped: count('banned-term'),
       inconsistenciesShipped: count('inconsistency'),
+      // 关掉把关人，受保护当事人的真名会原样发出去——对照里最刺眼的一项。
+      namesExposed: count('privacy-name'),
       proofreadIssuesShipped: count('typo') + count('punctuation') + count('format'),
       aiLabelled: false,
       aiShareKnown: false,

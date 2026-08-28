@@ -55,6 +55,7 @@ export const annotationCategories = [
   'caution-term',
   'leader-title',
   'inconsistency',
+  'privacy-name',
   // 标识与判断
   'ai-label',
   'judgment',
@@ -69,6 +70,7 @@ export const annotationCategoryLabels: Readonly<Record<AnnotationCategory, strin
   'caution-term': '慎用词',
   'leader-title': '领导表述规范',
   inconsistency: '与原通稿不一致',
+  'privacy-name': '当事人姓名保护',
   'ai-label': 'AI 生成内容标识',
   judgment: '导向与事实判断',
 };
