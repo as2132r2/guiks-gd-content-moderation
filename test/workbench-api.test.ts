@@ -46,6 +46,7 @@ interface ContrastShape {
     admissionDecision: string;
     modelInvoked: boolean;
     issuesCaught: number;
+    issuesRemaining: number;
     aiShare?: number;
     accountableActors: number;
     traceEvents: number;
@@ -381,9 +382,10 @@ describe('工作台主链', () => {
 
     // 对照组的每个数字都必须指回真实留痕，被追问「这是演的还是真的」时答得出来。
     expect(contrast.hardBlocked).toBe(false);
-    expect(contrast.with.issuesCaught).toBe(
+    expect(contrast.with.issuesRemaining).toBe(
       live.artifacts.reduce((sum, item) => sum + item.annotations.length, 0),
     );
+    expect(contrast.with.issuesCaught).toBeGreaterThan(contrast.with.issuesRemaining);
     expect(contrast.without.issuesShipped).toBe(contrast.with.issuesCaught);
     expect(contrast.with.aiShare).toBe(live.aiShare);
     expect(contrast.with.traceEvents).toBe(live.trace.length);
@@ -427,6 +429,13 @@ describe('工作台主链', () => {
     const html = await root.text();
     expect(html).toContain('把关人 · 稿件工作台');
     expect(html).not.toContain('AuditGate');
+    expect(html).toContain('id="countersign-party"');
+    expect(html).toContain('id="countersign-opinion"');
+    expect(html).toContain('body.countersignParty = party');
+    expect(html).not.toContain('状态机还没有 <code>countersign</code> 状态');
+    const inlineScript = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    expect(inlineScript).toBeDefined();
+    expect(() => new Function(inlineScript!)).not.toThrow();
 
     // 遗留控制台仍在，只是不再是首页。
     expect((await app.request('/console')).status).toBe(200);

@@ -319,6 +319,10 @@ export function renderWorkbench(): string {
     border-top:1px solid var(--line); padding-top:8px; margin-top:auto;
   }
   .pass-reason { color:var(--warn); font-family:var(--sans); margin-top:5px; line-height:1.6; }
+  .countersign { border-left:3px solid var(--warn); }
+  .cs-fields { display:grid; grid-template-columns:minmax(180px,.7fr) minmax(260px,1.3fr); gap:12px; margin:12px 0; }
+  .cs-record { background:var(--panel-2); border:1px solid var(--line); border-radius:9px; padding:10px 12px; margin-top:8px; }
+  @media (max-width:820px) { .cs-fields { grid-template-columns:1fr; } }
 
   /* ---------- 对照组 ---------- */
   .vs {
@@ -725,34 +729,16 @@ export function renderWorkbench(): string {
     'editor':'初审', 'department-head':'复审', 'supervising-leader':'终审'
   };
 
-  /**
-   * 标注归到哪一校。
-   *
-   * **临时放在页面层**：4.14 会把 proofreadPass 写进 Annotation 契约，
-   * 那之后这张表要删掉、改读字段。放在这里是为了不越过轨道边界去动
-   * src/domain/（requirements 第十一节碰撞点）。
-   *
-   * 注意：本段在模板字符串内，不能出现反引号。
-   */
-  var PASS_OF_CATEGORY = {
-    'typo':'first', 'punctuation':'first', 'format':'first',
-    'inconsistency':'second', 'leader-title':'second',
-    'banned-term':'second', 'caution-term':'second',
-    'judgment':'third', 'ai-label':'third'
-  };
-
-  /** 一次退回开启新一轮。轮次从现有审核记录派生，不需要新状态。 */
-  function groupRounds(reviews) {
+  /** 审核轮次由服务端契约给出；退回复核后即使尚未再审，也要显示新一轮。 */
+  function groupRounds(reviews, currentRound) {
     var chain = reviews.filter(function (r) { return REVIEW_LABEL[r.stage]; });
-    var rounds = [[]];
+    var count = Math.max(1, Number(currentRound) || 1);
+    var rounds = [];
+    for (var i = 0; i < count; i += 1) rounds.push([]);
     chain.forEach(function (r) {
-      rounds[rounds.length - 1].push(r);
-      if (r.decision === 'changes-requested' || r.decision === 'rejected') rounds.push([]);
+      var index = Math.max(0, Math.min(rounds.length - 1, (Number(r.round) || 1) - 1));
+      rounds[index].push(r);
     });
-    if (rounds.length > 1 && rounds[rounds.length - 1].length === 0) {
-      // 最后一次退回之后还没人再审，这一轮是空的但确实开着。
-      if (chain.length === 0) rounds.pop();
-    }
     return rounds;
   }
 
@@ -760,7 +746,7 @@ export function renderWorkbench(): string {
     var annotations = view.artifacts.reduce(function (all, item) {
       return all.concat(item.annotations);
     }, []);
-    var rounds = groupRounds(view.reviews);
+    var rounds = groupRounds(view.reviews, view.manuscript.reviewRound);
     var lastRound = rounds.length - 1;
 
     var out = '<div class="card"><h3>⑤ 三审三校流转</h3>' +
@@ -780,10 +766,27 @@ export function renderWorkbench(): string {
       }).join('') + '</div>';
     });
 
-    out += '<p class="hint" style="margin-top:14px">' +
-      '会签（征求意见）在复审与终审之间，属于三审之外的分支——状态机还没有 ' +
-      '<code>countersign</code> 状态，本版未启用。</p>';
+    out += countersignPanel(view);
     return out;
+  }
+
+  function countersignPanel(view) {
+    var records = view.reviews.filter(function (record) { return record.stage === 'countersign'; });
+    if (view.manuscript.status !== 'countersign' && records.length === 0) return '';
+
+    var body = records.map(function (record) {
+      return '<div class="cs-record"><b>第 ' + esc(record.round || 1) + ' 轮</b> · ' +
+        esc(record.actor) + ' · ' + clock(record.createdAt) +
+        (record.countersignParty ? '<div>会签方：' + esc(record.countersignParty) + '</div>' : '') +
+        (record.opinion ? '<div>会签意见：' + esc(record.opinion) + '</div>' : '') +
+        (record.reason ? '<div>退回理由：' + esc(record.reason) + '</div>' : '') +
+        '</div>';
+    }).join('');
+
+    return '<div class="card countersign" style="margin-top:14px"><h3>会签 · 征求意见</h3>' +
+      (view.manuscript.status === 'countersign'
+        ? '<p class="hint">会签是复审与终审之间的可选分支。请由部门主任填写会签方和意见后报送终审。</p>'
+        : '') + body + '</div>';
   }
 
   function passCard(pass, round, annotations, isLive, view) {
@@ -792,7 +795,7 @@ export function renderWorkbench(): string {
       if (round[i].stage === pass.stage) record = round[i];
     }
     var mine = annotations.filter(function (a) {
-      return PASS_OF_CATEGORY[a.category] === pass.pass;
+      return a.proofreadPass === pass.pass;
     });
     var waiting = isLive && !record && view.waitingOn === pass.stage;
 
@@ -1038,7 +1041,7 @@ export function renderWorkbench(): string {
         var fixed = c['with'].issuesCaught - c['with'].issuesRemaining;
         return '当场抓到 ' + c['with'].issuesCaught + ' 处（拦下 ' + c['with'].block +
           '　标红 ' + c['with'].redact + '　留痕 ' + c['with'].flag + '）' +
-          (fixed > 0 ? '，人已改掉 ' + fixed + ' 处' : '');
+          (fixed > 0 ? '，流程已处理 ' + fixed + ' 处' : '');
       }
     },
     {
@@ -1135,7 +1138,15 @@ export function renderWorkbench(): string {
         '<textarea class="f" id="reason" style="min-height:76px" placeholder="例：县应急管理局已授权发布，见 8 月 27 日通报"></textarea></label>'
       : '';
 
+    var countersignBox = view.manuscript.status === 'countersign'
+      ? '<div class="cs-fields">' +
+          '<label class="f"><span>会签方</span><input class="f" id="countersign-party" maxlength="100" placeholder="例：县应急管理局"></label>' +
+          '<label class="f"><span>会签意见</span><textarea class="f" id="countersign-opinion" style="min-height:76px" maxlength="2000" placeholder="填写会签意见，内容将进入审核留痕"></textarea></label>' +
+        '</div>'
+      : '';
+
     return '<div class="card"><h2 class="hd" style="margin-top:0">下一步 · ' + esc(ROLE_LABEL[state.role]) + '</h2>' +
+      countersignBox +
       reasonBox +
       '<div class="actions-bar">' + buttons + '</div>' +
       (state.error ? '<div class="err">' + esc(state.error) + '</div>' : '') +
@@ -1218,6 +1229,19 @@ export function renderWorkbench(): string {
     state.error = '';
     var body = { to: to, role: state.role };
     if (reason) body.reason = reason;
+    if (state.view && state.view.manuscript.status === 'countersign' && to === 'final-review') {
+      var partyField = $('countersign-party');
+      var opinionField = $('countersign-opinion');
+      var party = partyField ? partyField.value.trim() : '';
+      var opinion = opinionField ? opinionField.value.trim() : '';
+      if (!party || !opinion) {
+        state.error = '完成会签必须填写会签方和会签意见。';
+        renderPanel();
+        return;
+      }
+      body.countersignParty = party;
+      body.opinion = opinion;
+    }
 
     api('/api/workbench/' + encodeURIComponent(state.currentId) + '/transition', {
       method: 'POST',

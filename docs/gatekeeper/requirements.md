@@ -107,13 +107,13 @@
 | 5.5 | 退回必须带理由，理由进审计 | ✅ | William | 无理由返 400 |
 | 5.6 | 「这一步由 X 处理」的等待提示 | ✅ | William | `waitingOn` |
 | 5.7 | 签发 → 已发布（按钮只演示状态变化） | ✅ | William | `signed → published` |
-| 5.8 | 三审界面 | ✅ | 轨道 B | 已随 5.14 重做，六张校次卡取代原按钮 + 列表 |
+| 5.8 | 三审界面 | ✅ | 轨道 B | 已随 5.14 重做，三张审校合一职责卡取代原按钮 + 列表 |
 | 5.9 | **校次进契约**：`proofreadPasses` + 各审级职责声明 | ✅ | 轨道 A | `proofreadPasses` 在 [contracts.ts](../../src/domain/contracts.ts)，`proofreadResponsibilities` 在 [workflow.ts](../../src/domain/workflow.ts)（一校编辑 / 二校主任 / 三校分管领导，各带职责清单），`stage` 以 `Extract<ReviewStage,…>` 收窄，`test/workflow.test.ts` 3 例。**阻塞已解除** |
 | 5.10 | 新增 `revision`（复核修改）状态，退回统一落此 | ✅ | 轨道 A | 初审、复审、会签、终审退回均统一进入 `revision` |
 | 5.11 | `revision → preflight` 重走预检与三审，留痕按轮次分组 | ✅ | 轨道 A | `manuscripts.review_round` + `review_records.round`，复核后自动递增 |
 | 5.12 | 新增 `countersign`（待会签）**可选**状态 | ✅ | 轨道 A | 复审可直接进终审，也可进入 `countersign`；两条路径均有合法性测试 |
 | 5.13 | 会签意见留痕（会签方 / 意见 / 时间） | ✅ | 轨道 A | `countersign_party` + `opinion` + `created_at`，缺会签方或意见返回 400 |
-| 5.14 | 三审界面重做：校次 checklist + 会签区 + 退回轮次 | ✅ | 轨道 B + A | 六张校次卡、轮次记录与会签方/会签意见表单均已接通 |
+| 5.14 | 三审界面重做：校次 checklist + 会签区 + 退回轮次 | ✅ | 轨道 B + A | 三张审校合一职责卡、轮次记录与会签方/会签意见表单均已接通 |
 
 > **5.9–5.14 是 8/28 决定的状态机改造（方案 C）。** 起因是三处流程失真：
 > ①「三审三校」的**校**在状态机里根本不存在；②「复核修改」这个行业环节缺失，导致退回要点两次；

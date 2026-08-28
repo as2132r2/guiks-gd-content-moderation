@@ -428,7 +428,7 @@ workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
       /** 把关人在生成那一刻抓到了多少。 */
       issuesCaught: shipped.length,
       ...summarize(shipped),
-      /** 走完流程后还剩多少——人改掉了的那些不再计入。 */
+      /** 走完流程后还剩多少——系统自动处理或人工改掉的命中不再计入。 */
       issuesRemaining: view.artifacts.reduce((sum, item) => sum + item.annotations.length, 0),
       ...(view.aiShare === undefined ? {} : { aiShare: view.aiShare }),
       segmentCount: view.segmentCount,
