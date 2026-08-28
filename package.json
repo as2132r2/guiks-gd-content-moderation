@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "npm@10.9.4",
   "description": "贵客松广电方向：县级融媒稿件生产、适播预检、三审流转与 AI 参与度追溯 Demo。",
   "engines": {
     "node": ">=22"
