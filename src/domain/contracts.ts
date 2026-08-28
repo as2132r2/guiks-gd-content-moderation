@@ -56,6 +56,10 @@ export const reviewStages = [
 ] as const;
 export type ReviewStage = (typeof reviewStages)[number];
 
+/** 校次是预检标注的分类与审级职责，不是稿件状态。 */
+export const proofreadPasses = ['first', 'second', 'third'] as const;
+export type ProofreadPass = (typeof proofreadPasses)[number];
+
 export const reviewDecisions = [
   'blocked',
   'reason-required',
