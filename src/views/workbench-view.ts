@@ -22,7 +22,7 @@ export function renderWorkbench(): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="dark" />
+<meta name="color-scheme" content="dark light" />
 <title>把关人 · 稿件工作台</title>
 <style>
   :root {
@@ -74,13 +74,20 @@ export function renderWorkbench(): string {
   .roles { display:flex; gap:6px; margin-left:auto; align-items:center; }
   .roles .lbl { font-size:11px; color:var(--faint); font-family:var(--mono); margin-right:4px; }
   .role-btn {
+    position:relative;
     font-family:var(--sans); font-size:13px; color:var(--muted);
     padding:7px 14px; background:var(--panel-2);
     border:1px solid var(--line); border-radius:9px; cursor:pointer;
+    transition:background-color .16s ease, border-color .16s ease, color .16s ease;
   }
   .role-btn:hover { border-color:var(--accent); color:var(--ink); }
   .role-btn[aria-pressed="true"] {
     background:var(--accent-soft); border-color:var(--accent); color:var(--accent-deep);
+  }
+  .visually-hidden {
+    position:absolute !important; width:1px !important; height:1px !important;
+    padding:0 !important; margin:-1px !important; overflow:hidden !important;
+    clip:rect(0,0,0,0) !important; white-space:nowrap !important; border:0 !important;
   }
 
   /* ---------- Layout ---------- */
@@ -169,6 +176,7 @@ export function renderWorkbench(): string {
 
   /* ---------- Two-column preflight ---------- */
   .cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .cols.editing-open { grid-template-columns:1fr; }
   @media (max-width:1180px) { .cols { grid-template-columns:1fr; } main { grid-template-columns:200px minmax(0,1fr) 280px; } }
   .doc { background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
   .doc h4 { margin:0 0 10px; font-size:13px; color:var(--muted); font-weight:500; display:flex; justify-content:space-between; align-items:center; gap:10px; }
@@ -199,6 +207,75 @@ export function renderWorkbench(): string {
   .ann .ttl { font-size:13px; font-weight:500; }
   .ann .dt { font-size:12px; color:var(--muted); margin-top:4px; }
   .ann .sg { font-size:12px; color:var(--accent-deep); margin-top:4px; font-family:var(--mono); }
+
+  /* ---------- Assisted newsroom editor ---------- */
+  .revision-brief {
+    display:grid; grid-template-columns:auto minmax(0,1fr); gap:12px 16px;
+    margin-bottom:14px; padding:16px 18px; border:1px solid var(--warn);
+    border-radius:var(--radius); background:var(--warn-soft);
+  }
+  .revision-brief .mark { font-size:24px; color:var(--warn); line-height:1; }
+  .revision-brief h3 { margin:0 0 4px; font-size:16px; }
+  .revision-brief p { margin:0; color:var(--ink); }
+  .revision-brief .meta { margin-top:6px; color:var(--muted); font-size:12px; }
+  .editor-workspace {
+    display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:0;
+    border:1px solid var(--line-strong); border-radius:10px; overflow:hidden;
+    background:var(--panel-2);
+  }
+  .editor-canvas { min-width:0; padding:14px; background:var(--panel-2); }
+  .editor-canvas textarea.f {
+    min-height:360px; margin:0; background:var(--panel); border-color:var(--line-strong);
+    font-family:var(--sans); line-height:1.85;
+  }
+  .editor-help {
+    display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+    margin-top:8px; color:var(--faint); font-size:12px;
+  }
+  .editor-issues {
+    min-width:0; max-height:480px; overflow:auto; padding:14px;
+    border-left:1px solid var(--line-strong); background:var(--panel);
+  }
+  .editor-issues-head {
+    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    margin-bottom:10px;
+  }
+  .editor-issues-head strong { font-size:14px; }
+  .editor-issues-head span { color:var(--muted); font:12px var(--mono); }
+  .editor-issue {
+    padding:12px; margin-bottom:10px; border:1px solid var(--line);
+    border-left:4px solid var(--line-strong); border-radius:8px; background:var(--panel-2);
+    transition:border-color .16s ease, background-color .16s ease;
+  }
+  .editor-issue.a-block { border-left-color:var(--block); }
+  .editor-issue.a-redact { border-left-color:var(--warn); }
+  .editor-issue.a-flag { border-left-color:var(--info); }
+  .editor-issue.is-active { border-color:var(--accent); background:var(--accent-soft); }
+  .editor-issue.is-applied { border-left-color:var(--accent); }
+  .editor-issue-head { display:flex; align-items:flex-start; gap:8px; }
+  .editor-issue-num {
+    display:grid; place-items:center; flex:0 0 auto; width:24px; height:24px;
+    border-radius:50%; background:var(--panel-3); color:var(--muted); font:700 11px var(--mono);
+  }
+  .editor-issue-title { font-size:13px; font-weight:700; line-height:1.45; }
+  .editor-issue-meta { margin-top:2px; color:var(--faint); font:11px var(--mono); }
+  .editor-issue-snippet {
+    margin:9px 0; padding:8px 10px; border-radius:6px; background:var(--panel);
+    color:var(--muted); font-size:12px; line-height:1.65;
+  }
+  .editor-issue-detail { color:var(--muted); font-size:12px; line-height:1.55; }
+  .editor-suggestion {
+    margin-top:8px; padding:8px 10px; border-left:3px solid var(--accent);
+    background:var(--accent-soft); color:var(--ink); font-size:12px;
+  }
+  .editor-issue-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .editor-issue-actions .btn { padding:6px 10px; font-size:12px; border-radius:7px; }
+  .editor-applied { color:var(--accent-deep); font-size:12px; font-weight:700; }
+  .editor-empty { padding:18px 10px; color:var(--muted); text-align:center; }
+  @media (max-width:1024px) {
+    .editor-workspace { grid-template-columns:1fr; }
+    .editor-issues { max-height:none; border-left:0; border-top:1px solid var(--line-strong); }
+  }
 
   /* ---------- Side rail ---------- */
   .share { text-align:center; padding:16px 0 6px; }
@@ -284,6 +361,41 @@ export function renderWorkbench(): string {
   .hit code { font-family:var(--mono); font-size:11px; color:var(--accent-deep); }
 
   /* ---------- ⑤ 三审三校 ---------- */
+  .review-desk {
+    background:var(--panel); border:1px solid var(--line-strong);
+    border-radius:var(--radius); padding:18px; margin-bottom:16px;
+  }
+  .review-desk-head {
+    display:flex; align-items:flex-start; gap:14px; margin-bottom:14px;
+  }
+  .review-desk-head h3 { margin:0; font-size:18px; }
+  .review-desk-head p { margin:5px 0 0; color:var(--muted); line-height:1.55; }
+  .review-focus {
+    margin-left:auto; flex:0 0 auto; padding:6px 10px; border:1px solid var(--warn);
+    border-radius:6px; background:var(--warn-soft); color:var(--warn);
+    font-family:var(--mono); font-size:12px; font-weight:700;
+  }
+  .review-docs {
+    display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);
+    grid-template-areas:'source outputs'; gap:12px; align-items:start;
+  }
+  .review-source { grid-area:source; }
+  .review-outputs { grid-area:outputs; min-width:0; }
+  .review-output { border-color:var(--line-strong); }
+  .review-output h4 { color:var(--ink); }
+  .review-doc-meta {
+    margin-left:auto; font-family:var(--mono); font-size:11px; font-weight:600;
+    color:var(--warn); white-space:nowrap;
+  }
+  .review-pending {
+    margin-top:12px; padding-top:10px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:12px; line-height:1.7;
+  }
+  .review-pending strong { color:var(--ink); }
+  .review-pending .mini { margin-top:4px; }
+  @media (max-width:1179px) {
+    .review-docs { grid-template-columns:1fr; grid-template-areas:'outputs' 'source'; }
+  }
   .passes { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; margin-bottom:8px; }
   .pass {
     background:var(--panel); border:1px solid var(--line);
@@ -362,6 +474,323 @@ export function renderWorkbench(): string {
     font-family:var(--serif); font-size:16px; line-height:1.8;
   }
   .closer b { color:var(--accent-deep); }
+
+  /* ---------- Guided presentation mode ---------- */
+  button:focus-visible, [role="button"]:focus-visible, input:focus-visible,
+  textarea:focus-visible, select:focus-visible, summary:focus-visible {
+    outline:3px solid var(--accent); outline-offset:3px;
+  }
+  .present-launch { margin-left:4px; }
+  .present-controls { display:none; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
+  .present-mode-badge {
+    display:inline-flex; align-items:center; gap:8px; padding:7px 12px;
+    border:1px solid var(--line-strong); border-radius:999px;
+    font-size:12px; font-weight:700; color:var(--accent-deep); background:var(--accent-soft);
+  }
+  .present-mode-badge::before { content:'●'; font-size:10px; }
+  .display-switch { display:flex; gap:4px; padding:3px; border:1px solid var(--line-strong); border-radius:10px; }
+  .display-switch button {
+    border:0; border-radius:7px; padding:6px 10px; cursor:pointer;
+    font:600 12px var(--sans); color:var(--muted); background:transparent;
+  }
+  .display-switch button[aria-pressed="true"] { color:var(--ink); background:var(--panel-3); }
+
+  .present-summary, .present-guide, .present-warning, .present-drawer-tools { display:none; }
+  .present-scrim {
+    position:fixed; inset:0; z-index:48; border:0; padding:0;
+    background:rgba(3,10,7,.58); opacity:0; pointer-events:none; transition:opacity .16s ease;
+  }
+
+  .present-modal[hidden] { display:none; }
+  .present-modal {
+    position:fixed; inset:0; z-index:100; display:grid; place-items:center;
+    padding:24px; background:rgba(3,10,7,.72);
+  }
+  .present-dialog {
+    width:min(680px,100%); max-height:calc(100vh - 48px); overflow:auto;
+    border:1px solid var(--line-strong); border-radius:16px; background:var(--panel);
+    padding:24px;
+  }
+  .present-dialog-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+  .present-dialog h2 { margin:0; font:700 24px/1.25 var(--sans); }
+  .present-dialog p { color:var(--muted); }
+  .icon-btn {
+    width:40px; height:40px; display:grid; place-items:center; flex:0 0 auto;
+    border:1px solid var(--line-strong); border-radius:10px; color:var(--ink);
+    background:var(--panel-2); cursor:pointer; font-size:20px;
+  }
+  .setup-display { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:20px 0; }
+  .setup-choice {
+    text-align:left; border:1px solid var(--line-strong); border-radius:12px;
+    background:var(--panel-2); color:var(--ink); padding:16px; cursor:pointer;
+  }
+  .setup-choice[aria-pressed="true"] { border:2px solid var(--accent); padding:15px; background:var(--accent-soft); }
+  .setup-choice strong { display:block; font-size:16px; margin-bottom:4px; }
+  .setup-choice span { display:block; color:var(--muted); font-size:13px; line-height:1.5; }
+  .setup-warning {
+    margin:16px 0; padding:14px 16px; border-left:4px solid var(--warn);
+    background:var(--warn-soft); color:var(--ink);
+  }
+  .setup-status { min-height:24px; margin:12px 0; color:var(--muted); }
+  .setup-status.ok { color:var(--accent-deep); font-weight:700; }
+  .setup-status.error { color:var(--block); font-weight:700; }
+  .setup-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+
+  body.is-present {
+    font-size:18px; line-height:1.6; background-image:none;
+    --present-stage-max:1280px;
+  }
+  body.is-present[data-display="led"] {
+    color-scheme:dark;
+    --bg:#09110E; --panel:#121D18; --panel-2:#1A2821; --panel-3:#22342A;
+    --ink:#F7FAF8; --muted:#C6D2CB; --faint:#A7B8AE;
+    --line:rgba(247,250,248,.16); --line-strong:rgba(247,250,248,.3);
+    --accent:#33D6A2; --accent-deep:#8AF2D2; --accent-soft:rgba(51,214,162,.16);
+    --block:#FF8C7A; --block-soft:rgba(255,140,122,.16);
+    --warn:#F3C66C; --warn-soft:rgba(243,198,108,.16);
+    --info:#8EC5F4; --info-soft:rgba(142,197,244,.16);
+    --ai:#8EC5F4; --ai-edited:#33D6A2; --human:#F3C66C; --source:#A7B8AE;
+  }
+  body.is-present[data-display="projector"] {
+    color-scheme:light;
+    --bg:#F2F0E8; --panel:#FAF9F4; --panel-2:#E8ECE6; --panel-3:#DCE4DD;
+    --ink:#10211A; --muted:#3F554A; --faint:#5C7166;
+    --line:#B8C3BB; --line-strong:#7E9185;
+    --accent:#087A55; --accent-deep:#075E43; --accent-soft:rgba(8,122,85,.12);
+    --block:#B3261E; --block-soft:rgba(179,38,30,.1);
+    --warn:#8A5B00; --warn-soft:rgba(138,91,0,.11);
+    --info:#285D8F; --info-soft:rgba(40,93,143,.1);
+    --ai:#285D8F; --ai-edited:#087A55; --human:#8A5B00; --source:#5C7166;
+  }
+  body.is-present header.topbar {
+    position:sticky; top:0; z-index:40; padding:12px 24px; gap:14px;
+    background:var(--panel); border-bottom:2px solid var(--line-strong);
+  }
+  body.is-present .brand .name { font-family:var(--sans); font-size:24px; font-weight:800; letter-spacing:-.3px; }
+  body.is-present .brand .sub { font-size:14px; color:var(--muted); }
+  body.is-present .demo-badge, body.is-present .present-launch { display:none; }
+  body.is-present .present-controls { display:flex; }
+  body.is-present .roles { margin-left:0; }
+  body.is-present .roles .lbl { font-size:14px; color:var(--muted); }
+  body.is-present .role-btn { font-size:16px; padding:9px 14px; border-width:2px; }
+  body.is-present .role-btn.role-needed:not([aria-pressed="true"]) {
+    border-color:var(--warn); color:var(--warn); box-shadow:0 0 0 3px var(--warn-soft);
+  }
+  body.is-present .role-btn.role-leaving {
+    animation:role-release .32s cubic-bezier(.2,.8,.2,1) both;
+  }
+  body.is-present .role-btn.role-switching {
+    z-index:3; animation:role-receive .76s cubic-bezier(.16,1,.3,1) both;
+  }
+  body.is-present .role-btn.role-switching::after {
+    content:'身份已切换'; position:absolute; top:calc(100% + 9px); left:50%;
+    transform:translateX(-50%); padding:5px 9px; border-radius:6px;
+    background:var(--warn); color:#fff; white-space:nowrap; pointer-events:none;
+    font-size:14px; font-weight:800; line-height:1.2;
+    animation:role-handoff-label .76s cubic-bezier(.16,1,.3,1) both;
+  }
+  body.is-present[data-display="led"] .role-btn.role-switching::after { color:#09110E; }
+  @keyframes role-release {
+    0% { opacity:1; }
+    100% { opacity:.62; }
+  }
+  @keyframes role-receive {
+    0% { transform:scale(.96); background:var(--warn-soft); border-color:var(--warn); color:var(--warn); box-shadow:0 0 0 0 var(--warn-soft); }
+    38% { transform:scale(1.06); background:var(--warn-soft); border-color:var(--warn); color:var(--warn); box-shadow:0 0 0 7px var(--warn-soft); }
+    100% { transform:scale(1); background:var(--accent-soft); border-color:var(--accent); color:var(--accent-deep); box-shadow:0 0 0 0 var(--warn-soft); }
+  }
+  @keyframes role-handoff-label {
+    0% { opacity:0; transform:translate(-50%,-5px); }
+    22%, 68% { opacity:1; transform:translate(-50%,0); }
+    100% { opacity:0; transform:translate(-50%,3px); }
+  }
+  body.is-present main {
+    width:100%; max-width:1740px; margin:0 auto; padding:20px 24px 48px;
+    display:grid; grid-template-columns:minmax(0,var(--present-stage-max)) 360px;
+    justify-content:center; gap:20px; align-items:start; min-height:auto;
+  }
+  body.is-present section.stage { padding:0; overflow:visible; min-width:0; }
+  body.is-present aside.side {
+    padding:20px; overflow:auto; position:sticky; top:98px; max-height:calc(100vh - 118px);
+    border:2px solid var(--line-strong); border-radius:12px; background:var(--panel);
+  }
+  body.is-present aside.list {
+    position:fixed; inset:0 auto 0 0; z-index:60; width:min(390px,92vw);
+    padding:24px; border:0; border-right:2px solid var(--line-strong); background:var(--panel);
+    transform:translateX(-102%); transition:transform .18s ease; overflow-y:auto;
+  }
+  body.is-present.present-list-open aside.list { transform:translateX(0); }
+  body.is-present.present-list-open .present-scrim,
+  body.is-present.present-evidence-open .present-scrim { opacity:1; pointer-events:auto; }
+  body.is-present aside.list .present-drawer-tools { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+  body.is-present aside.list > h2.hd { display:none; }
+  body.is-present aside.list #new-btn, body.is-present aside.list #seed-btn { display:none; }
+  body.is-present .present-drawer-tools h2 { margin:0; font-size:22px; }
+  body.is-present .present-drawer-tools .icon-btn { display:grid; }
+
+  body.is-present .present-warning {
+    padding:14px 18px; margin-bottom:16px; border:2px solid var(--warn);
+    border-radius:10px; background:var(--warn-soft); color:var(--ink); font-weight:700;
+  }
+  body.is-present .present-warning:not([hidden]) { display:block; }
+  body.is-present .present-summary {
+    align-items:center; gap:14px; padding:14px 16px; margin-bottom:16px;
+    border:2px solid var(--line-strong); border-radius:12px; background:var(--panel);
+  }
+  body.is-present .present-summary .metric { font:800 30px/1 var(--mono); color:var(--accent-deep); }
+  body.is-present .present-summary .copy { flex:1; min-width:0; color:var(--muted); font-size:14px; }
+  body.is-present .present-summary .copy b { color:var(--ink); }
+  body.is-present .present-guide {
+    margin-bottom:16px; border:2px solid var(--line-strong); border-radius:14px;
+    background:var(--panel); overflow:hidden;
+  }
+  body.is-present .present-guide:not(:empty) { display:block; }
+  .guide-head {
+    display:flex; align-items:center; gap:12px; padding:12px 18px;
+    background:var(--panel-2); border-bottom:2px solid var(--line-strong);
+  }
+  .guide-head .gate { font-weight:800; font-size:20px; }
+  .guide-head .scope { margin-left:auto; font-size:14px; color:var(--muted); }
+  .guide-flow { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .guide-item { position:relative; padding:18px 20px; min-height:142px; }
+  .guide-item + .guide-item { border-left:2px solid var(--line-strong); }
+  .guide-item .k { display:block; color:var(--faint); font-size:14px; font-weight:700; letter-spacing:.4px; }
+  .guide-item strong { display:block; margin:6px 0 4px; font-size:22px; line-height:1.3; color:var(--ink); }
+  .guide-item p { margin:0; color:var(--muted); font-size:15px; line-height:1.5; }
+  .guide-item.next { background:var(--accent-soft); }
+  .guide-item.next strong { color:var(--accent-deep); }
+  .guide-return { padding:0 18px 16px; background:var(--accent-soft); }
+  .result-card {
+    display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:start;
+    margin:0 18px 18px; padding:14px 16px; border-left:5px solid var(--accent);
+    background:var(--accent-soft); border-radius:8px 0 0 8px; overflow:hidden;
+  }
+  .result-card .mark { font-size:24px; color:var(--accent-deep); line-height:1; }
+  .result-card strong { display:block; font-size:17px; }
+  .result-card span { display:block; color:var(--muted); font-size:14px; margin-top:3px; }
+
+  body.is-present .rail { gap:8px; margin-bottom:16px; flex-wrap:nowrap; }
+  body.is-present .rail .step {
+    position:relative; flex:1 1 0; min-width:0; justify-content:center;
+    border-width:2px; border-radius:8px; padding:10px 8px;
+    font-size:15px; font-weight:700; color:var(--faint);
+  }
+  body.is-present .rail .step .n { width:24px; height:24px; flex:0 0 auto; font-size:13px; }
+  body.is-present .rail .step.now { color:var(--ink); border-color:var(--accent); }
+  body.is-present .rail .step.now::after {
+    content:'当前'; position:absolute; top:-11px; right:8px; padding:1px 7px;
+    border-radius:99px; background:var(--accent); color:var(--panel); font-size:11px;
+  }
+  body.is-present[data-display="projector"] .rail .step.now::after { color:#fff; }
+
+  body.is-present .card { padding:22px; margin-bottom:18px; border-width:2px; background-image:none; }
+  body.is-present .card h3 { font-family:var(--sans); font-size:24px; font-weight:800; }
+  body.is-present .card h4 { font-size:16px !important; }
+  body.is-present .card p, body.is-present .doc .body { font-size:18px; }
+  body.is-present .doc .body { font-family:var(--sans); font-weight:500; line-height:1.8; }
+  body.is-present .btn { font-size:16px; padding:11px 18px; border-width:2px; }
+  body.is-present .btn.primary { font-size:18px; padding:13px 24px; }
+  body.is-present h2.hd, body.is-present label.f > span, body.is-present .hint,
+  body.is-present .legend, body.is-present .chip, body.is-present .tl .m,
+  body.is-present .tl .d, body.is-present .pass-who, body.is-present .st,
+  body.is-present .duty, body.is-present .pass-ann, body.is-present .pass-rec,
+  body.is-present .hit .tag, body.is-present .hit .dim, body.is-present .hit .dt,
+  body.is-present .signoff .so-k, body.is-present .signoff .so-t,
+  body.is-present .smap-hd, body.is-present .link .stage,
+  body.is-present .link .verdict, body.is-present .link .reason { font-size:14px; }
+  body.is-present .brand .sub, body.is-present .env, body.is-present .roles .lbl,
+  body.is-present .role-btn, body.is-present .present-mode-badge,
+  body.is-present .display-switch button, body.is-present .setup-choice span,
+  body.is-present .meta, body.is-present .rail .step .n,
+  body.is-present .ann .tag, body.is-present .ann .ttl, body.is-present .ann .dt,
+  body.is-present .ann .sg, body.is-present .share .delta,
+  body.is-present .share .formula, body.is-present .share .none,
+  body.is-present .counts span, body.is-present .tl .k,
+  body.is-present .chart .ax, body.is-present .chart .cap,
+  body.is-present .chart .val, body.is-present .hit code,
+  body.is-present .pass-act, body.is-present .other-legal-label { font-size:14px; }
+  body.is-present input.f, body.is-present textarea.f, body.is-present select.f { font-size:18px; padding:13px 15px; }
+  body.is-present .share .big { font-size:54px; }
+  body.is-present .share .formula::after {
+    content:'内容来源构成，不代表违规概率'; display:block; margin-top:10px;
+    font-family:var(--sans); font-size:14px; color:var(--muted);
+  }
+  body.is-present .admission-scope {
+    margin-top:12px; padding:10px 12px; border:2px solid var(--line-strong);
+    border-radius:8px; color:var(--muted); font-weight:700;
+  }
+  body.is-present .review-desk {
+    padding:22px; border-width:2px; margin-bottom:18px;
+  }
+  body.is-present .review-desk-head h3 { font-size:24px; }
+  body.is-present .review-desk-head p { font-size:16px; }
+  body.is-present .review-focus, body.is-present .review-doc-meta,
+  body.is-present .review-pending { font-size:14px; }
+  body.is-present .review-output { border-width:2px; }
+  body.is-present .revision-brief { border-width:2px; padding:18px 20px; }
+  body.is-present .revision-brief h3 { font-size:22px; }
+  body.is-present .revision-brief p { font-size:17px; }
+  body.is-present .revision-brief .meta { font-size:14px; }
+  body.is-present .editor-workspace { border-width:2px; }
+  body.is-present .editor-canvas { padding:18px; }
+  body.is-present .editor-canvas textarea.f { min-height:430px; font-size:18px; }
+  body.is-present .editor-help, body.is-present .editor-issues-head span,
+  body.is-present .editor-issue-meta, body.is-present .editor-issue-detail,
+  body.is-present .editor-suggestion, body.is-present .editor-applied { font-size:14px; }
+  body.is-present .editor-issues { padding:16px; max-height:590px; border-left-width:2px; }
+  body.is-present .editor-issues-head strong { font-size:18px; }
+  body.is-present .editor-issue { padding:14px; border-width:2px; border-left-width:5px; }
+  body.is-present .editor-issue-title { font-size:16px; }
+  body.is-present .editor-issue-snippet { font-size:15px; }
+  body.is-present .editor-issue-actions .btn { padding:8px 12px; font-size:14px; }
+  body.is-present details.other-actions { margin-top:14px; border-top:2px solid var(--line); padding-top:12px; }
+  body.is-present details.other-actions summary { color:var(--muted); cursor:pointer; font-size:14px; font-weight:700; }
+  body.is-present details.other-actions .actions-bar { margin-top:12px; }
+  .ms-tag { display:none; }
+  body.is-present .ms { padding:14px; border-width:2px; margin-bottom:10px; }
+  body.is-present .ms .t { font-size:17px; font-weight:700; }
+  body.is-present .ms .s { font-size:14px; }
+  body.is-present .ms-tag { display:inline-block; margin-left:7px; padding:2px 7px; border-radius:99px; background:var(--accent-soft); color:var(--accent-deep); font-size:14px; }
+  body.is-present .rail .step.now::after { font-size:14px; top:-14px; }
+  body.is-present[data-display="projector"] .card.warn,
+  body.is-present[data-display="projector"] .card.block,
+  body.is-present[data-display="projector"] .card.ok,
+  body.is-present[data-display="projector"] .pass.live,
+  body.is-present[data-display="projector"] .signoff,
+  body.is-present[data-display="projector"] .signoff.hot { background-image:none; }
+
+  @media (max-width:1599px) {
+    body.is-present main { grid-template-columns:minmax(0,var(--present-stage-max)); }
+    body.is-present .present-summary { display:flex; }
+    body.is-present aside.side {
+      position:fixed; inset:0 0 0 auto; z-index:60; width:min(430px,94vw); max-height:none;
+      border:0; border-left:2px solid var(--line-strong); border-radius:0; padding:24px;
+      transform:translateX(102%); transition:transform .18s ease; background:var(--panel);
+    }
+    body.is-present aside.side .present-drawer-tools {
+      display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;
+    }
+    body.is-present.present-evidence-open aside.side { transform:translateX(0); }
+  }
+  @media (max-width:1179px) {
+    body.is-present header.topbar { padding:10px 16px; }
+    body.is-present .brand .sub { display:none; }
+    body.is-present .present-mode-badge { display:none; }
+    body.is-present main { padding:16px; }
+    body.is-present .rail { flex-wrap:wrap; }
+    body.is-present .rail .step { flex:1 1 calc(33.333% - 8px); }
+    body.is-present .guide-item { padding:14px 16px; min-height:132px; }
+    body.is-present .guide-item strong { font-size:19px; }
+  }
+  @media (max-width:860px) {
+    .setup-display, .guide-flow { grid-template-columns:1fr; }
+    .guide-item + .guide-item { border-left:0; border-top:2px solid var(--line-strong); }
+  }
+  @media (prefers-reduced-motion:reduce) {
+    body.is-present *, body.is-present *::before, body.is-present *::after {
+      scroll-behavior:auto !important; transition-duration:.001ms !important; animation-duration:.001ms !important;
+    }
+  }
 </style>
 </head>
 <body>
@@ -372,16 +801,58 @@ export function renderWorkbench(): string {
     <div class="sub">county media · production &amp; gatekeeping</div>
   </div>
   <span class="demo-badge">模拟 / 脱敏素材</span>
+  <button class="btn present-launch" id="present-open" type="button">演示模式</button>
+  <div class="present-controls" aria-label="演示显示控制">
+    <span class="present-mode-badge">引导演示模式 · 模拟 / 脱敏素材</span>
+    <div class="display-switch" aria-label="显示档">
+      <button type="button" data-display="projector" aria-pressed="true">低清投影</button>
+      <button type="button" data-display="led" aria-pressed="false">LED 大屏</button>
+    </div>
+    <button class="btn" id="present-fullscreen" type="button">全屏</button>
+    <button class="btn" id="present-exit" type="button">退出演示</button>
+  </div>
   <div class="roles">
     <span class="lbl">当前身份</span>
     <button class="role-btn" data-role="editor" aria-pressed="true">编辑 / 记者</button>
     <button class="role-btn" data-role="department-head" aria-pressed="false">部门主任</button>
     <button class="role-btn" data-role="supervising-leader" aria-pressed="false">分管领导</button>
+    <span class="visually-hidden" id="role-switch-status" aria-live="polite"></span>
   </div>
 </header>
 
+<div class="present-modal" id="present-modal" hidden>
+  <section class="present-dialog" role="dialog" aria-modal="true" aria-labelledby="present-dialog-title">
+    <div class="present-dialog-head">
+      <div>
+        <h2 id="present-dialog-title">准备三分钟引导演示</h2>
+        <p>先选择会场显示档，再重建三组准入样例。正式计时从准备好的投料页开始。</p>
+      </div>
+      <button class="icon-btn" id="present-close" type="button" aria-label="关闭演示准备">×</button>
+    </div>
+    <div class="setup-display" aria-label="选择显示档">
+      <button class="setup-choice" type="button" data-setup-display="projector" aria-pressed="true">
+        <strong>低清投影（推荐）</strong>
+        <span>新闻纸浅底、深墨文字、2px 关键边界，适合泛白或对焦一般的投影。</span>
+      </button>
+      <button class="setup-choice" type="button" data-setup-display="led" aria-pressed="false">
+        <strong>LED 大屏</strong>
+        <span>高对比暗色值班台，适合黑位与亮度可靠的大屏。</span>
+      </button>
+    </div>
+    <div class="setup-warning"><strong>会清空当前全部稿件。</strong>重建后只保留“要理由 / 硬拦 / 公器私用”三组对比样例；主通稿仍由台上现场投料。</div>
+    <div class="setup-status" id="present-setup-status" aria-live="polite">尚未准备演示样例。</div>
+    <div class="setup-actions">
+      <button class="btn warn" id="present-seed" type="button">重建三组样例</button>
+      <button class="btn primary" id="present-enter" type="button" disabled>进入引导演示</button>
+    </div>
+  </section>
+</div>
+
+<button class="present-scrim" id="present-scrim" type="button" aria-label="关闭演示抽屉"></button>
+
 <main>
   <aside class="list">
+    <div class="present-drawer-tools"><h2>切换稿件</h2><button class="icon-btn" id="present-list-close" type="button" aria-label="关闭稿件列表">×</button></div>
     <h2 class="hd">稿件</h2>
     <button class="btn wide" id="new-btn">＋ 新建稿件</button>
     <button class="btn wide" id="seed-btn" style="margin-top:6px">演示准备（重置并建样例）</button>
@@ -389,11 +860,15 @@ export function renderWorkbench(): string {
   </aside>
 
   <section class="stage">
+    <div class="present-warning" id="present-warning" hidden></div>
+    <div class="present-summary" id="present-summary"></div>
+    <div class="present-guide" id="present-guide"></div>
     <div class="rail" id="rail"></div>
     <div id="panel"></div>
   </section>
 
   <aside class="side">
+    <div class="present-drawer-tools"><h2>AI 参与度与完整留痕</h2><button class="icon-btn" id="present-evidence-close" type="button" aria-label="关闭证据栏">×</button></div>
     <h2 class="hd">AI 参与度</h2>
     <div id="share"></div>
     <h2 class="hd">留痕</h2>
@@ -436,9 +911,55 @@ export function renderWorkbench(): string {
     'signed':'签发'
   };
 
-  var state = { list:[], view:null, role:'editor', currentId:null, prevShare:null, editing:null, error:'', contrast:null, showContrast:false };
+  var query = new URLSearchParams(window.location.search);
+  var initialDisplay = query.get('display') === 'led' ? 'led' : 'projector';
+  var storedMainId = null;
+  try { storedMainId = sessionStorage.getItem('gatekeeper-presentation-main-id'); } catch (error) { /* storage is optional */ }
+
+  var state = {
+    list:[], view:null, role:'editor', currentId:null, prevShare:null, editing:null,
+    editDrafts:{}, appliedSuggestions:{}, activeAnnotation:null,
+    error:'', contrast:null, showContrast:false,
+    present:query.get('present') === '1', display:initialDisplay, setupDisplay:'projector',
+    presentPrepared:false, presentFeedback:null, demoFixtures:null, demoFixturesError:'', presentationMainId:storedMainId,
+    roleAnimationTimer:null
+  };
 
   var $ = function (id) { return document.getElementById(id); };
+
+  function applyPresentationShell() {
+    document.body.classList.toggle('is-present', state.present);
+    document.body.setAttribute('data-display', state.display);
+    document.body.classList.remove('present-list-open', 'present-evidence-open');
+    Array.prototype.forEach.call(document.querySelectorAll('button[data-display]'), function (btn) {
+      btn.setAttribute('aria-pressed', String(btn.getAttribute('data-display') === state.display));
+    });
+    document.title = state.present ? '把关人 · 引导演示模式' : '把关人 · 稿件工作台';
+  }
+
+  function writePresentationUrl() {
+    var next = new URL(window.location.href);
+    if (state.present) {
+      next.searchParams.set('present', '1');
+      next.searchParams.set('display', state.display);
+    } else {
+      next.searchParams.delete('present');
+      next.searchParams.delete('display');
+    }
+    window.history.replaceState({}, '', next.pathname + next.search + next.hash);
+  }
+
+  function setPresentationDisplay(display) {
+    state.display = display === 'led' ? 'led' : 'projector';
+    applyPresentationShell();
+    writePresentationUrl();
+  }
+
+  function closeDrawers() {
+    document.body.classList.remove('present-list-open', 'present-evidence-open');
+  }
+
+  applyPresentationShell();
 
   function esc(value) {
     return String(value == null ? '' : value)
@@ -466,16 +987,86 @@ export function renderWorkbench(): string {
   function loadList() {
     return api('/api/workbench').then(function (data) {
       state.list = data.items || [];
+      recoverPresentationMain();
       renderList();
+      checkPresentationReadiness();
     });
+  }
+
+  function loadDemoFixtures() {
+    return api('/api/demo/fixtures').then(function (data) {
+      state.demoFixtures = data;
+      state.demoFixturesError = '';
+      recoverPresentationMain();
+      renderList();
+      checkPresentationReadiness();
+      return data;
+    }).catch(function (error) {
+      state.demoFixturesError = error.message;
+      checkPresentationReadiness();
+      return null;
+    });
+  }
+
+  function compareTitles() {
+    return state.demoFixtures && state.demoFixtures.cases
+      ? state.demoFixtures.cases.map(function (item) { return item.title; }) : [];
+  }
+
+  function recoverPresentationMain() {
+    if (state.presentationMainId && state.list.some(function (item) { return item.id === state.presentationMainId; })) return;
+    var title = state.demoFixtures && state.demoFixtures.mainNotice && state.demoFixtures.mainNotice.title;
+    if (!title) return;
+    var match = state.list.find(function (item) { return item.title === title; });
+    if (!match) {
+      state.presentationMainId = null;
+      try { sessionStorage.removeItem('gatekeeper-presentation-main-id'); } catch (error) { /* storage is optional */ }
+      return;
+    }
+    state.presentationMainId = match.id;
+    try { sessionStorage.setItem('gatekeeper-presentation-main-id', match.id); } catch (error) { /* storage is optional */ }
+  }
+
+  function demoSamplesReady() {
+    var titles = compareTitles();
+    if (titles.length !== 3) return false;
+    return titles.every(function (title) {
+      return state.list.some(function (item) { return item.title === title; });
+    });
+  }
+
+  function checkPresentationReadiness() {
+    var warning = $('present-warning');
+    if (!warning || !state.present) return;
+    if (state.demoFixturesError) {
+      warning.hidden = false;
+      warning.textContent = '演示素材接口不可用，页面不会自动清空数据。请退出演示并检查当前是否为 demo 环境。';
+      return;
+    }
+    if (!state.demoFixtures) {
+      warning.hidden = true;
+      warning.textContent = '';
+      return;
+    }
+    if (demoSamplesReady()) {
+      warning.hidden = true;
+      warning.textContent = '';
+      return;
+    }
+    warning.hidden = false;
+    warning.textContent = '演示样例未完整准备。页面不会自动清空数据；请退出演示后运行“演示准备”。';
   }
 
   function openManuscript(id) {
     state.currentId = id;
     state.editing = null;
+    state.editDrafts = {};
+    state.appliedSuggestions = {};
+    state.activeAnnotation = null;
     state.error = '';
     state.showContrast = false;
     state.contrast = null;
+    state.presentFeedback = null;
     return api('/api/workbench/' + encodeURIComponent(id)).then(function (view) {
       applyView(view);
     });
@@ -497,7 +1088,12 @@ export function renderWorkbench(): string {
   function showNew() {
     state.currentId = null;
     state.view = null;
+    state.editing = null;
+    state.editDrafts = {};
+    state.appliedSuggestions = {};
+    state.activeAnnotation = null;
     state.error = '';
+    state.presentFeedback = null;
     render();
     renderList();
   }
@@ -508,6 +1104,9 @@ export function renderWorkbench(): string {
     renderRail();
     renderPanel();
     renderSide();
+    renderPresentationGuide();
+    renderPresentationSummary();
+    renderRoleHints();
   }
 
   function renderList() {
@@ -516,10 +1115,22 @@ export function renderWorkbench(): string {
       host.innerHTML = '<div class="empty">还没有稿件。点上面新建，粘贴一份通稿开始。</div>';
       return;
     }
-    host.innerHTML = state.list.map(function (item) {
+    var ordered = state.list.slice();
+    if (state.present && state.presentationMainId) {
+      ordered.sort(function (a, b) {
+        if (a.id === state.presentationMainId) return -1;
+        if (b.id === state.presentationMainId) return 1;
+        return 0;
+      });
+    }
+    var samples = compareTitles();
+    host.innerHTML = ordered.map(function (item) {
       var current = item.id === state.currentId ? 'true' : 'false';
+      var tag = item.id === state.presentationMainId
+        ? '<span class="ms-tag">演示主线</span>'
+        : (samples.indexOf(item.title) >= 0 ? '<span class="ms-tag">对比样例</span>' : '');
       return '<div class="ms" data-id="' + esc(item.id) + '" aria-current="' + current + '">' +
-        '<div class="t">' + esc(item.title) + '</div>' +
+        '<div class="t">' + esc(item.title) + tag + '</div>' +
         '<div class="s">' + esc(statusLabel(item.status)) + ' · ' + clock(item.updatedAt) + '</div>' +
         '</div>';
     }).join('');
@@ -532,6 +1143,153 @@ export function renderWorkbench(): string {
     'signed':'已签发', 'published':'已发布'
   };
   function statusLabel(status) { return STATUS_LABEL[status] || status; }
+
+  function expectedRole(view) {
+    return view && view.waitingOn ? view.waitingOn : null;
+  }
+
+  function recommendedAction(view) {
+    if (!view) return null;
+    var owner = expectedRole(view) || state.role;
+    var actions = view.actions[owner] || [];
+    return actions.find(function (action) { return action.kind === 'advance'; }) || actions[0] || null;
+  }
+
+  function presentationCopy(view) {
+    if (!view) {
+      return {
+        gate:'① 素材入口', scope:'现场投料',
+        goal:'录入一份模拟通稿', goalNote:'让观众先看到县级台每天真实处理的素材。',
+        judgement:'尚未进入准入判断', judgementNote:'系统还没有调用模型，也没有产生内容。',
+        next:'填入示例通稿并提交', nextNote:'提交后先判断这次模型调用该不该发生。'
+      };
+    }
+
+    var action = recommendedAction(view);
+    var owner = expectedRole(view);
+    var next = action ? action.label : (view.manuscript.status === 'published' ? '流程已完成' : '查看当前结果');
+    if (owner && owner !== state.role) next = '切换为' + (ROLE_LABEL[owner] || owner) + '，再' + next;
+
+    if (state.showContrast) {
+      return {
+        gate:'⑥ 之后 · 对照收口', scope:'同一份通稿，减去把关',
+        goal:'回答“关掉把关人会怎样”', goalNote:'对照使用同一份真实产物，不重跑、不模拟。',
+        judgement:'问题会直接进入播出流程', judgementNote:'来源、责任与过程留痕同时消失。',
+        next:'用生产过程完成收口', nextNote:'私有化与成品审核都看不见这一条责任链。'
+      };
+    }
+
+    if (view.stage === 'source' || view.stage === 'admission') {
+      var decision = view.admission.decision;
+      var verdict = decision === 'blocked' ? '硬拦：模型调用 0 次'
+                  : decision === 'reason-required' ? '涉敏题材：先补选题依据'
+                  : view.admission.offDutyUse ? '允许调用，但标记非业务用途'
+                  : '常规业务：允许进入生成';
+      var note = decision === 'blocked' ? '输入侧拦掉，0 tokens，也没有违规内容产生。'
+               : decision === 'reason-required' ? '广电日常题材不一刀切，依据会进入责任留痕。'
+               : '这次调用已经记入审计，但还没有获得播出许可。';
+      return {
+        gate:'② 入口准入', scope:'允许模型处理 ≠ 允许播出',
+        goal:'判断这次调用该不该发生', goalNote:'判定调用目的和业务边界，不是简单敏感词过滤。',
+        judgement:verdict, judgementNote:note,
+        next:next, nextNote:owner ? '下一责任角色：' + (ROLE_LABEL[owner] || owner) : '可切换对比稿件查看三档结果。'
+      };
+    }
+
+    if (view.stage === 'generate') {
+      return {
+        gate:'③ 稿件生成', scope:'统一网关 · 全量审计',
+        goal:'生成两个播出产物', goalNote:'播报稿与短视频文案都必须经过把关人网关。',
+        judgement:view.artifacts.length ? '产物已生成并逐句记来源' : '入口已准入，可以调用模型',
+        judgementNote:view.artifacts.length ? view.segmentCount + ' 句话已经进入来源追溯。' : '业务代码拿不到模型密钥，因此绕不过准入。',
+        next:next, nextNote:'右侧 AI 参与度会随人工改稿重新计算。'
+      };
+    }
+
+    if (view.stage === 'preflight') {
+      return {
+        gate:'④ 输出预检', scope:'标注给人，不替人终审',
+        goal:'找出播出前必须处理的问题', goalNote:'禁用词、数字不一致与规范问题都落到具体句子。',
+        judgement:'拦下 ' + view.preflight.block + ' · 标红 ' + view.preflight.redact + ' · 留痕 ' + view.preflight.flag,
+        judgementNote:'标红是待人工复核，预检不会擅自改稿。',
+        next:next, nextNote:'改稿后 AI 参与度与预检结论会一起更新。'
+      };
+    }
+
+    if (view.manuscript.status === 'revision') {
+      return {
+        gate:'⑤ 三审流转', scope:'退回理由必须落实到新版本',
+        goal:'按主管意见修改播出稿', goalNote:'问题标注与退回理由常驻，记者可手改或应用确定性建议。',
+        judgement:view.revisionReady ? '已保存实际修改，可以重新预检' : '已退回，等待记者保存修改',
+        judgementNote:view.revisionReady ? '新版本及操作者已经写入责任留痕。' : '系统不会把“切回记者”误当成已经完成改稿。',
+        next:next, nextNote:view.revisionReady ? '重新预检后从初审开始新一轮。' : '至少保存一处实际修改后才可继续。'
+      };
+    }
+
+    if (view.stage === 'review') {
+      return {
+        gate:'⑤ 三审流转', scope:'合并的是人，不是责任',
+        goal:'按三审三校完成责任流转', goalNote:'一校看文字，二校看事实，三校看导向与整体。',
+        judgement:'当前状态：' + view.statusLabel, judgementNote:owner ? '当前责任角色：' + (ROLE_LABEL[owner] || owner) : '审核链已经完成。',
+        next:next, nextNote:'每次通过或退回都会写入责任链。'
+      };
+    }
+
+    var signed = view.signOff ? '签发人：' + view.signOff.actor : '等待最终签发';
+    return {
+      gate:'⑥ AI 参与度追溯', scope:'来源、规则、责任三条链收口',
+      goal:'回答哪句话由谁写、谁放行', goalNote:'成品审核看不到生产过程，这一屏专门回答过程问题。',
+      judgement:signed, judgementNote:view.aiShare == null ? 'AI 参与度尚未测量。' : '当前 AI 参与度 ' + pct(view.aiShare) + '，表示内容来源构成。',
+      next:'打开对照组完成收口', nextNote:'同一份通稿，减去把关，直接比较会失去什么。'
+    };
+  }
+
+  function renderPresentationGuide() {
+    var host = $('present-guide');
+    if (!host) return;
+    if (!state.present) { host.innerHTML = ''; return; }
+    var copy = presentationCopy(state.view);
+    var canReturn = state.presentationMainId && state.currentId && state.currentId !== state.presentationMainId &&
+      state.list.some(function (item) { return item.id === state.presentationMainId; });
+    var feedback = state.presentFeedback
+      ? '<div class="result-card" aria-live="polite"><div class="mark">✓</div><div><strong>' +
+          esc(state.presentFeedback.title) + '</strong><span>' + esc(state.presentFeedback.detail) + '</span></div></div>'
+      : '';
+    host.innerHTML =
+      '<div class="guide-head"><span class="gate">' + esc(copy.gate) + '</span>' +
+        '<button class="btn" type="button" data-open-list="1">切换稿件</button>' +
+        '<span class="scope">' + esc(copy.scope) + '</span></div>' +
+      '<div class="guide-flow">' +
+        '<article class="guide-item"><span class="k">当前目标</span><strong>' + esc(copy.goal) + '</strong><p>' + esc(copy.goalNote) + '</p></article>' +
+        '<article class="guide-item"><span class="k">系统判断</span><strong>' + esc(copy.judgement) + '</strong><p>' + esc(copy.judgementNote) + '</p></article>' +
+        '<article class="guide-item next"><span class="k">允许的下一步</span><strong>' + esc(copy.next) + '</strong><p>' + esc(copy.nextNote) + '</p></article>' +
+      '</div>' +
+      (canReturn ? '<div class="guide-return"><button class="btn primary" id="present-return-main" type="button">回到主通稿，继续生成</button></div>' : '') +
+      feedback;
+  }
+
+  function renderPresentationSummary() {
+    var host = $('present-summary');
+    if (!host) return;
+    if (!state.present) { host.innerHTML = ''; return; }
+    var view = state.view;
+    var metric = view && view.aiShare != null ? pct(view.aiShare) : '未测量';
+    var latest = view && view.trace && view.trace.length
+      ? view.trace.slice(-3).reverse().map(function (event) { return TRACE_LABEL[event.kind] || event.kind; }).join(' · ')
+      : '还没有留痕';
+    host.innerHTML = '<div><div class="metric">' + esc(metric) + '</div><div class="copy"><b>AI 参与度</b><br>内容来源构成，不代表违规概率</div></div>' +
+      '<div class="copy"><b>最近留痕</b><br>' + esc(latest) + '</div>' +
+      '<button class="btn" type="button" data-open-evidence="1">查看完整留痕</button>';
+  }
+
+  function renderRoleHints() {
+    Array.prototype.forEach.call(document.querySelectorAll('.role-btn'), function (btn) {
+      btn.classList.remove('role-needed');
+    });
+    if (!state.present || !state.view || !state.view.waitingOn) return;
+    var needed = document.querySelector('.role-btn[data-role="' + state.view.waitingOn + '"]');
+    if (needed) needed.classList.add('role-needed');
+  }
 
   function renderRail() {
     var activeIndex = state.view ? indexOfStage(state.view.stage) : 0;
@@ -550,11 +1308,13 @@ export function renderWorkbench(): string {
     if (!state.view) { host.innerHTML = newForm(); return; }
     var view = state.view;
     var parts = [];
+    if (state.present && view.stage !== 'trace') parts.push(actionsBar(view));
     if (view.stage === 'source' || view.stage === 'admission') parts.push(admissionPanel(view));
     if (view.stage === 'generate' || view.stage === 'preflight') parts.push(productionPanel(view));
-    if (view.stage === 'review') parts.push(reviewPanel(view));
+    if (view.manuscript.status === 'revision') parts.push(revisionPanel(view));
+    else if (view.stage === 'review') parts.push(reviewPanel(view));
     if (view.stage === 'trace') parts.push(tracePanel(view));
-    parts.push(actionsBar(view));
+    if (!state.present || view.stage === 'trace') parts.push(actionsBar(view));
     host.innerHTML = parts.join('');
   }
 
@@ -608,11 +1368,25 @@ export function renderWorkbench(): string {
         return '<span class="chip">' + esc(hit.ruleId) + ' · ' + esc(hit.evidence) + '</span>';
       }).join('') + '</div>';
     }
+    out += '<div class="admission-scope">允许模型处理，不代表允许播出；稿件仍需经过输出预检与三审三校。</div>';
     out += '</div>';
 
     out += '<div class="card"><h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);font-weight:500">原通稿</h4>' +
       '<div class="doc src"><div class="body">' + esc(view.manuscript.sourceText) + '</div></div></div>';
     return out;
+  }
+
+  function revisionPanel(view) {
+    var returned = view.reviews.slice().reverse().find(function (record) {
+      return record.decision === 'changes-requested' || record.decision === 'rejected';
+    });
+    var brief = '<section class="revision-brief" aria-labelledby="revision-title">' +
+      '<div class="mark" aria-hidden="true">↩</div><div>' +
+      '<h3 id="revision-title">主管退回意见</h3>' +
+      '<p>' + esc(returned && returned.reason ? returned.reason : '请按审核意见复核并修改稿件。') + '</p>' +
+      '<div class="meta">' + esc(returned ? returned.actor + ' · 第 ' + returned.round + ' 轮' : '等待修改') +
+      (view.revisionReady ? ' · 已保存新版本' : ' · 尚未保存实际修改') + '</div></div></section>';
+    return brief + productionPanel(view);
   }
 
   function productionPanel(view) {
@@ -622,12 +1396,15 @@ export function renderWorkbench(): string {
         '</div>';
     }
 
-    var showAnnotations = view.stage === 'preflight';
+    var isRevision = view.manuscript.status === 'revision';
+    var showAnnotations = view.stage === 'preflight' || isRevision;
     var out = '';
 
     if (showAnnotations) {
-      out += '<div class="card"><h3>④ 输出预检</h3>' +
-        '<p>预检的产出是<strong>标注</strong>，不是闸门。除入口那一层的硬拦外，一律标出来让人决定。</p>' +
+      out += '<div class="card"><h3>' + (isRevision ? '退回修改 · 问题常驻' : '④ 输出预检') + '</h3>' +
+        '<p>' + (isRevision
+          ? '逐条处理主管意见与系统标注。可以直接手改；确定性问题也可以应用建议，保存后重新计算标注与 AI 参与度。'
+          : '预检的产出是<strong>标注</strong>，不是闸门。除入口那一层的硬拦外，一律标出来让人决定。') + '</p>' +
         '<div class="evidence">' +
           '<span>拦下不让播 <b>' + view.preflight.block + '</b></span>' +
           '<span>标红待复核 <b>' + view.preflight.redact + '</b></span>' +
@@ -641,12 +1418,12 @@ export function renderWorkbench(): string {
       }).join('') +
       '</div>';
 
-    out += '<div class="cols">' +
+    out += '<div class="cols' + (state.editing ? ' editing-open' : '') + '">' +
       '<div class="doc src"><h4>原通稿</h4><div class="body">' + esc(view.manuscript.sourceText) + '</div></div>' +
       '<div>' + view.artifacts.map(function (item) { return artifactBlock(item, showAnnotations); }).join('') + '</div>' +
       '</div>';
 
-    if (showAnnotations) {
+    if (showAnnotations && !state.editing) {
       var all = [];
       view.artifacts.forEach(function (item) {
         item.annotations.forEach(function (annotation) { all.push(annotation); });
@@ -661,23 +1438,87 @@ export function renderWorkbench(): string {
 
   var KIND_LABEL = { 'broadcast-script':'播报稿', 'short-video-copy':'短视频文案', 'source':'原文' };
 
+  function rawArtifactText(item) {
+    return item.segments.length > 0
+      ? item.segments.map(function (segment) { return segment.text; }).join('\\n')
+      : item.artifact.content;
+  }
+
+  function draftFor(item) {
+    var id = item.artifact.id;
+    if (!Object.prototype.hasOwnProperty.call(state.editDrafts, id)) {
+      state.editDrafts[id] = rawArtifactText(item);
+    }
+    return state.editDrafts[id];
+  }
+
+  function issueSnippet(item, annotation) {
+    var segment = item.segments.find(function (candidate) {
+      return candidate.ordinal === annotation.segmentOrdinal;
+    });
+    if (!segment) return '第 ' + (annotation.segmentOrdinal + 1) + ' 句';
+    return markSentence(segment.text, [annotation]);
+  }
+
+  function editorIssueCard(item, annotation, index) {
+    var applied = Boolean(state.appliedSuggestions[annotation.id]);
+    var active = state.activeAnnotation === annotation.id;
+    return '<article class="editor-issue a-' + esc(annotation.action) +
+      (applied ? ' is-applied' : '') + (active ? ' is-active' : '') +
+      '" id="issue-' + esc(annotation.id) + '">' +
+      '<div class="editor-issue-head"><span class="editor-issue-num">' + (index + 1) + '</span><div>' +
+      '<div class="editor-issue-title">' + esc(annotation.title) + '</div>' +
+      '<div class="editor-issue-meta">第 ' + (annotation.segmentOrdinal + 1) + ' 句 · ' +
+        esc(annotation.tier) + ' · ' + esc(ACTION_LABEL[annotation.action] || annotation.action) + '</div>' +
+      '</div></div>' +
+      '<div class="editor-issue-snippet">' + issueSnippet(item, annotation) + '</div>' +
+      '<div class="editor-issue-detail">' + esc(annotation.detail) + '</div>' +
+      (annotation.suggestion
+        ? '<div class="editor-suggestion"><strong>建议：</strong>' + esc(annotation.suggestion) + '</div>'
+        : '<div class="editor-suggestion"><strong>需要人工判断：</strong>系统不给自动结论。</div>') +
+      '<div class="editor-issue-actions">' +
+        '<button class="btn" type="button" data-locate-annotation="' + esc(annotation.id) +
+          '" data-artifact="' + esc(item.artifact.id) + '">定位到正文</button>' +
+        (annotation.suggestion
+          ? '<button class="btn primary" type="button" data-apply-suggestion="' + esc(annotation.id) +
+              '" data-artifact="' + esc(item.artifact.id) + '"' + (applied ? ' disabled' : '') + '>' +
+              (applied ? '已应用' : '应用建议') + '</button>'
+          : '') +
+        (applied ? '<span class="editor-applied">已写入草稿，保存后重新分析</span>' : '') +
+      '</div></article>';
+  }
+
   function artifactBlock(item, showAnnotations) {
     var artifact = item.artifact;
     var editing = state.editing === artifact.id;
+    var canEdit = state.role === 'editor' && ['generated', 'preflight', 'revision'].indexOf(state.view.manuscript.status) !== -1;
     var head = '<h4><span>' + esc(KIND_LABEL[artifact.kind] || artifact.kind) + '</span>' +
       (editing
         ? '<span><button class="btn" data-save="' + esc(artifact.id) + '">保存改动</button> ' +
           '<button class="btn" data-cancel="1">取消</button></span>'
-        : '<span><button class="btn" data-edit="' + esc(artifact.id) + '">改稿</button></span>') +
+        : canEdit
+          ? '<span><button class="btn" data-edit="' + esc(artifact.id) + '">改稿</button></span>'
+          : '<span class="hint">仅编辑 / 记者可改稿</span>') +
       '</h4>';
 
     if (editing) {
-      var raw = item.segments.length > 0
-        ? item.segments.map(function (segment) { return segment.text; }).join('\\n')
-        : artifact.content;
+      var raw = draftFor(item);
+      var issues = item.annotations || [];
       return '<div class="doc">' + head +
-        '<textarea class="f" id="edit-' + esc(artifact.id) + '" style="min-height:220px">' + esc(raw) + '</textarea>' +
-        '<div class="hint" style="margin-top:8px">一行一句。保存后由系统逐句比对上一版，自动判定哪几句被改过——句子来源不由填报的人决定。</div>' +
+        '<div class="editor-workspace">' +
+          '<div class="editor-canvas">' +
+            '<textarea class="f" id="edit-' + esc(artifact.id) + '" data-draft-artifact="' + esc(artifact.id) +
+              '" aria-label="编辑' + esc(KIND_LABEL[artifact.kind] || artifact.kind) + '">' + esc(raw) + '</textarea>' +
+            '<div class="editor-help"><span>可以直接手动修改；点击右侧问题会选中对应文字。</span>' +
+              '<span>一行一句 · 保存后逐句重算来源与标注</span></div>' +
+          '</div>' +
+          '<aside class="editor-issues" aria-label="AI 预检问题">' +
+            '<div class="editor-issues-head"><strong>待处理问题</strong><span>' + issues.length + ' 条</span></div>' +
+            (issues.length
+              ? issues.map(function (annotation, index) { return editorIssueCard(item, annotation, index); }).join('')
+              : '<div class="editor-empty">当前没有系统标注。仍可手动修改并保存。</div>') +
+          '</aside>' +
+        '</div>' +
         '</div>';
     }
 
@@ -751,8 +1592,14 @@ export function renderWorkbench(): string {
     }, []);
     var rounds = groupRounds(view.reviews, view.manuscript.reviewRound);
     var lastRound = rounds.length - 1;
+    var currentPass = null;
+    for (var passIndex = 0; passIndex < PASSES.length; passIndex += 1) {
+      if (PASSES[passIndex].stage === view.waitingOn) currentPass = PASSES[passIndex];
+    }
+    if (!currentPass) currentPass = PASSES[PASSES.length - 1];
 
-    var out = '<div class="card"><h3>⑤ 三审三校流转</h3>' +
+    var out = reviewDesk(view, currentPass) +
+      '<div class="card"><h3>⑤ 三审三校流转</h3>' +
       '<p>我们没有发明新流程。把三审三校里<strong>机械的那部分</strong>自动化了，' +
       '<strong>判断的那部分</strong>留给人，并且让全程可追溯、责任到人。</p>' +
       '<p class="hint" style="margin:0">一个人可以同时持有多个角色（县级台常常只有两个人），' +
@@ -771,6 +1618,48 @@ export function renderWorkbench(): string {
 
     out += countersignPanel(view);
     return out;
+  }
+
+  function reviewDesk(view, currentPass) {
+    var currentLabel = currentPass.label + ' · ' + (ROLE_LABEL[currentPass.stage] || currentPass.stage);
+    var outputs = view.artifacts.map(function (item) {
+      return reviewArtifactBlock(item, currentPass);
+    }).join('');
+    return '<section class="review-desk" aria-labelledby="review-desk-title">' +
+      '<div class="review-desk-head"><div><h3 id="review-desk-title">审查台 · ' + esc(currentLabel) + '</h3>' +
+        '<p>先审播出内容，再决定流程。系统标注只提供线索，最终判断由当前责任人完成。</p></div>' +
+        '<span class="review-focus">当前校次</span></div>' +
+      '<div class="review-docs">' +
+        '<div class="review-outputs">' + outputs + '</div>' +
+        '<div class="doc src review-source"><h4>原通稿 · 事实对照</h4><div class="body">' +
+          esc(view.manuscript.sourceText) + '</div></div>' +
+      '</div></section>';
+  }
+
+  function reviewArtifactBlock(item, currentPass) {
+    var artifact = item.artifact;
+    var currentHits = item.annotations.filter(function (annotation) {
+      return annotation.proofreadPass === currentPass.pass;
+    });
+    var body = item.segments.length > 0
+      ? item.segments.map(function (segment) {
+          var segmentHits = currentHits.filter(function (annotation) {
+            return annotation.segmentOrdinal === segment.ordinal && annotation.end > annotation.start;
+          });
+          return '<span class="sent o-' + esc(segment.origin) + '" title="' +
+            esc(ORIGIN_LABEL[segment.origin] || segment.origin) + '">' +
+            markSentence(segment.text, segmentHits) + '</span>';
+        }).join('')
+      : esc(artifact.content);
+    var pending = currentHits.length === 0
+      ? '<span>本校次没有系统标注，仍需按职责通读全文。</span>'
+      : '<strong>本校待核 ' + currentHits.length + ' 处：</strong>' + currentHits.map(function (annotation) {
+          return '<span class="mini a-' + esc(annotation.action) + '">' + esc(annotation.title) + '</span>';
+        }).join('');
+    return '<article class="doc review-output"><h4><span>' +
+      esc(KIND_LABEL[artifact.kind] || artifact.kind) + '</span><span class="review-doc-meta">' +
+      (currentHits.length ? '待核 ' + currentHits.length + ' 处' : '通读确认') + '</span></h4>' +
+      '<div class="body">' + body + '</div><div class="review-pending">' + pending + '</div></article>';
   }
 
   function countersignPanel(view) {
@@ -1127,17 +2016,40 @@ export function renderWorkbench(): string {
       var owner = view.waitingOn;
       return '<div class="card"><p style="margin:0">' +
         (owner
-          ? '这一步由<strong>' + esc(ROLE_LABEL[owner] || owner) + '</strong>处理。切换右上角身份即可继续。'
+          ? '下一步由<strong>' + esc(ROLE_LABEL[owner] || owner) + '</strong>处理。切换右上角身份即可继续。'
           : '「' + esc(view.statusLabel) + '」是终态，流程到此结束。') +
-        '</p></div>';
+        '</p>' +
+        (state.present && owner
+          ? '<div class="actions-bar"><button class="btn primary" type="button" data-guide-role="' + esc(owner) + '">切换为' + esc(ROLE_LABEL[owner] || owner) + '</button></div>'
+          : '') +
+        '</div>';
     }
-    var buttons = mine.map(function (transition) {
-      var cls = transition.kind === 'return' ? 'btn danger' : 'btn primary';
-      return '<button class="' + cls + '" data-to="' + esc(transition.to) + '"' +
-        ' data-reason="' + (transition.requiresReason ? '1' : '0') + '">' + esc(transition.label) + '</button>';
-    }).join('');
 
-    var reasonBox = mine.some(function (t) { return t.requiresReason; })
+    var actionButton = function (transition, primary) {
+      var cls = transition.kind === 'return' ? 'btn danger' : 'btn primary';
+      if (!primary && transition.kind !== 'return') cls = 'btn';
+      var needsSavedRevision = view.manuscript.status === 'revision' &&
+        transition.to === 'preflight' && !view.revisionReady;
+      return '<button class="' + cls + '" data-to="' + esc(transition.to) + '"' +
+        ' data-label="' + esc(transition.label) + '"' +
+        ' data-reason="' + (transition.requiresReason ? '1' : '0') + '"' +
+        (needsSavedRevision ? ' disabled title="请先实际修改并保存稿件"' : '') + '>' +
+        esc(transition.label) + '</button>';
+    };
+
+    var primary = mine.find(function (transition) { return transition.kind === 'advance'; }) || mine[0];
+    var others = mine.filter(function (transition) { return transition !== primary; });
+    var primaryButtons = actionButton(primary, true);
+    var otherButtons = others.map(function (transition) { return actionButton(transition, false); }).join('');
+
+    var reasonBox = function () {
+      return '<label class="f" style="margin-top:12px"><span>选题依据 / 退回理由（进审计）</span>' +
+        '<textarea class="f" id="reason" style="min-height:76px" placeholder="例：县应急管理局已授权发布，见 8 月 27 日通报"></textarea></label>';
+    };
+    var primaryReasonBox = primary.requiresReason ? reasonBox() : '';
+    var otherReasonBox = !primary.requiresReason && others.some(function (t) { return t.requiresReason; })
+      ? reasonBox() : '';
+    var legacyReasonBox = mine.some(function (t) { return t.requiresReason; })
       ? '<label class="f" style="margin-top:12px"><span>选题依据 / 退回理由（进审计）</span>' +
         '<textarea class="f" id="reason" style="min-height:76px" placeholder="例：县应急管理局已授权发布，见 8 月 27 日通报"></textarea></label>'
       : '';
@@ -1149,10 +2061,27 @@ export function renderWorkbench(): string {
         '</div>'
       : '';
 
-    return '<div class="card"><h2 class="hd" style="margin-top:0">下一步 · ' + esc(ROLE_LABEL[state.role]) + '</h2>' +
-      countersignBox +
-      reasonBox +
-      '<div class="actions-bar">' + buttons + '</div>' +
+    if (!state.present) {
+      return '<div class="card"><h2 class="hd" style="margin-top:0">下一步 · ' + esc(ROLE_LABEL[state.role]) + '</h2>' +
+        countersignBox + legacyReasonBox +
+        '<div class="actions-bar">' + mine.map(function (transition) { return actionButton(transition, transition.kind !== 'return'); }).join('') + '</div>' +
+        (view.manuscript.status === 'revision' && !view.revisionReady
+          ? '<div class="hint" style="margin-top:10px">请先修改并保存至少一处内容，再重新预检。</div>'
+          : '') +
+        (state.error ? '<div class="err">' + esc(state.error) + '</div>' : '') +
+        '</div>';
+    }
+
+    return '<div class="card present-action-card"><h2 class="hd" style="margin-top:0">推荐下一步 · ' + esc(ROLE_LABEL[state.role]) + '</h2>' +
+      countersignBox + primaryReasonBox +
+      '<div class="actions-bar">' + primaryButtons + '</div>' +
+      (view.manuscript.status === 'revision' && !view.revisionReady
+        ? '<div class="hint" style="margin-top:10px">先在下方修改并保存至少一处内容，重新预检才会启用。</div>'
+        : '') +
+      (others.length
+        ? '<details class="other-actions"><summary>其他合法操作（' + others.length + '）</summary>' +
+            otherReasonBox + '<div class="actions-bar">' + otherButtons + '</div></details>'
+        : '') +
       (state.error ? '<div class="err">' + esc(state.error) + '</div>' : '') +
       '</div>';
   }
@@ -1218,6 +2147,15 @@ export function renderWorkbench(): string {
 
   // ——————————————————— actions ———————————————————
 
+  function presentationFeedback(title, view, basis) {
+    var actor = ROLE_LABEL[state.role] || state.role;
+    var next = view && view.waitingOn ? '下一责任人：' + (ROLE_LABEL[view.waitingOn] || view.waitingOn) : '当前状态：' + (view ? view.statusLabel : '已更新');
+    return {
+      title:title,
+      detail:'操作者：' + actor + ' · ' + next + (basis ? ' · 依据：' + basis : '')
+    };
+  }
+
   function submitNew() {
     var payload = {
       title: $('nf-title').value.trim(),
@@ -1234,14 +2172,21 @@ export function renderWorkbench(): string {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload)
     }).then(function (data) {
-      return loadList().then(function () { return openManuscript(data.manuscript.id); });
+      if (state.present) {
+        state.presentationMainId = data.manuscript.id;
+        try { sessionStorage.setItem('gatekeeper-presentation-main-id', data.manuscript.id); } catch (error) { /* storage is optional */ }
+      }
+      return loadList().then(function () { return openManuscript(data.manuscript.id); }).then(function () {
+        state.presentFeedback = presentationFeedback('入口准入已经完成', state.view, '系统已记录本次调用判定');
+        render();
+      });
     }).catch(function (error) {
       state.error = error.message;
       renderPanel();
     });
   }
 
-  function advance(to, needsReason) {
+  function advance(to, needsReason, label) {
     var reasonField = $('reason');
     var reason = reasonField ? reasonField.value.trim() : '';
     if (needsReason && !reason) {
@@ -1271,6 +2216,7 @@ export function renderWorkbench(): string {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body)
     }).then(function (data) {
+      state.presentFeedback = presentationFeedback(label || '流程状态已经更新', data.view, reason);
       applyView(data.view);
       return loadList();
     }).catch(function (error) {
@@ -1282,13 +2228,18 @@ export function renderWorkbench(): string {
   function saveRevision(artifactId) {
     var field = $('edit-' + artifactId);
     if (!field) return;
+    state.editDrafts[artifactId] = field.value;
     api('/api/workbench/' + encodeURIComponent(state.currentId) +
         '/artifacts/' + encodeURIComponent(artifactId) + '/revise', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ role: state.role, content: field.value })
+      body: JSON.stringify({ role: state.role, content: state.editDrafts[artifactId] })
     }).then(function (data) {
       state.editing = null;
+      delete state.editDrafts[artifactId];
+      state.appliedSuggestions = {};
+      state.activeAnnotation = null;
+      state.presentFeedback = presentationFeedback('人工改稿已保存，来源比例已重算', data.view, '系统逐句比对上一版');
       applyView(data.view);
     }).catch(function (error) {
       state.error = error.message;
@@ -1296,20 +2247,239 @@ export function renderWorkbench(): string {
     });
   }
 
+  function artifactItem(artifactId) {
+    if (!state.view) return null;
+    return state.view.artifacts.find(function (item) { return item.artifact.id === artifactId; }) || null;
+  }
+
+  function annotationItem(item, annotationId) {
+    return item && item.annotations
+      ? item.annotations.find(function (annotation) { return annotation.id === annotationId; }) || null
+      : null;
+  }
+
+  function annotationRange(item, annotation, draft) {
+    var lines = draft.split('\\n');
+    var lineIndex = Math.max(0, Math.min(lines.length - 1, annotation.segmentOrdinal));
+    var line = lines[lineIndex] || '';
+    var sourceSegment = item.segments.find(function (segment) { return segment.ordinal === annotation.segmentOrdinal; });
+    var sourceText = sourceSegment ? sourceSegment.text : line;
+    var target = sourceText.slice(annotation.start, annotation.end);
+    var within = Math.min(annotation.start, line.length);
+    if (target && line.slice(within, within + target.length) !== target) within = line.indexOf(target);
+    if (within < 0) within = Math.min(annotation.start, line.length);
+    var prefix = 0;
+    for (var index = 0; index < lineIndex; index += 1) prefix += lines[index].length + 1;
+    return { start:prefix + within, end:prefix + within + target.length, target:target };
+  }
+
+  function activateIssue(annotationId) {
+    state.activeAnnotation = annotationId;
+    Array.prototype.forEach.call(document.querySelectorAll('.editor-issue'), function (card) {
+      card.classList.toggle('is-active', card.id === 'issue-' + annotationId);
+    });
+  }
+
+  function locateAnnotation(artifactId, annotationId) {
+    var item = artifactItem(artifactId);
+    var annotation = annotationItem(item, annotationId);
+    var field = $('edit-' + artifactId);
+    if (!item || !annotation || !field) return;
+    state.editDrafts[artifactId] = field.value;
+    var range = annotationRange(item, annotation, field.value);
+    activateIssue(annotationId);
+    field.focus();
+    field.setSelectionRange(range.start, range.end);
+  }
+
+  function applySuggestion(artifactId, annotationId) {
+    var item = artifactItem(artifactId);
+    var annotation = annotationItem(item, annotationId);
+    var field = $('edit-' + artifactId);
+    if (!item || !annotation || !annotation.suggestion || !field) return;
+    var draft = field.value;
+    var range = annotationRange(item, annotation, draft);
+    var replacement = annotation.suggestion === '（删去）' ? '' : annotation.suggestion;
+    var insertAt = range.start;
+
+    if (annotation.start === annotation.end && annotation.category === 'ai-label') {
+      if (draft.indexOf(replacement) !== -1) return;
+      insertAt = draft.length;
+      draft = draft + (draft ? '\\n' : '') + replacement;
+      insertAt += draft && insertAt > 0 ? 1 : 0;
+    } else {
+      draft = draft.slice(0, range.start) + replacement + draft.slice(range.end);
+    }
+
+    state.editDrafts[artifactId] = draft;
+    state.appliedSuggestions[annotationId] = true;
+    state.activeAnnotation = annotationId;
+    renderPanel();
+    var nextField = $('edit-' + artifactId);
+    if (nextField) {
+      nextField.focus();
+      nextField.setSelectionRange(insertAt, insertAt + replacement.length);
+    }
+    var card = $('issue-' + annotationId);
+    if (card) card.scrollIntoView({ block:'nearest', behavior:'smooth' });
+  }
+
   // ——————————————————— wiring ———————————————————
+
+  function selectRole(role) {
+    var previousRole = state.role;
+    state.role = role;
+    if (role !== 'editor' && state.editing) {
+      delete state.editDrafts[state.editing];
+      state.editing = null;
+      state.appliedSuggestions = {};
+      state.activeAnnotation = null;
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('.role-btn'), function (btn) {
+      btn.classList.remove('role-switching', 'role-leaving');
+      btn.setAttribute('aria-pressed', String(btn.getAttribute('data-role') === role));
+    });
+    if (state.present && previousRole !== role) {
+      var previousButton = document.querySelector('.role-btn[data-role="' + previousRole + '"]');
+      var nextButton = document.querySelector('.role-btn[data-role="' + role + '"]');
+      if (previousButton) previousButton.classList.add('role-leaving');
+      if (nextButton) {
+        void nextButton.offsetWidth;
+        nextButton.classList.add('role-switching');
+      }
+      var roleStatus = $('role-switch-status');
+      if (roleStatus) roleStatus.textContent = '身份已切换为' + (ROLE_LABEL[role] || role);
+      if (state.roleAnimationTimer) window.clearTimeout(state.roleAnimationTimer);
+      state.roleAnimationTimer = window.setTimeout(function () {
+        if (previousButton) previousButton.classList.remove('role-leaving');
+        if (nextButton) nextButton.classList.remove('role-switching');
+      }, 900);
+    }
+    state.error = '';
+    renderPanel();
+    renderPresentationGuide();
+    renderRoleHints();
+  }
+
+  function setSetupStatus(message, kind) {
+    var host = $('present-setup-status');
+    host.textContent = message;
+    host.className = 'setup-status' + (kind ? ' ' + kind : '');
+  }
+
+  function openPresentationSetup() {
+    state.presentPrepared = false;
+    state.setupDisplay = 'projector';
+    $('present-enter').disabled = true;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-setup-display]'), function (btn) {
+      btn.setAttribute('aria-pressed', String(btn.getAttribute('data-setup-display') === state.setupDisplay));
+    });
+    setSetupStatus('尚未准备演示样例。', '');
+    $('present-modal').hidden = false;
+    loadDemoFixtures().catch(function () {});
+    $('present-close').focus();
+  }
+
+  function closePresentationSetup() {
+    $('present-modal').hidden = true;
+    $('present-open').focus();
+  }
+
+  function enterPresentation() {
+    if (!state.presentPrepared) return;
+    state.present = true;
+    state.display = state.setupDisplay;
+    state.presentFeedback = null;
+    applyPresentationShell();
+    writePresentationUrl();
+    $('present-modal').hidden = true;
+    showNew();
+    checkPresentationReadiness();
+  }
+
+  function exitPresentation() {
+    state.present = false;
+    state.presentFeedback = null;
+    closeDrawers();
+    applyPresentationShell();
+    writePresentationUrl();
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+    render();
+  }
 
   document.addEventListener('click', function (event) {
     var target = event.target;
     if (!(target instanceof Element)) return;
 
+    if (target.closest('#present-open')) { openPresentationSetup(); return; }
+    if (target.closest('#present-close') || target === $('present-modal')) { closePresentationSetup(); return; }
+
+    var setupDisplay = target.closest('[data-setup-display]');
+    if (setupDisplay) {
+      state.setupDisplay = setupDisplay.getAttribute('data-setup-display') === 'led' ? 'led' : 'projector';
+      Array.prototype.forEach.call(document.querySelectorAll('[data-setup-display]'), function (btn) {
+        btn.setAttribute('aria-pressed', String(btn === setupDisplay));
+      });
+      return;
+    }
+
+    if (target.closest('#present-seed')) {
+      var seedButton = $('present-seed');
+      seedButton.disabled = true;
+      $('present-enter').disabled = true;
+      setSetupStatus('正在清理并重建三组样例…', '');
+      api('/api/demo/seed', { method:'POST' }).then(function (data) {
+        state.view = null; state.currentId = null; state.contrast = null; state.showContrast = false;
+        state.presentationMainId = null; state.presentPrepared = true;
+        try { sessionStorage.removeItem('gatekeeper-presentation-main-id'); } catch (error) { /* storage is optional */ }
+        return loadList().then(function () {
+          setSetupStatus('✓ 已重建 ' + ((data.created && data.created.length) || 3) + ' 组准入样例，可以进入演示。', 'ok');
+          $('present-enter').disabled = false;
+        });
+      }).catch(function (error) {
+        state.presentPrepared = false;
+        setSetupStatus('准备失败：' + error.message, 'error');
+      }).finally(function () { seedButton.disabled = false; });
+      return;
+    }
+
+    if (target.closest('#present-enter')) { enterPresentation(); return; }
+    if (target.closest('#present-exit')) { exitPresentation(); return; }
+    if (target.closest('#present-fullscreen')) {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(function () {});
+      } else if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(function () {});
+      }
+      return;
+    }
+
+    var displayButton = target.closest('button[data-display]');
+    if (displayButton) { setPresentationDisplay(displayButton.getAttribute('data-display')); return; }
+
+    if (target.closest('[data-open-list]')) {
+      document.body.classList.remove('present-evidence-open');
+      document.body.classList.add('present-list-open');
+      return;
+    }
+    if (target.closest('[data-open-evidence]')) {
+      document.body.classList.remove('present-list-open');
+      document.body.classList.add('present-evidence-open');
+      return;
+    }
+    if (target.closest('#present-list-close') || target.closest('#present-evidence-close') || target.closest('#present-scrim')) { closeDrawers(); return; }
+    if (target.closest('#present-return-main') && state.presentationMainId) {
+      closeDrawers();
+      openManuscript(state.presentationMainId);
+      return;
+    }
+
+    var guidedRole = target.closest('[data-guide-role]');
+    if (guidedRole) { selectRole(guidedRole.getAttribute('data-guide-role')); return; }
+
     var roleBtn = target.closest('.role-btn');
     if (roleBtn) {
-      state.role = roleBtn.getAttribute('data-role');
-      Array.prototype.forEach.call(document.querySelectorAll('.role-btn'), function (btn) {
-        btn.setAttribute('aria-pressed', String(btn === roleBtn));
-      });
-      state.error = '';
-      renderPanel();
+      selectRole(roleBtn.getAttribute('data-role'));
       return;
     }
 
@@ -1330,6 +2500,8 @@ export function renderWorkbench(): string {
       if (!window.confirm('将清空全部稿件，并重建三组准入样例。继续？')) return;
       api('/api/demo/seed', { method: 'POST' }).then(function () {
         state.view = null; state.currentId = null; state.contrast = null; state.showContrast = false;
+        state.presentationMainId = null;
+        try { sessionStorage.removeItem('gatekeeper-presentation-main-id'); } catch (error) { /* storage is optional */ }
         return loadList().then(render);
       }).catch(function (error) { state.error = error.message; renderPanel(); });
       return;
@@ -1337,13 +2509,44 @@ export function renderWorkbench(): string {
     if (target.closest('#nf-submit')) { submitNew(); return; }
 
     var row = target.closest('.ms');
-    if (row) { openManuscript(row.getAttribute('data-id')); return; }
+    if (row) { closeDrawers(); openManuscript(row.getAttribute('data-id')); return; }
 
     var edit = target.closest('[data-edit]');
-    if (edit) { state.editing = edit.getAttribute('data-edit'); renderPanel(); return; }
+    if (edit) {
+      var editId = edit.getAttribute('data-edit');
+      var editItem = artifactItem(editId);
+      if (!editItem) return;
+      state.editing = editId;
+      state.editDrafts[editId] = rawArtifactText(editItem);
+      state.appliedSuggestions = {};
+      state.activeAnnotation = null;
+      renderPanel();
+      var editField = $('edit-' + editId);
+      if (editField) editField.focus();
+      return;
+    }
 
     var cancel = target.closest('[data-cancel]');
-    if (cancel) { state.editing = null; renderPanel(); return; }
+    if (cancel) {
+      if (state.editing) delete state.editDrafts[state.editing];
+      state.editing = null;
+      state.appliedSuggestions = {};
+      state.activeAnnotation = null;
+      renderPanel();
+      return;
+    }
+
+    var suggestion = target.closest('[data-apply-suggestion]');
+    if (suggestion) {
+      applySuggestion(suggestion.getAttribute('data-artifact'), suggestion.getAttribute('data-apply-suggestion'));
+      return;
+    }
+
+    var locate = target.closest('[data-locate-annotation]');
+    if (locate) {
+      locateAnnotation(locate.getAttribute('data-artifact'), locate.getAttribute('data-locate-annotation'));
+      return;
+    }
 
     var save = target.closest('[data-save]');
     if (save) { saveRevision(save.getAttribute('data-save')); return; }
@@ -1357,7 +2560,21 @@ export function renderWorkbench(): string {
     if (target.closest('#contrast-off')) { state.showContrast = false; renderPanel(); return; }
 
     var move = target.closest('[data-to]');
-    if (move) { advance(move.getAttribute('data-to'), move.getAttribute('data-reason') === '1'); return; }
+    if (move) {
+      advance(move.getAttribute('data-to'), move.getAttribute('data-reason') === '1', move.getAttribute('data-label'));
+      return;
+    }
+  });
+
+  document.addEventListener('input', function (event) {
+    var field = event.target && event.target.closest ? event.target.closest('[data-draft-artifact]') : null;
+    if (!field) return;
+    state.editDrafts[field.getAttribute('data-draft-artifact')] = field.value;
+  });
+
+  document.addEventListener('fullscreenchange', function () {
+    var btn = $('present-fullscreen');
+    if (btn) btn.textContent = document.fullscreenElement ? '退出全屏' : '全屏';
   });
 
   // Live 留痕: the same SSE channel the legacy console uses.
@@ -1372,7 +2589,10 @@ export function renderWorkbench(): string {
     events.addEventListener('manuscript', function () { loadList(); });
   } catch (error) { /* SSE is a nicety; the page works without it */ }
 
-  loadList().then(function () { render(); });
+  Promise.all([loadDemoFixtures(), loadList()]).then(function () {
+    if (state.present && state.presentationMainId) return openManuscript(state.presentationMainId);
+    render();
+  }).catch(function () { render(); });
 })();
 </script>
 </body>

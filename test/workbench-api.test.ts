@@ -398,12 +398,29 @@ describe('工作台主链', () => {
 
     const after = await view(id);
     expect(after.manuscript.status).toBe('revision');
+    expect(after.waitingOn).toBe('editor');
+    expect(after.revisionReady).toBe(false);
     const rejection = after.reviews.find((review) => review.decision === 'changes-requested');
     expect(rejection).toMatchObject({
       stage: 'department-head',
       reason: '第三句的投资额与原通稿不符，请核对后再报。',
       round: 1,
     });
+
+    const unchanged = await move(id, { to: 'preflight', role: 'editor' });
+    expect(unchanged.status).toBe(409);
+    expect(await unchanged.json()).toMatchObject({ error: 'revision_required' });
+
+    const script = after.artifacts[0]!;
+    const changed = script.segments.map((segment) => segment.text);
+    changed[0] = `${changed[0]}（已按退回意见复核）`;
+    expect(
+      await postJson(`/api/workbench/${id}/artifacts/${script.artifact.id}/revise`, {
+        role: 'editor',
+        content: changed.join('\n'),
+      }),
+    ).toMatchObject({ status: 200 });
+    expect((await view(id)).revisionReady).toBe(true);
 
     expect((await move(id, { to: 'preflight', role: 'editor' })).status).toBe(200);
     const rerun = await view(id);
@@ -413,6 +430,38 @@ describe('工作台主链', () => {
       .map((event) => event.data.round);
     expect(preflightRounds).toContain(1);
     expect(preflightRounds).toContain(2);
+  });
+
+  it('only lets the editor save a real change during an editable stage', async () => {
+    const { body } = await create();
+    const id = body.manuscript.id;
+    await move(id, { to: 'generated', role: 'editor' });
+    const generated = await view(id);
+    const artifact = generated.artifacts[0]!;
+    const content = artifact.segments.map((segment) => segment.text).join('\n');
+
+    const wrongRole = await postJson(
+      `/api/workbench/${id}/artifacts/${artifact.artifact.id}/revise`,
+      { role: 'department-head', content: `${content}\n主管不应直接改稿。` },
+    );
+    expect(wrongRole.status).toBe(409);
+    expect(await wrongRole.json()).toMatchObject({ error: 'wrong_role' });
+
+    const unchanged = await postJson(
+      `/api/workbench/${id}/artifacts/${artifact.artifact.id}/revise`,
+      { role: 'editor', content },
+    );
+    expect(unchanged.status).toBe(409);
+    expect(await unchanged.json()).toMatchObject({ error: 'no_content_change' });
+
+    await move(id, { to: 'preflight', role: 'editor' });
+    await move(id, { to: 'first-review', role: 'editor' });
+    const locked = await postJson(
+      `/api/workbench/${id}/artifacts/${artifact.artifact.id}/revise`,
+      { role: 'editor', content: `${content}\n审核中不应直接改稿。` },
+    );
+    expect(locked.status).toBe(409);
+    expect(await locked.json()).toMatchObject({ error: 'invalid_state' });
   });
 
   it('supports optional countersign and records party, opinion and round', async () => {
@@ -589,5 +638,39 @@ describe('工作台主链', () => {
     expect(html).toContain('把关人 · 稿件工作台');
     expect(html).toContain('模拟 / 脱敏素材');
     expect(html).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+
+  it('ships an explicit guided presentation mode without changing the API surface', async () => {
+    const response = await app.request('/?present=1&display=projector');
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    expect(html).toContain('id="present-open"');
+    expect(html).toContain('id="present-seed"');
+    expect(html).toContain('id="present-enter"');
+    expect(html).toContain('引导演示模式 · 模拟 / 脱敏素材');
+    expect(html).toContain('data-display="projector"');
+    expect(html).toContain('data-display="led"');
+    expect(html).toContain("query.get('present') === '1'");
+    expect(html).toContain("query.get('display') === 'led'");
+    expect(html).toContain("target.closest('button[data-display]')");
+    expect(html).not.toContain("target.closest('[data-display]')");
+    expect(html).toContain('@keyframes role-receive');
+    expect(html).toContain("nextButton.classList.add('role-switching')");
+    expect(html).toContain('id="role-switch-status" aria-live="polite"');
+    expect(html).toContain('审查台 · ');
+    expect(html).toContain('原通稿 · 事实对照');
+    expect(html).toContain('先审播出内容，再决定流程');
+    expect(html).toContain('主管退回意见');
+    expect(html).toContain('待处理问题');
+    expect(html).toContain('应用建议');
+    expect(html).toContain('data-locate-annotation');
+    expect(html).toContain('请先实际修改并保存稿件');
+    expect(html).toContain('页面不会自动清空数据');
+    expect(html).toContain('内容来源构成，不代表违规概率');
+
+    const inlineScript = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    expect(inlineScript).toBeDefined();
+    expect(() => new Function(inlineScript!)).not.toThrow();
   });
 });

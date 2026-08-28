@@ -139,9 +139,27 @@ export interface WorkbenchView {
   /** Every role's legal moves, so switching roles needs no round trip. */
   actions: Record<WorkflowRole, Transition[]>;
   waitingOn?: WorkflowRole;
+  /** A returned manuscript may only re-enter preflight after a real human edit. */
+  revisionReady: boolean;
   /** AI 参与度随流转的变化，供追溯图谱画折线。 */
   provenance: ProvenancePoint[];
   signOff?: SignOff;
+}
+
+function hasRevisionAfterLatestReturn(
+  reviews: readonly ReviewRecord[],
+  trace: readonly TraceEvent[],
+): boolean {
+  const latestReturn = [...reviews]
+    .reverse()
+    .find((review) => review.decision === 'changes-requested' || review.decision === 'rejected');
+  if (!latestReturn) return false;
+  return trace.some(
+    (event) =>
+      event.kind === 'segments-recorded' &&
+      event.actorType === 'human' &&
+      event.createdAt > latestReturn.createdAt,
+  );
 }
 
 const asNumber = (value: unknown): number | undefined =>
@@ -238,6 +256,7 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
     trace,
     actions,
     ...(owner ? { waitingOn: owner } : {}),
+    revisionReady: manuscript.status === 'revision' && hasRevisionAfterLatestReturn(reviews, trace),
     provenance: readProvenance(trace),
     ...(signed
       ? {
@@ -470,6 +489,19 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
   const actor = actorName(role);
   let updated: Manuscript | undefined;
 
+  if (transition.from === 'revision' && to === 'preflight') {
+    const aggregate = repository.getAggregate(id);
+    if (!aggregate || !hasRevisionAfterLatestReturn(aggregate.reviews, aggregate.trace)) {
+      return c.json(
+        {
+          error: 'revision_required',
+          message: '请先按退回意见实际修改并保存至少一处内容，再重新预检。',
+        },
+        409,
+      );
+    }
+  }
+
   if (
     transition.from === 'countersign' &&
     to === 'final-review' &&
@@ -589,11 +621,38 @@ workbenchRoutes.post('/api/workbench/:id/artifacts/:artifactId/revise', async (c
   const parsed = reviseSchema.safeParse(await readJson(c.req));
   if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
 
+  const repository = getWorkflowRepository();
   const id = c.req.param('id');
+  const manuscript = repository.findManuscript(id);
+  if (!manuscript) return c.json({ error: 'manuscript_not_found' }, 404);
+  if (parsed.data.role !== 'editor') {
+    return c.json(
+      { error: 'wrong_role', message: '只有编辑 / 记者可以修改稿件内容。' },
+      409,
+    );
+  }
+  if (!['generated', 'preflight', 'revision'].includes(manuscript.status)) {
+    return c.json(
+      { error: 'invalid_state', message: '当前流程状态不允许修改稿件。' },
+      409,
+    );
+  }
+
   const sentences = splitSentences(parsed.data.content);
   if (sentences.length === 0) return c.json({ error: 'empty_content' }, 400);
 
-  const result = getWorkflowRepository().reviseArtifact(id, c.req.param('artifactId'), {
+  const artifactId = c.req.param('artifactId');
+  const existing = repository.findArtifact(id, artifactId);
+  if (!existing) return c.json({ error: 'artifact_not_found' }, 404);
+  const previous = repository.listArtifactSegments(artifactId).map((segment) => segment.text);
+  if (previous.length === sentences.length && previous.every((sentence, index) => sentence === sentences[index])) {
+    return c.json(
+      { error: 'no_content_change', message: '稿件内容没有变化，请修改后再保存。' },
+      409,
+    );
+  }
+
+  const result = repository.reviseArtifact(id, artifactId, {
     actor: parsed.data.actor?.trim() || actorName(parsed.data.role),
     sentences,
   });
