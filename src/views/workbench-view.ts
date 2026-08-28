@@ -768,6 +768,7 @@ export function renderWorkbench(): string {
   }
 
   var CATEGORY_LABEL = {
+    'typo':'错别字与用词', 'punctuation':'标点差错', 'format':'格式规范',
     'banned-term':'禁用词', 'caution-term':'慎用词', 'leader-title':'领导表述规范',
     'inconsistency':'与原通稿不一致', 'ai-label':'AI 生成内容标识', 'judgment':'导向与事实判断'
   };

@@ -40,7 +40,7 @@ docker compose up --build
 | 契约 | `src/types.ts` | `src/domain/contracts.ts` |
 | 入口 | `/gateway/v1/messages`、`/api/state`、`/api/usage`、`/redteam`、`/report` | `/api/manuscripts*` |
 
-| 页面 | `/`(console)、`/policy`、`/runtime`、`/report` | `/workbench`（工作台，`/api/workbench*`） |
+| 页面 | `/console`、`/policy`、`/runtime`、`/report` | **`/`** 与 `/workbench`（工作台，`/api/workbench*`） |
 
 两套都通过 `src/lib/bus.ts` 往同一条 SSE `/events` 发事件，浏览器按 event name 区分。
 
