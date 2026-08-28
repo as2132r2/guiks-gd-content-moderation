@@ -12,6 +12,8 @@ eventsRoutes.get('/events', (c) =>
     let wake: (() => void) | null = null;
     const unsub = subscribe((m) => {
       queue.push(m);
+      // A slow or backgrounded browser must not grow an unbounded queue.
+      if (queue.length > 200) queue.splice(0, queue.length - 200);
       wake?.();
     });
 
@@ -22,7 +24,8 @@ eventsRoutes.get('/events', (c) =>
 
     await stream.writeSSE({
       event: 'status',
-      data: JSON.stringify({ state: 'idle', message: '监理台已就绪' }),
+      data: JSON.stringify({ state: 'idle', message: '服务已就绪' }),
+      retry: 3000,
     });
 
     try {
@@ -30,8 +33,11 @@ eventsRoutes.get('/events', (c) =>
         if (queue.length === 0) {
           // wait for the next publish, or a 15s keepalive tick
           await new Promise<void>((resolve) => {
-            wake = resolve;
-            setTimeout(resolve, 15000);
+            const timer = setTimeout(resolve, 15000);
+            wake = () => {
+              clearTimeout(timer);
+              resolve();
+            };
           });
           wake = null;
           if (queue.length === 0 && !stream.aborted) {
