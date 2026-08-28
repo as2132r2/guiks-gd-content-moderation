@@ -16,6 +16,10 @@ This file provides guidance to coding agents when working with code in this repo
 
 代码从薄荷 `AuditGate` 起步，但独立建库、独立部署，不依赖薄荷线上服务。
 
+**开工前先看 [requirements.md](docs/gatekeeper/requirements.md) 第十一节（三轨道分工）与第十二节（轨道 C 冲突）**：
+当前有三条并行轨道——A 状态机与审核内核、B 界面与规则数据、C 账号角色权限。
+两处共享文件是串行的，**`src/domain/contracts.ts` 同时被 A 的校次契约与 C 的角色分层改动，不要并行动它**。
+
 ## 命令
 
 ```bash
@@ -70,10 +74,14 @@ docker compose up --build
 - 句级来源标记**已落地**：`sentenceOrigins` + `SentenceSegment` 在契约里，`sentence_segments` 表在 migration `0002`，AI 参与度算在 [src/domain/ai-share.ts](src/domain/ai-share.ts)（`(ai + ai-edited×0.5)/总句数`，权重可调）。产物带 `segments` 创建时自动算，人改稿后调 `PUT /api/manuscripts/:id/artifacts/:artifactId/segments` 整段替换并重算，写 `segments-recorded` 追溯。
 **AI 参与度和产物级 `origin` 都只由句级来源推导，不接受手工填**——带了 `segments` 就忽略请求里的 `aiShare` 与 `origin`（全 `ai` → `ai`，一句 AI 都没有 → `human`，其余 `mixed`；`source` 算非 AI）。
 
+- **AI 参与度追溯图谱已落地**：`tracePanel` 在 [src/views/workbench-view.ts](src/views/workbench-view.ts)，
+  五块内容——签发卡、AI 参与度折线、句级来源图谱、责任链、规则命中。折线画的是稿件级比例，从留痕重建。
+- **首页已是工作台**：`/` 直接进稿件工作台，`/workbench` 保留为别名；遗留 AuditGate 控制台移到 `/console`。
+
 **还差**：
 
 - [src/lib/detectors.ts](src/lib/detectors.ts) 的 `scanRequest()` / `scanResponse()` 仍是 AuditGate 旧规格（提示注入词表 / PII + 密钥），**网关那条路还没接上广电规则**——新规则目前只在 `src/rules/` 里被工作台调用，两边最终要合，否则「绕不过网关就绕不过准入」这句在代码里还不成立。
-- `/`、`/policy`、`/runtime`、`/report` 四个遗留页面未改。
+- `/console`、`/policy`、`/runtime`、`/report` 四个遗留页面未改（2238 行，讲广电时一个都不用）。
 - `test/fixtures/`、`docs/demo/` 仍不存在。
 
 ## 措辞纪律（用户可见文案与文档都适用）
