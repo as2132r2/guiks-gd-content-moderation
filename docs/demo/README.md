@@ -12,17 +12,26 @@
 | [source-notice.md](source-notice.md) | D.1 ✅ | 主通稿：走完整链路的那一份，含四条硬要求与实测数字 |
 | [admission-cases.md](admission-cases.md) | D.2 ✅ | 三组准入样例：要理由 / 硬拦 / 公器私用 |
 | *(待建)* | D.8–D.10 | 三分钟口播稿、操作清单、应急预案 |
+| [demo-fixtures.ts](../../src/routes/demo-fixtures.ts) | D.4–D.6 ✅ | 素材的唯一事实来源；播种 / 重置 / 填入示例三个端点 |
 | *(待建)* | D.11 | 作品说明一页 |
 
 ## 怎么用
 
-演示前把库重置成已知状态（D.4 / D.5 播种脚本尚未落地，暂时手工）：
+**演示前**：点左栏「演示准备（重置并建样例）」——清空全部稿件，重建三组准入样例，
+顺序与 0:25 的讲解一致（要理由 → 硬拦 → 公器私用）。
+
+**0:00 投料**：点「＋ 新建稿件」→「填入示例通稿」，主通稿一键填好，直接提交。
+
+命令行等价操作（彩排时用得上）：
 
 ```bash
-docker compose down -v && docker compose up -d
+curl -X POST http://localhost:3300/api/demo/seed
 ```
 
-然后按 [admission-cases.md](admission-cases.md) 的顺序建三份样例，再建主通稿走全链路。
+这些端点**只在 `APP_MODE=demo` 下存在**，production 构建里没有。
+
+> **主通稿不预先播种**，要在台上现场投料——0:00 那一镜就是「县级台编辑每天上午的活」。
+> 已签发样例也不播种，原因见 requirements.md 第十三节 D2 的说明。
 
 ## 素材改动纪律
 
@@ -32,8 +41,11 @@ docker compose down -v && docker compose up -d
 
 改完**必须实跑核对**实测结果表里的数字，那些数字是口播里要报出来的。
 
-## 一处待办
+## 素材的唯一事实来源
 
-D.4 播种脚本落地后，素材文本会同时存在于本目录和 `src/` 的 fixture 里。
-**届时要指定一处为准**（建议 fixture 为准，本目录写明「以 fixture 为准」），
-否则改了一处忘了另一处，演示当场对不上。
+**代码里的 [`src/routes/demo-fixtures.ts`](../../src/routes/demo-fixtures.ts) 为准。**
+本目录两份 markdown 是给人读的版本，含「为什么是这几个字」的推理，
+改素材时**两边都要改**，并实跑核对实测数字。
+
+`test/demo-api.test.ts` 会守住四条硬要求里可机检的三条：
+主通稿必须落「仅留痕」、第一个带单位的数字必须是金额、首句要能当导语。

@@ -736,6 +736,27 @@ export class WorkflowRepository {
     return event;
   }
 
+  /**
+   * 清空全部稿件及其派生数据，返回删除的稿件数。
+   *
+   * 只给演示用（`APP_MODE=demo` 下才挂载调用它的端点）。彩排要反复重来，
+   * 库里堆满同名稿件时列表就没法看了。
+   *
+   * 外键是 `ON DELETE CASCADE`，删稿件会带走产物、句子、审核记录与留痕；
+   * `admission_results` 若未挂在稿件上则单独清一次。
+   */
+  deleteAllManuscripts(): number {
+    const before = this.database.sqlite
+      .prepare('SELECT COUNT(*) AS n FROM manuscripts')
+      .get() as { n: number };
+
+    this.database.orm.transaction((tx) => {
+      tx.delete(manuscripts).run();
+    });
+
+    return before.n;
+  }
+
   close(): void {
     this.database.close();
   }
