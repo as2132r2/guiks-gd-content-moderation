@@ -1,0 +1,963 @@
+<title>把关人</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --ground: #F5F7F8; --surface: #FFFFFF; --surface-2: #EBEFF2;
+    --line: #D6DDE2; --line-soft: #E5EAEE;
+    --ink: #141A20; --ink-2: #47535D; --ink-3: #76838D;
+    --accent: #0C6B74; --accent-2: #0A5B63; --accent-wash: #E1EFF0;
+    --block: #A32E26; --block-wash: #F7E4E2;
+    --review: #8C5C05; --review-wash: #F8ECD9;
+    --pass: #2A6349; --pass-wash: #E1EFE7;
+    --shadow: 0 1px 2px rgba(20,26,32,.05), 0 8px 24px -18px rgba(20,26,32,.3);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1317; --surface: #141C21; --surface-2: #1C262C;
+      --line: #2A363D; --line-soft: #212C33;
+      --ink: #E5EBEF; --ink-2: #A3B1BA; --ink-3: #78868F;
+      --accent: #4FB4BC; --accent-2: #6FC9D0; --accent-wash: #102E31;
+      --block: #E28075; --block-wash: #35201D;
+      --review: #D9A441; --review-wash: #33280F;
+      --pass: #6DB994; --pass-wash: #162C22;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0D1317; --surface: #141C21; --surface-2: #1C262C;
+    --line: #2A363D; --line-soft: #212C33;
+    --ink: #E5EBEF; --ink-2: #A3B1BA; --ink-3: #78868F;
+    --accent: #4FB4BC; --accent-2: #6FC9D0; --accent-wash: #102E31;
+    --block: #E28075; --block-wash: #35201D;
+    --review: #D9A441; --review-wash: #33280F;
+    --pass: #6DB994; --pass-wash: #162C22;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground); color: var(--ink);
+    font-family: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+    font-size: 16px; line-height: 1.78; -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 62rem; margin: 0 auto;
+    padding: clamp(2rem, 5vw, 4.5rem) clamp(1.1rem, 4vw, 2.5rem) 6rem;
+    display: flex; flex-direction: column; gap: 3.25rem;
+  }
+
+  .masthead { display: flex; flex-direction: column; gap: 1.15rem; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .74rem; letter-spacing: .13em; text-transform: uppercase;
+    color: var(--accent); display: flex; flex-wrap: wrap; gap: .5rem .85rem; align-items: center;
+  }
+  .eyebrow span:not(:last-child)::after { content: "/"; margin-left: .85rem; color: var(--ink-3); }
+
+  h1 {
+    font-family: "Noto Serif SC", Georgia, serif; font-weight: 700;
+    font-size: clamp(2.1rem, 6vw, 3.15rem); line-height: 1.18;
+    letter-spacing: -.01em; text-wrap: balance; margin: 0;
+  }
+  .deck { max-width: 44rem; color: var(--ink-2); font-size: 1.06rem; margin: 0; }
+  .subtitle {
+    font-family: "Noto Serif SC", Georgia, serif; font-size: clamp(1.05rem, 2.4vw, 1.28rem);
+    color: var(--ink-2); margin: -.5rem 0 0; letter-spacing: .02em;
+  }
+  .pitch {
+    background: var(--accent-wash); border: 1px solid var(--accent);
+    border-radius: 4px; padding: 1.15rem 1.3rem; margin-top: .35rem;
+    display: flex; flex-direction: column; gap: .5rem; max-width: 46rem;
+  }
+  .pitch-k { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-2); }
+  .pitch p { font-family: "Noto Serif SC", Georgia, serif; font-size: 1.1rem; line-height: 1.72; color: var(--ink); max-width: none; }
+  .voice { display: flex; flex-direction: column; gap: .75rem; }
+  .voice-row { border-left: 2px solid var(--line); padding-left: 1rem; display: flex; flex-direction: column; gap: .2rem; }
+  .voice-k { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .72rem; letter-spacing: .08em; color: var(--ink-3); }
+  .voice-t { font-family: "Noto Serif SC", Georgia, serif; font-size: 1.02rem; color: var(--ink); max-width: 42rem; }
+
+  .clock { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .5rem; }
+  .clock-item {
+    display: flex; align-items: baseline; gap: .6rem; padding: .55rem .9rem;
+    border: 1px solid var(--line); border-left: 3px solid var(--block);
+    border-radius: 3px; background: var(--surface); font-size: .88rem;
+  }
+  .clock-item.soft { border-left-color: var(--review); }
+  .clock-label { color: var(--ink-2); }
+  .clock-time { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--ink); }
+  .clock-note { color: var(--ink-3); font-size: .8rem; }
+
+  section { display: grid; gap: 1.15rem; }
+  @media (min-width: 62rem) {
+    section { grid-template-columns: 8.5rem 1fr; column-gap: 2.5rem; align-items: start; }
+    section > :not(.rail) { grid-column: 2; }
+    .rail { grid-column: 1; grid-row: 1; text-align: right; }
+  }
+  .rail {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .76rem; letter-spacing: .1em; color: var(--ink-3);
+    text-transform: uppercase; padding-top: .5rem;
+    border-top: 2px solid var(--accent); align-self: start;
+  }
+
+  h2 { font-family: "Noto Serif SC", Georgia, serif; font-weight: 600; font-size: clamp(1.35rem, 3vw, 1.6rem); line-height: 1.4; text-wrap: balance; margin: 0; }
+  h3 { font-size: 1rem; font-weight: 700; margin: 1.1rem 0 -.35rem; color: var(--ink); }
+
+  p { margin: 0; max-width: 42rem; }
+  section p + p { margin-top: -.15rem; }
+
+  strong { font-weight: 700; color: var(--ink); }
+  em { font-style: normal; color: var(--accent); font-weight: 500; }
+  a { color: var(--accent); text-underline-offset: .18em; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+  code, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .87em;
+    background: var(--surface-2); padding: .1em .38em; border-radius: 3px;
+  }
+
+  /* 内核 */
+  .core {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 4px;
+    padding: 1.4rem 1.5rem; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: .9rem;
+  }
+  .core p { font-family: "Noto Serif SC", Georgia, serif; font-size: 1.08rem; line-height: 1.75; max-width: 40rem; }
+  .core .k { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+
+  .versus { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+  @media (min-width: 42rem) { .versus { grid-template-columns: 1fr 1fr; } }
+  .vs-card { border: 1px solid var(--line); border-radius: 4px; padding: 1.05rem 1.15rem; background: var(--surface); display: flex; flex-direction: column; gap: .5rem; }
+  .vs-card.bad { border-top: 3px solid var(--block); }
+  .vs-card.good { border-top: 3px solid var(--pass); }
+  .vs-k { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .72rem; letter-spacing: .08em; }
+  .vs-card.bad .vs-k { color: var(--block); }
+  .vs-card.good .vs-k { color: var(--pass); }
+  .vs-card p { font-size: .93rem; color: var(--ink-2); max-width: none; }
+
+  /* 台账 */
+  .ledger { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: .5rem 1.25rem; padding: .95rem 0; border-bottom: 1px solid var(--line-soft); align-items: start; }
+  .row-title { font-weight: 500; }
+  .row-note { grid-column: 1 / -1; color: var(--ink-2); font-size: .9rem; margin-top: -.35rem; }
+  .chip { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .7rem; letter-spacing: .06em; padding: .2rem .55rem; border-radius: 2px; white-space: nowrap; border: 1px solid transparent; }
+  .chip.locked { background: var(--accent-wash); color: var(--accent-2); border-color: var(--accent); }
+  .chip.proposed { background: var(--review-wash); color: var(--review); border-color: var(--review); }
+  .chip.blocked { background: var(--block-wash); color: var(--block); border-color: var(--block); }
+
+  /* 引文 */
+  .source {
+    border-left: 2px solid var(--accent); padding: .25rem 0 .25rem 1.15rem;
+    color: var(--ink-2); font-family: "Noto Serif SC", Georgia, serif;
+    font-size: 1.02rem; line-height: 1.7; max-width: 42rem;
+  }
+  .source cite { display: block; margin-top: .45rem; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .72rem; font-style: normal; letter-spacing: .06em; color: var(--ink-3); }
+
+  /* 卡片 */
+  .note { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 1.1rem 1.25rem; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: .55rem; }
+  .note.warn { border-left: 3px solid var(--block); }
+  .note.ok { border-left: 3px solid var(--accent); }
+  .note-head { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .note p { max-width: none; }
+
+  /* 列表 */
+  ol.steps, ul.plain { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: .8rem; }
+  ol.steps { counter-reset: step; }
+  ol.steps > li { position: relative; padding-left: 2.35rem; max-width: 44.35rem; }
+  ol.steps > li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: .2rem;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .8rem; color: var(--accent); font-variant-numeric: tabular-nums;
+  }
+  ul.plain > li { position: relative; padding-left: 1.5rem; max-width: 43.5rem; }
+  ul.plain > li::before {
+    content: ""; position: absolute; left: 0; top: .72rem;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+  }
+
+  /* 链路 */
+  .pipe-wrap { overflow-x: auto; }
+  .pipe { display: flex; align-items: stretch; gap: .5rem; min-width: 44rem; }
+  .pipe-step { flex: 1; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); padding: .8rem .85rem; display: flex; flex-direction: column; gap: .3rem; }
+  .pipe-step.audit { border-color: var(--accent); background: var(--accent-wash); }
+  .pipe-n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .7rem; color: var(--accent); }
+  .pipe-t { font-weight: 700; font-size: .92rem; }
+  .pipe-d { font-size: .8rem; color: var(--ink-2); line-height: 1.55; }
+  .pipe-arrow { align-self: center; color: var(--ink-3); font-size: .9rem; }
+  .band { margin-top: .5rem; padding: .7rem .95rem; border: 1px dashed var(--accent); border-radius: 4px; background: var(--accent-wash); color: var(--accent-2); font-size: .88rem; min-width: 44rem; }
+  .flowline { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .85rem; color: var(--ink-2); line-height: 1.95; max-width: 42rem; }
+
+  /* 分镜 */
+  .shots { display: flex; flex-direction: column; gap: .6rem; }
+  .shot { display: grid; grid-template-columns: 3.5rem 1fr; gap: .9rem; border-bottom: 1px solid var(--line-soft); padding-bottom: .6rem; }
+  .shot:last-child { border-bottom: none; }
+  .shot-t { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .78rem; color: var(--accent); font-variant-numeric: tabular-nums; padding-top: .3rem; }
+  .shot-b { display: flex; flex-direction: column; gap: .2rem; }
+  .shot-h { font-weight: 700; font-size: .95rem; }
+  .shot-d { font-size: .9rem; color: var(--ink-2); }
+
+  /* 表 */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 40rem; font-size: .92rem; }
+  th, td { text-align: left; padding: .8rem 1rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  thead th { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .72rem; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.verdict, td.nowrap { white-space: nowrap; }
+  .tag { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .7rem; padding: .15rem .45rem; border-radius: 2px; white-space: nowrap; }
+  .tag.keep, .tag.auto { background: var(--pass-wash); color: var(--pass); }
+  .tag.swap, .tag.human { background: var(--block-wash); color: var(--block); }
+  .tag.semi { background: var(--review-wash); color: var(--review); }
+
+  /* 双栏 */
+  .split { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+  @media (min-width: 40rem) { .split { grid-template-columns: 1fr 1fr; } }
+  .layer, .who { border: 1px solid var(--line); border-radius: 4px; background: var(--surface); padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: .5rem; }
+  .layer-key, .who-n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .78rem; letter-spacing: .08em; color: var(--accent); }
+  .layer h4, .who h4 { margin: 0; font-size: 1rem; font-weight: 700; }
+  .layer p { font-size: .92rem; color: var(--ink-2); max-width: none; }
+  .who ul { margin: 0; padding-left: 1.1rem; font-size: .91rem; color: var(--ink-2); display: flex; flex-direction: column; gap: .25rem; }
+
+  footer { color: var(--ink-3); font-size: .84rem; border-top: 1px solid var(--line); padding-top: 1.25rem; display: flex; flex-direction: column; gap: .35rem; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">
+      <span>多彩贵州 · 贵客松</span>
+      <span>赛道二 · 传统行业 AI 解决方案</span>
+      <span>方案书</span>
+    </div>
+    <h1>把关人</h1>
+    <p class="subtitle">融媒稿件生产与监理平台</p>
+    <div class="pitch">
+      <span class="pitch-k">一句话</span>
+      <p>
+        AI 把稿子写快十倍，审核跟不上就等于没提速——把关人把三审三校里<strong>机械的校对自动化、判断留给人、每一步留痕</strong>，
+        让 AI 写的稿子敢发出去。
+      </p>
+    </div>
+    <p class="deck">
+      给县级融媒体中心的一条完整链路：素材进来先过准入闸，AI 按本台风格出稿，
+      预检自动查禁用词与事实一致性，走完三审三校签发，每一句都留下是谁写的、谁改的、谁放行的。
+      本文是从 PR&nbsp;#1209 一路讨论到方案定型的完整结果。
+    </p>
+    <div class="clock">
+      <div class="clock-item">
+        <span class="clock-label">组队表单</span>
+        <span class="clock-time">8/28 24:00</span>
+        <span class="clock-note">今天，先交，别等方案</span>
+      </div>
+      <div class="clock-item soft">
+        <span class="clock-label">作品提交</span>
+        <span class="clock-time">8/29 24:00</span>
+        <span class="clock-note">Demo / 原型 / 方案 + 作品说明一页</span>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <div class="rail">名称与口径</div>
+    <h2>对外统一说这三句</h2>
+    <p>三个版本共用同一个内核，长度对应三个场合。现场不临时想，全队说同一套。</p>
+    <div class="voice">
+      <div class="voice-row">
+        <span class="voice-k">书面 · 作品说明与提交材料</span>
+        <p class="voice-t">AI 把稿子写快十倍，审核跟不上就等于没提速——把关人把三审三校里机械的校对自动化、判断留给人、每一步留痕，让 AI 写的稿子敢发出去。</p>
+      </div>
+      <div class="voice-row">
+        <span class="voice-k">口播 · 上台第一句</span>
+        <p class="voice-t">AI 让县级台编辑一天能写五十篇稿，但三审三校还是那三个人——把关人就是补这个缺口的。</p>
+      </div>
+      <div class="voice-row">
+        <span class="voice-k">标语 · 封面与海报</span>
+        <p class="voice-t">让 AI 写的稿子，敢发出去。</p>
+      </div>
+    </div>
+    <div class="note warn">
+      <div class="note-head">措辞纪律</div>
+      <p>
+        <strong>不说「安全」</strong>——会被听成内容安全（易盾/天御那个红海），而且是防御性的。
+        广电要的是<strong>敢发、发得快、出了事说得清</strong>。<br>
+        <strong>不说「敏感词过滤」</strong>——九十年代的技术印象。入口那一层叫<strong>「入口准入」</strong>，判定的不是词，是这次调用该不该发生。<br>
+        <strong>不说 AuditGate</strong>——英文、技术词，对这个评委席先天弱一档。代码目录 <code>audit-gate/</code> 保持不动，赛后再改。<br>
+        <strong>不假装审校是空白</strong>——方正智能审校 21 类 136 个词库，黑马校对卖了三十年。主动承认，再讲我们看得见而它们看不见的那一面。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">内核</div>
+    <h2>三句话，因果闭环</h2>
+    <div class="core">
+      <span class="k">核心主张</span>
+      <p>AI 让内容生产提速十倍，但三审三校的人力审核跟不上——提速的结果不是快，是审核堵死，或者放水出事故。</p>
+      <p>所以我们在同一条链路上做全流程监控：<strong>把机械的校对自动化，把判断留给人，把每一步留痕。</strong></p>
+      <p>让 AI 提速出来的产能，真的能安全地发出去。</p>
+    </div>
+
+    <h3>为什么必须是因果，不能是并列</h3>
+    <p>
+      「我们用 AI 辅助生产，<em>同时</em>做全流程监控」——这个说法撑不住。评委会问一句很自然的话：
+      <strong>那我能不能只要你的生产部分？</strong> 只要这两半能拆开卖，它们就还是两个产品，
+      我们又回到了「两个半成品」。
+    </p>
+    <div class="versus">
+      <div class="vs-card bad">
+        <span class="vs-k">并列（弱）</span>
+        <p>AI 辅助生产 <strong>+</strong> 全流程监控。监控是额外做的一层安全，是成本项，可以被砍掉、可以外购、可以换成易盾。</p>
+      </div>
+      <div class="vs-card good">
+        <span class="vs-k">因果（强）</span>
+        <p>AI 提速 <strong>→</strong> 审核成瓶颈 <strong>→</strong> 所以必须自动化校对。监控是产能得以释放的前提，是价值项，拆掉它 AI 提速根本不成立。</p>
+      </div>
+    </div>
+    <p>
+      县级台原来一天出五篇稿，三个人的三审审得过来。AI 让编辑一天能出五十篇——<strong>审核环节当场变成瓶颈</strong>。
+      这时候只有两个结局：要么卡死（AI 白提速，产能堵在终审），要么放水（领导来不及看就签字，出事故）。
+      <em>监控的真正价值不是防止出错，是让审核跟得上生产的速度。</em>
+    </p>
+
+    <h3>「安全」这个词不上台</h3>
+    <p>
+      两个原因。一是它太容易被听成「内容安全」，那是易盾、天御那个红海，评委一秒就归类了；
+      二是它是防御性的——而广电最不缺防御手段，最简单的防御是不用 AI。
+      广电要的是三件事，用他们自己的话说：<strong>敢发、发得快、出了事说得清。</strong>
+    </p>
+  </section>
+
+  <section>
+    <div class="rail">决策台账</div>
+    <h2>七条结论，以及各自的成色</h2>
+    <p>
+      <em>已定</em>表示论证成立、不需要再讨论；<em>建议</em>表示方向已给、需要人拍板；
+      <em>阻塞</em>表示缺信息，拿不到就只能拍脑袋。
+    </p>
+    <div class="ledger">
+      <div class="row">
+        <div class="row-title">叙事从「防数据泄露」改为「私有化之上的治理」</div>
+        <span class="chip locked">已定</span>
+        <p class="row-note">原叙事会被「那就私有化部署」一句话打穿，而这些行业早就在买私有化了。新叙事把这个质疑变成前提。</p>
+      </div>
+      <div class="row">
+        <div class="row-title">审计对象从「保密审计」改为「适播审计」</div>
+        <span class="chip locked">已定</span>
+        <p class="row-note">广电问的是「能不能播」，不是「泄没泄」。骨架全留，重写 <code>detectors</code> 与 probe。</p>
+      </div>
+      <div class="row">
+        <div class="row-title">行业选广电，场景选县级融媒体中心</div>
+        <span class="chip locked">已定</span>
+        <p class="row-note">审计必要性在六个行业里最硬；评委手册第一个举的例子就是县级台编辑。</p>
+      </div>
+      <div class="row">
+        <div class="row-title">业务本体 = 稿件生产（通稿 → 播报稿 + 短视频文案）</div>
+        <span class="chip locked">已定</span>
+        <p class="row-note">县级台一线记者编辑疲于应付时政报道、一人多岗，这是真痛点，不是硬凑。</p>
+      </div>
+      <div class="row">
+        <div class="row-title">内核是因果不是并列：监控让审核跟上生产速度</div>
+        <span class="chip locked">已定</span>
+        <p class="row-note">把监控从成本项变成价值项，同时答死「能不能只买生产部分」。</p>
+      </div>
+      <div class="row">
+        <div class="row-title">治理做成双向：入口准入闸 + 输出预检</div>
+        <span class="chip locked">已定</span>
+        <p class="row-note">输入非法直接不给调用模型——唯一一档零成本治理。但必须分三档，不能一刀切，否则广电编辑的正常敏感题材报道当场不可用。</p>
+      </div>
+      <div class="row">
+        <div class="row-title">范围砍到一条闭环，六块只做四块</div>
+        <span class="chip locked">已定</span>
+        <p class="row-note">采集做轻、发布不做、权限不做、知识库不做 RAG 工程。见「边界」一节。</p>
+      </div>
+      <div class="row">
+        <div class="row-title">赛道二评分细则（满分 100 的分项权重）</div>
+        <span class="chip blocked">阻塞</span>
+        <p class="row-note">被飞书登录墙挡住。权重决定时间往哪投——「技术实现」占大头和「落地价值」占大头，打法完全不同。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">赛事约束</div>
+    <h2>手册里已经核实的部分</h2>
+    <p>以下两段取自《多彩贵州·贵客松｜选手手册》，是登出状态能读到的全部内容。</p>
+
+    <blockquote class="source">
+      用 AI 解决传统产业里那些真实又难缠的问题。六大产业方向：白酒 / 能源 / 广电 / 文旅 / 先进制造 / 山地特色产业。适合工程师、产品、懂行业的实干派，一个动词：解决
+      <cite>赛道二 · 传统行业 AI 解决方案</cite>
+    </blockquote>
+
+    <blockquote class="source">
+      别的地方在比谁的模型更大。我们想比一件更笨的事 —— 谁的 AI 更具体。具体到一个县级台的编辑、一个酒厂的老师傅、一条塌方过的山区公路。
+      <cite>一、赛道总览 · 我们为什么把这场黑客松放在贵州</cite>
+    </blockquote>
+
+    <p>奖项：一等奖 1 名 ¥15,000，二等奖 2 名 ¥8,000，三等奖 3 名 ¥4,000。自由组队 2–4 人。</p>
+
+    <div class="note warn">
+      <div class="note-head">信息缺口</div>
+      <p>
+        文档 §三（赛道二的六大产业方向细节、交什么、<strong>怎么评满分 100</strong>）和 §五（评审流程）
+        在登出状态不渲染，需要登录才能读。这份文档里所有关于「往哪投时间」的判断都还缺这块地基。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">核心错位</div>
+    <h2>它是横向的，赛道二要的是垂直的</h2>
+    <p>
+      AuditGate 最漂亮的技术特征——改一行 <code>base_url</code> 就能接管任意 AI 产品——
+      在这条赛道上是结构性劣势。它行业无关，不落在六大产业的任何一个里。
+    </p>
+    <p>
+      评委问「你解决了哪个传统行业的什么问题」，原来那版答的是「我解决了所有 AI 产品的治理问题」。
+      那是赛道三（开放创新）的答法。主办方把偏好写在明面上了：<strong>具体 &gt; 通用</strong>。
+    </p>
+    <p>
+      所以两个人的分工要重新排序。<strong>「大模型与企业业务的结合」是主体，占分的大头；
+      「audit」不是并列的第二块，是这个主体「为什么能真上线」的答案。</strong>
+    </p>
+  </section>
+
+  <section>
+    <div class="rail">转向一 · 叙事</div>
+    <h2>「那为什么不用内部大模型」</h2>
+    <p>
+      这是台上必然会被问的问题，也是原叙事的致命伤。现实比想象的更不利：
+      这些行业不是不用内部模型，<strong>是早就在买私有化部署了</strong>——
+      智谱、DeepSeek、讯飞、华为昇腾那套，「数据不出域」是招标文件第一条。
+      评委里只要有一个懂政企采购的，「防泄漏」这个卖点当场就没了。
+    </p>
+    <h3>私有化解决了「模型在哪」，没解决这四件</h3>
+    <ol class="steps">
+      <li>
+        <strong>数据不出域 ≠ 内部不越权，而且私有化让它更严重。</strong>
+        内部模型的价值来自接内部知识库，一接上模型就有了全量数据读取权。传统权限体系在 RAG 面前是失效的——
+        向量检索不认部门墙。泄密对象从「外部 API 厂商」变成「自己人」，而后者没有任何现成系统在管。
+      </li>
+      <li>
+        <strong>幻觉和内容违规不因为模型跑在内网就消失。</strong>
+        广电播出内容出问题，罚的是台，不管推理发生在哪台机器上。而且私有化部署受限于本地算力，
+        往往是参数更小、对齐更弱的版本，违规概率比调用旗舰 API 更高——这一项上私有化是负分。
+      </li>
+      <li>
+        <strong>「可追溯」本身是监管要求，而私有化交付的是模型，不是审计链路。</strong>
+        厂商给的是推理服务和一个对话界面。谁在什么时间、用什么 prompt、碰了哪些数据、输出被谁拿走了——
+        这套留痕得自己建，标里没有。合规责任压在服务提供者身上，压不到模型厂商头上。
+      </li>
+      <li>
+        <strong>企业的真实形态不是「一个内部模型」，是一片影子 AI。</strong>
+        私有化一体机只管官方那条路。同时发生的是各部门自开的外部 API、办公套件自带的助手、
+        员工桌面上的各种工具、外包接进来的 SaaS。<em>治理点必须在流量层，不在模型层</em>——
+        这恰好是「改一行 base_url 就接管」这个形态真正成立的地方。
+      </li>
+    </ol>
+
+    <h3>还有一层：内部自用确实没人管，但输出会离开对话框</h3>
+    <p>
+      企业内部自用的模型，外部监管的确盯不到，这也是他们敢放开用的原因。但是——
+      广电的产出要<strong>播出去</strong>，能源的产出要<strong>进生产系统</strong>，白酒的产出要<strong>进配方和质检</strong>。
+      输出一旦离开对话框、进入业务流程，责任全都回来了。<strong>审计的锚点就在这一刻，和模型部署在哪毫无关系。</strong>
+    </p>
+
+    <div class="note ok">
+      <div class="note-head">台上的一句话版本</div>
+      <p>
+        私有化解决了「模型在哪」，没解决「模型被谁怎么用、说了什么、该不该说」。
+        前者是采购问题，后者是治理问题，而后者现在没人管。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">转向二 · 审计对象</div>
+    <h2>从保密审计到适播审计</h2>
+
+    <h3>原来审的是什么（读代码得出，非 PR 描述）</h3>
+    <p><strong>对象是一次「请求—响应」交换里的纯文本，双向扫。</strong></p>
+    <ul class="plain">
+      <li>
+        入向 <code>scanRequest()</code> 只做一件事：拿用户输入匹配一张约 21 条的提示注入词表
+        （<code>忽略之前</code>、<code>开发者模式</code>、<code>解除限制</code>、<code>system prompt</code>、<code>原始指令</code> 等），
+        命中即 high 级 <code>injection</code>。
+      </li>
+      <li>
+        出向 <code>scanResponse()</code> 找的全是<strong>泄漏</strong>：预埋的服务密钥、系统提示词标记、
+        内部机密（代码注释写的是「定价 / 工艺」）、银行卡号，再加正则扫手机号 / 身份证号 / 银行卡号。
+      </li>
+      <li>
+        行为是三档动作 <code>block</code> / <code>redact</code> / <code>flag</code>，按每企业策略配置。
+        redact 是正则打码，block 整段换成固定话术，放行清单里的人降级为只留痕。
+      </li>
+      <li>
+        红队 probe 六类：<code>prompt-exfil</code>、<code>data-exfil</code>、<code>pii-dump</code>、
+        <code>jailbreak</code>、<code>role-override</code>、<code>hallucination</code>。
+        评分五维：可审计性 / 注入抵抗 / 数据合规 / 配置卫生 / 稳健性。
+      </li>
+    </ul>
+    <p><strong>一句话：这是一套「保密审计」，它问的是「不该出来的东西，出来了没有」。</strong></p>
+
+    <h3>广电问的是另一个问题</h3>
+    <p>
+      广电不问「泄没泄」，问的是<strong>「这段内容能不能播」</strong>：导向、事实准确、敏感人物与事件、
+      AI 生成内容标识、版权、用词规范。这两者的差别不是程度，是类别——
+      一个是保密（confidentiality），一个是适播（content compliance）。
+    </p>
+
+    <h3>难点：正则题与判断题</h3>
+    <p>
+      禁用词和一致性能用正则抓；导向和事实准确抓不了，只能用模型判。后者意味着慢、不确定，
+      而且审计器自己也会判错——黑客松现场最怕这个。所以分两层：
+    </p>
+    <div class="split">
+      <div class="layer">
+        <div class="layer-key">L1 · 确定性层</div>
+        <h4>词表与正则，现场必演</h4>
+        <p>禁用词、敏感人物与事件、未标识的 AI 生成内容、数字日期职务这类硬事实。毫秒级、百分百可复现，现有代码改词表就能跑。</p>
+      </div>
+      <div class="layer">
+        <div class="layer-key">L2 · 判断层</div>
+        <h4>模型复核，只标不拦</h4>
+        <p>导向、语气、事实核查。输出「待人工复核」而不是「拦截」，主动承认不确定性，把人留在环里。时间不够就只做一个 case。</p>
+      </div>
+    </div>
+    <p>
+      「审计器自己会错，所以高风险项只标不拦、必须人工终审」——<strong>这句话主动讲出来是加分的</strong>，
+      它说明我们懂内容行业的责任边界，而不是拿个模型当法官。
+    </p>
+    <p>
+      <strong>保密审计不要丢，降级成配角。</strong> 广电台自己也有机密——未播选题、采访对象联系方式、内部通稿。
+      现有的 PII 与密钥检测在这个场景里照样成立，博文已经写完、测试全绿的那部分不浪费。
+    </p>
+  </section>
+
+  <section>
+    <div class="rail">行业依据</div>
+    <h2>我们不发明流程，我们给现成流程装加速器</h2>
+    <p>
+      县级融媒体中心是 2018 年起整合县电视台、广播、报纸、新闻网、政务新媒体的产物，
+      机构性质是<strong>事业单位，归口县委宣传部管理</strong>。第一属性是宣传，不是内容生意。
+      所以「稿子出错」不是产品事故，是政治事故——这跟互联网公司的内容风控是两个量级的后果。
+    </p>
+    <p>
+      人的实况：人员结构老化、转隶来的多是「老广电人」、普遍推「一人多岗」、
+      一线记者编辑<strong>疲于应付时政报道</strong>。稿件生产是真痛点，不是硬凑的。
+    </p>
+    <p>而它已经有一套跑了几十年的成文流程：</p>
+    <p class="flowline">
+      选题与派工 → 成稿 + <strong style="color:var(--accent)">技术预检</strong> → 初审 + 一校 → 复核修改 → 复审 + 二校 → 征求意见/会签 → 终审 + 三校 → 签发与电子签章 → 多平台发布 → 发布后巡查
+    </p>
+    <p><strong>「成稿 + 技术预检」这个节点是现成的，把关人就挂在这里</strong>——不用说服任何人改流程。</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">环节</th><th scope="col">谁</th><th scope="col">审什么</th><th scope="col">我们怎么接</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="nowrap">一校</td><td class="nowrap">编辑/经办人</td><td>错别字、语病、标点、格式</td><td class="nowrap"><span class="tag auto">L1 全自动</span></td></tr>
+          <tr><td class="nowrap">初审（一审）</td><td class="nowrap">编辑/经办人</td><td>文字、事实、规范</td><td class="nowrap"><span class="tag auto">L1 全自动</span></td></tr>
+          <tr><td class="nowrap">二校</td><td class="nowrap">部门负责人</td><td>数据、人名、地名、专业术语、排版一致性</td><td class="nowrap"><span class="tag semi">L1 + 少量 L2</span></td></tr>
+          <tr><td class="nowrap">复审（二审）</td><td class="nowrap">部门负责人</td><td>政策口径、事实核查、保密与隐私、发布价值</td><td class="nowrap"><span class="tag semi">L1 + 少量 L2</span></td></tr>
+          <tr><td class="nowrap">终审（三审）</td><td class="nowrap">分管/主要领导</td><td><strong>政治导向、社会效果、是否违法违规，决定发不发</strong></td><td class="nowrap"><span class="tag human">L2 只标不拦</span></td></tr>
+          <tr><td class="nowrap">三校</td><td class="nowrap">分管领导</td><td>通读、排版效果、整体一致性</td><td class="nowrap"><span class="tag human">留给人</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note ok">
+      <div class="note-head">台上这样讲</div>
+      <p>
+        我们没有发明新流程。我们把三审三校里<strong>机械的那部分</strong>自动化了，
+        把<strong>判断的那部分</strong>留给人，并且让全程可追溯、责任到人。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">系统</div>
+    <h2>一条链路，六层，双向治理</h2>
+    <div class="pipe-wrap">
+      <div class="pipe">
+        <div class="pipe-step">
+          <span class="pipe-n">01</span><span class="pipe-t">素材入口</span>
+          <span class="pipe-d">粘贴 / 上传上级通稿、会议材料。不做采集对接。</span>
+        </div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step audit">
+          <span class="pipe-n">02</span><span class="pipe-t">入口准入</span>
+          <span class="pipe-d">判定这次调用该不该发生。硬拦 / 要理由 / 仅留痕三档。非法输入模型完全不碰。</span>
+        </div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step">
+          <span class="pipe-n">03</span><span class="pipe-t">生产层</span>
+          <span class="pipe-d">按本台风格生成播报稿 + 短视频文案。风格来自预置历史稿件 + 风格 skill。</span>
+        </div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step audit">
+          <span class="pipe-n">04</span><span class="pipe-t">预检层</span>
+          <span class="pipe-d">禁用词 / 领导表述 / 与原文一致性 / AI 标识。三档动作：拦截·标红·放行。</span>
+        </div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step">
+          <span class="pipe-n">05</span><span class="pipe-t">三审流转</span>
+          <span class="pipe-d">编辑 → 部门主任 → 分管领导。三个角色写死，一屏切换。</span>
+        </div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step audit">
+          <span class="pipe-n">06</span><span class="pipe-t">审计层</span>
+          <span class="pipe-d">每篇稿子一张 AI 参与度追溯图谱。谁写的、谁改的、谁签的。</span>
+        </div>
+      </div>
+      <div class="band">
+        架构硬约束：<strong>生产层调模型必须走把关人网关</strong>，业务代码不许直连。
+        这样审计天然全覆盖、零遗漏，博文已写好的 gateway / 护栏 / 策略 / 事件流 / 逐用户计量全部保住。
+        <strong>它同时是入口准入闸的强制力来源</strong>——绕不过网关，就绕不过准入。
+      </div>
+    </div>
+
+    <h3>预检层具体查什么（博文的 detector 规格）</h3>
+    <ul class="plain">
+      <li><strong>句级来源标记（卖点，优先级最高）</strong>——每句话带 <code>ai</code> / <code>ai-edited</code> /
+      <code>human</code> / <code>source</code> 四种来源之一，流转时重算 AI 参与度。
+      <strong>词表打不过方正，句级来源只有站在生产现场才拿得到</strong>——这是唯一的结构性优势。</li>
+      <li><strong>禁用词与慎用词</strong>——新华社《新闻信息报道中的禁用词和慎用词》，2016 年 7 月修订版共 102 条，分时政社会生活、法律法规、民族宗教、港澳台与领土主权、国际关系五类。例：一般性会议不用「隆重召开」；报道领导活动慎用「亲自」；不称「中共 XX 省省委书记」应称「中共 XX 省委书记」；对国内领导干部和国企负责人不用「老板」。</li>
+      <li><strong>与原通稿的一致性比对</strong>——人名、职务、地名、数字、日期。生成稿里出现而原文没有的，一律标红。这是幻觉最容易致命的地方。</li>
+      <li><strong>AI 生成内容标识</strong>——按《人工智能生成合成内容标识办法》自动补显式标识，并在文件元数据写隐式标识。</li>
+      <li><strong>三档动作沿用现有实现</strong>——<code>block</code> 拦下不让走、<code>redact</code> 标红待人工复核、<code>flag</code> 放行留痕。语义天然对应审片动作。</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="rail">入口准入</div>
+    <h2>唯一一档零成本的治理</h2>
+    <p>
+      输出侧拦截时，token 已经烧了、时间已经花了、模型已经生成了违规内容只是没给你看。
+      <strong>输入侧拦掉，什么都没发生</strong>——不烧钱、不留内容、不产生风险。这是整条链路上唯一免费的一档。
+    </p>
+    <p>
+      它答的还是另一个问题：<strong>公器私用</strong>。台里的 AI 账号被拿去写小说、写年终总结、生成不当内容——
+      这不是内容合规问题，是纪律问题，而事业单位对这件事极其敏感。
+    </p>
+    <p>
+      代码是现成的：<code>scanRequest()</code> 这个入向钩子已经在 audit-gate 里跑着（当前做提示注入匹配），换判定逻辑即可，不是新架构。
+    </p>
+
+    <h3>必须分三档，不能一刀切</h3>
+    <p>
+      <strong>广电编辑的正常工作就是处理敏感题材。</strong>写事故通报、涉诉纠纷、涉政会议，输入里必然带敏感词。
+      一刀切拦掉，系统当场不可用——评委只要问一句「那我要报道这个事件怎么办」，方案就崩了。
+      所以复用现有的 <code>block</code> / <code>redact</code> / <code>flag</code>，重新定义语义：
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">档</th><th scope="col">判定</th><th scope="col">动作</th><th scope="col">例</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="nowrap"><span class="tag human">硬拦</span></td><td>明确违法，且与新闻业务无关</td><td><strong>不给调用，模型完全不碰</strong></td><td>涉恐涉毒、色情赌博、诈骗话术、明确红线</td></tr>
+          <tr><td class="nowrap"><span class="tag semi">要理由</span></td><td>涉敏感题材，但可能是正当报道</td><td>要求填选题依据 / 上级授权 → 留痕后放行</td><td>事故、纠纷、涉政敏感事件</td></tr>
+          <tr><td class="nowrap"><span class="tag auto">仅留痕</span></td><td>正常业务里的常见敏感表述</td><td>直接放行，进审计</td><td>日常时政词汇</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note ok">
+      <div class="note-head">中间那档是这个设计里最值钱的部分</div>
+      <p>
+        「要理由」证明我们懂新闻业务——不是拿通用内容安全套上来，而是知道<strong>敏感题材恰恰是这个行业每天在处理的东西</strong>。
+        人给个理由，系统留个痕，责任就落到人头上。这跟三审三校「把判断留给人」是同一个哲学。
+      </p>
+    </div>
+    <p>
+      <strong>另外单开一类：非业务用途识别。</strong>「帮我写篇小说」「写个年终总结」——不违法，但是公器私用。
+      这类用词表抓不到，要看用途；只标不拦、进审计报表，让台里管理者看得见。
+    </p>
+    <div class="note warn">
+      <div class="note-head">别把它叫「敏感词过滤」</div>
+      <p>
+        敏感词过滤是九十年代的东西，评委听了会归到很低的档位。叫<strong>「入口准入」</strong>——
+        判定的不是词，是<strong>这次调用该不该发生</strong>。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">竞品格局</div>
+    <h2>这块地不是空白，三层都有人</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">层</th><th scope="col">玩家</th><th scope="col">做什么</th></tr></thead>
+        <tbody>
+          <tr><td class="nowrap">采编发一体化平台</td><td>拓尔思 TRS、中科大洋「快融」、新华智云（称已赋能 3000+ 媒体机构）、索贝</td><td>策采编发评运屏全流程，含稿件统一撰写、审核、发布</td></tr>
+          <tr><td class="nowrap">智能审校</td><td>方正智能审校、黑马校对、新华社「新华较真」、新华网勘误系统</td><td>查错</td></tr>
+          <tr><td class="nowrap">AI 写稿</td><td>快笔小新 (2015)、小封 (2017)、人民日报「创作大脑 AI+」(2023)</td><td>生成稿件</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note warn">
+      <div class="note-head">坏消息：原 detector 规格撞了成熟商品</div>
+      <p>
+        <strong>方正智能审校有 21 类 136 个词库</strong>，明确含领导人职务、<strong>领导人排序</strong>、
+        重要讲话、重要提法、<strong>禁用词慎用词</strong>、法律法规、<strong>敏感人物</strong>，
+        检查项直接写着「领导人姓名差错、领导人职务差错、领导人排序差错」；新华网勘误系统的
+        领导人姓名/职务/顺序勘误<strong>准确率 90%+</strong>；黑马校对 1995 年就在卖。
+        <strong>堆词表这条路走不通——我们 1 类打不过 21 类。</strong>
+      </p>
+    </div>
+
+    <h3>真正的空白：三层之间不通</h3>
+    <p>
+      采编发平台管<strong>流程</strong>，审校系统管<strong>成品</strong>，AI 写稿产品管<strong>生产</strong>——三者互不相通。
+      关键在于：<strong>审校系统拿到的永远是一篇「稿子」</strong>，它不知道这稿子是 AI 写的、AI 写了哪几句、
+      人改了多少、AI 是在什么提示下写出来的——<em>因为这些产品全都诞生在 AI 写稿普及之前，
+      数据模型里根本没有「这句话是谁写的」这个字段。</em>
+    </p>
+    <div class="note ok">
+      <div class="note-head">我们的位置</div>
+      <p>
+        不做审校（方正的地盘），不做采编平台（拓尔思、大洋的地盘）。
+        做的是把 <strong>AI 生产这个新变量接进已有的审校与三审体系</strong>，并补上它带来的新问题——<strong>责任归属</strong>。
+      </p>
+    </div>
+
+    <h3>台上主动承认，三句话</h3>
+    <ul class="plain">
+      <li>「查错这件事，方正和黑马做了十年，做得比我们好，我们不做。」</li>
+      <li>「但它们拿到的永远是一篇成品稿——<strong>不知道哪句是 AI 写的，不知道人改过没有，不知道谁放行的</strong>。」</li>
+      <li>「因为它们诞生在 AI 写稿之前。我们补的是这一环。」</li>
+    </ul>
+    <p>
+      承认成熟品类再讲差异，可信度比假装空白高一个量级——而评委席里只要有一个媒体行业的人，
+      他一定知道方正智能审校。
+    </p>
+
+    <h3>县级台的真实条件，约束整个设计</h3>
+    <ul class="plain">
+      <li><strong>只有 46.8% 有独立机构番号</strong>，多数连行政归属都没解决</li>
+      <li>「要设备没设备、要人没人、要钱没钱」</li>
+      <li>「采编人员对新设备和新系统<strong>掌握不全面、使用不熟练</strong>」，技术支撑力量不足</li>
+    </ul>
+    <p>
+      <strong>新华智云 / 拓尔思 / 大洋那套是给省市级台的重型平台——县级台买不起、养不起、也用不好。</strong>
+      这就是「建而不用」的来源，也是我们对大洋的答法：<em>不是功能比它多，是它那套县级台跑不起来。</em>
+      业务流程因此定三条原则：一条路走到黑没有分支、预检只标注不阻断（硬拦除外）、留痕本身要有管理价值。
+    </p>
+  </section>
+
+  <section>
+    <div class="rail">出彩点</div>
+    <h2>AI 参与度追溯：别人做不到的那一块</h2>
+    <p>
+      《人工智能生成合成内容标识办法》2025 年 9 月 1 日施行，由<strong>国家网信办、工信部、公安部、国家广播电视总局四部门联合发布</strong>——
+      广电总局自己就是签发方之一。所以「广电用 AI 生成的内容必须标识」不是我们编的合规需求，是它主管部门签的规章。
+    </p>
+    <p>
+      但办法只说「要标」，<strong>没人回答「一篇人机共同完成的稿子，AI 参与了多少、哪几句是它写的、终审有没有看过」</strong>。
+    </p>
+    <p>
+      而且它不只是合规记录，是<strong>管理指标</strong>：AI 参与度在每次流转时重算，人改得越多占比越低——
+      所以<strong>一篇稿子若以 AI 参与度 100% 一路签发，说明三审三校形同虚设，没人真看过</strong>。
+      这是给台领导的抓手，方正和大洋给不了，因为它们不知道哪句是 AI 写的。
+    </p>
+    <p>
+      我们的系统天生知道，因为生产和审核在同一条链路上。每一篇签发的稿子都能给出一张图谱：
+      哪些句子 AI 原样保留、哪些人改过、哪些是人新写的、命中过哪些红线、被谁在哪一级放行、谁最终签发。
+    </p>
+    <div class="note ok">
+      <div class="note-head">这一条同时答死两个质疑</div>
+      <p>
+        <strong>「为什么不用现成的内容审核 API？」</strong>——因为它只看得见成品，看不见生产过程，给不出 AI 参与度。<br>
+        <strong>「为什么不私有化部署就行了？」</strong>——私有化解决「模型在哪」，解决不了「哪句话是它写的、谁放行的」。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">演示</div>
+    <h2>三分钟，七个镜头</h2>
+    <div class="shots">
+      <div class="shot">
+        <span class="shot-t">0:00</span>
+        <div class="shot-b"><span class="shot-h">丢进一份真实通稿</span>
+        <span class="shot-d">县里的会议材料 / 政务通稿。一句话说清：这是县级台编辑每天上午都在干的活。</span></div>
+      </div>
+      <div class="shot">
+        <span class="shot-t">0:25</span>
+        <div class="shot-b"><span class="shot-h">入口准入：两个对比</span>
+        <span class="shot-d">先演正当敏感题材——走<strong>「要理由」</strong>通道，编辑填了选题依据，放行留痕。
+        再演明显滥用「帮我写篇小说」——<strong>直接不给调用，模型一次都没被碰到</strong>。</span></div>
+      </div>
+      <div class="shot">
+        <span class="shot-t">0:50</span>
+        <div class="shot-b"><span class="shot-h">一键生成播报稿 + 短视频文案</span>
+        <span class="shot-d">按本台风格。强调提速倍数——这是 AI 的主场，也是痛点所在。</span></div>
+      </div>
+      <div class="shot">
+        <span class="shot-t">1:20</span>
+        <div class="shot-b"><span class="shot-h">预检自动标出三处</span>
+        <span class="shot-d">一处禁用词被<strong>拦下</strong>；一处数字与原通稿不符<strong>标红待复核</strong>；AI 标识<strong>自动补上</strong>。</span></div>
+      </div>
+      <div class="shot">
+        <span class="shot-t">1:55</span>
+        <div class="shot-b"><span class="shot-h">走完三审三校</span>
+        <span class="shot-d">编辑改完提交 → 部门主任二审 → 分管领导终审签发。角色切换器一屏演完，不展开 OA 细节。</span></div>
+      </div>
+      <div class="shot">
+        <span class="shot-t">2:20</span>
+        <div class="shot-b"><span class="shot-h">打开这篇稿子的追溯图谱</span>
+        <span class="shot-d">AI 参与度百分比、三处红线命中记录、两级放行、签发人与时间。这是全场最该停留的一屏。</span></div>
+      </div>
+      <div class="shot">
+        <span class="shot-t">2:50</span>
+        <div class="shot-b"><span class="shot-h">对照组：关掉把关人再跑一遍</span>
+        <span class="shot-d">同一份通稿，禁用词直接就出去了，没有标识，没人知道是 AI 写的，出了事查不到人。</span></div>
+      </div>
+    </div>
+    <div class="note ok">
+      <div class="note-head">收口那句话</div>
+      <p>私有化解决不了这个，外挂的内容审核 API 也解决不了——<strong>因为它们都看不见生产过程。</strong></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">资产盘点</div>
+    <h2>能带走的，比要重写的多</h2>
+    <p>这是转向能在 36 小时内成立的原因。骨架全留，只换检测内容。</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">现有资产</th><th scope="col">处置</th><th scope="col">说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="mono">/gateway/v1/messages</span> 网关形态</td><td class="verdict"><span class="tag keep">原样复用</span></td><td>治理点在流量层这件事，跟审什么无关</td></tr>
+          <tr><td>双向 scan 的挂载位置</td><td class="verdict"><span class="tag keep">原样复用</span></td><td>入向出向两个钩子都在，换函数体即可</td></tr>
+          <tr><td>三档动作 <span class="mono">block / redact / flag</span></td><td class="verdict"><span class="tag keep">原样复用</span></td><td>语义直接就是广电的审片动作：拦下不让播 / 标红待复核 / 放行留痕</td></tr>
+          <tr><td>拦截清单 + 敏感话题 + 放行清单</td><td class="verdict"><span class="tag keep">换数据不换码</span></td><td>这个策略结构几乎是照着广电的禁用词表和敏感人物表长的</td></tr>
+          <tr><td>逐用户计量 + 事件流留痕</td><td class="verdict"><span class="tag keep">原样复用</span></td><td>广电要的「谁签发的」责任到人，<span class="mono">user</span> 字段现成</td></tr>
+          <tr><td>每企业策略与预设切换</td><td class="verdict"><span class="tag keep">原样复用</span></td><td>切预设即时改变运行时行为，是现场最好演的一个动作</td></tr>
+          <tr><td><span class="mono">detectors</span> 的检测项</td><td class="verdict"><span class="tag swap">重写</span></td><td>PII / 密钥 → 禁用词 102 条、领导表述规范、与原文一致性、AI 标识</td></tr>
+          <tr><td>红队 probe 十二发</td><td class="verdict"><span class="tag swap">重写</span></td><td>越狱套密钥 → 诱导不当导向、诱导编造事实、诱导产出未标识内容</td></tr>
+          <tr><td>评分五维的维度名</td><td class="verdict"><span class="tag swap">改名重算</span></td><td>注入抵抗 / 配置卫生 → 导向 / 事实 / 标识 / 可追溯 / 版权</td></tr>
+          <tr><td>PII 与密钥检测</td><td class="verdict"><span class="tag keep">降级保留</span></td><td>广电台的未播选题、采访对象联系方式同样适用，从主角变配角</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">分工</div>
+    <h2>两个人，两条线，一个接口</h2>
+    <div class="split">
+      <div class="who">
+        <span class="who-n">黄博文</span>
+        <h4>网关 · 预检 · 审计</h4>
+        <ul>
+          <li>保住现有 gateway / 护栏 / 策略 / 事件流 / 逐用户计量</li>
+          <li>入口准入闸：改写 <code>scanRequest()</code> 为硬拦 / 要理由 / 仅留痕三档 + 非业务用途识别</li>
+          <li>重写 <code>detectors</code>：禁用词 102 条 + 领导表述规范 + 与原文一致性比对 + AI 标识</li>
+          <li>重写红队 probe：诱导不当导向 / 诱导编造事实 / 诱导产出未标识内容</li>
+          <li>审计层数据：<strong>句级来源标记</strong>（优先级高于词表）、规则命中、放行记录、每次流转重算 AI 参与度</li>
+        </ul>
+      </div>
+      <div class="who">
+        <span class="who-n">William</span>
+        <h4>生产 · 流转 · 界面</h4>
+        <ul>
+          <li>生产层：通稿 → 播报稿 + 短视频文案，风格 skill + 预置历史稿件</li>
+          <li>三审三校流转：三个角色写死，角色切换器</li>
+          <li>演示界面：稿件视图、预检标注、追溯图谱</li>
+          <li>素材：争取一份真实县级政务通稿（脱敏）</li>
+        </ul>
+      </div>
+    </div>
+    <p><strong>接口只有一个</strong>：生产层通过把关人网关调模型，网关返回带标注的结果。两条线并行推进，最后一小时合。</p>
+
+    <h3>时间线</h3>
+    <ol class="steps">
+      <li><strong>今晚（8/28）</strong>——组队表单先交掉，不等方案。定素材来源。两边各自把骨架跑通。</li>
+      <li><strong>明天上午</strong>——链路打通：生产 → 预检 → 流转，能从头跑到尾（哪怕很丑）。</li>
+      <li><strong>明天下午</strong>——追溯图谱 + 对照组 + 演示彩排至少三遍。</li>
+      <li><strong>明天晚上</strong>——作品说明一页 + 提交。留两小时缓冲。</li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="rail">边界</div>
+    <h2>明确不做，并且写进作品说明</h2>
+    <ul class="plain">
+      <li><strong>内容采集对接</strong>——就是粘贴/上传，不做爬虫、不接任何外部系统。</li>
+      <li><strong>多平台发布</strong>——留个按钮，点了显示「已发布」。</li>
+      <li><strong>用户与权限体系</strong>——三个角色写死，不做账号管理。</li>
+      <li><strong>电子签章</strong>——不做。</li>
+      <li><strong>知识库不做 RAG 工程</strong>——预置十几篇本台历史稿件做风格参考即可。</li>
+      <li><strong>L2 模型判断层</strong>——最多一个 case，且只标不拦。</li>
+    </ul>
+    <div class="note warn">
+      <div class="note-head">为什么要主动写出来</div>
+      <p>
+        黑客松作品被追问「这个是真的还是演的」是常态。<strong>主动划边界比被问出来强得多</strong>。
+        受控靶子与预置素材是演示环境，被问到如实说明。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">合规</div>
+    <h2>依据与一个必须澄清的点</h2>
+    <ul class="plain">
+      <li><strong>新华社《新闻信息报道中的禁用词和慎用词》</strong>——2016 年 7 月修订版新增 57 条、共 102 条，五大类。全行业事实标准，是预检层的主要词表来源。</li>
+      <li><strong>《人工智能生成合成内容标识办法》</strong>——2025 年 9 月 1 日施行，网信办 / 工信部 / 公安部 / <strong>广电总局</strong>四部门联合发布。要求显式标识（文本首尾或中间提示、界面提示）+ 隐式标识（文件元数据）。</li>
+      <li><strong>《生成式人工智能服务管理暂行办法》</strong>——要求服务提供者对违法输入采取处置措施（含暂停/终止服务），是入口准入闸的法规依据。<strong>确切条款与施行日期上台前核原文。</strong></li>
+      <li><strong>三审三校</strong>——行业通行制度，不是法规，但是每家融媒体中心的实际工作制度。</li>
+    </ul>
+    <div class="note warn">
+      <div class="note-head">别在台上说错这一条</div>
+      <p>
+        《广播电视安全播出管理规定》（广电总局令第 62 号）管的是<strong>技术性播出安全</strong>——停播、信号、设备故障，
+        事故分责任/技术/其它三类，特大/重大/一般三级。<strong>它不管内容差错。</strong>
+        内容侧的约束来自宣传纪律、三审制和禁用词规范，是另一套东西。
+        这两个混着讲，懂行的评委立刻能听出我们没进过这个行业。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail">风险与未决</div>
+    <h2>还缺的三件，要盯的三条</h2>
+    <h3>还缺</h3>
+    <ol class="steps">
+      <li><strong>赛道二评分细则（满分 100 的分项权重）。</strong>飞书手册 §三、§五在登出状态不渲染，一直没拿到。权重决定时间往哪投。</li>
+      <li><strong>真实通稿素材。</strong>一份真实的县级政务通稿（脱敏）能把可信度抬一个量级。拿不到就自己编，但台上<strong>必须如实说明是模拟素材</strong>。</li>
+      <li><strong>能问细节的广电真人。</strong>一个能打电话确认「你们一天几篇稿、三审卡在哪」的人，比任何调研都值钱。</li>
+    </ol>
+    <h3>要盯</h3>
+    <ul class="plain">
+      <li><strong>范围变更的时间成本。</strong>博文要重写 <code>detectors</code> 和 probe 两个文件，且必须他本人同意。这个决定拖过今晚就来不及了。</li>
+      <li><strong>法规名称与施行时间别在台上背错。</strong>上台前核一遍原文。讲错一个日期，整段合规论证的可信度就没了。</li>
+      <li>
+        <strong>「长期可维护」和「36 小时交付」是两件事。</strong>
+        目标不是这两天写出可维护的代码，是这个项目得能活下去、是真产品；这正是赛道二的取胜点。
+        但接下来 36 小时的工程取舍按 demo 的标准做——现有 CI 不覆盖 <span class="mono">audit-gate</span>、
+        它不走主应用的部署链路，这些是赛后要还的债，不是现在要修的。
+      </li>
+    </ul>
+  </section>
+
+  <footer>
+    <div>把关人 · 融媒稿件生产与监理平台 —— 多彩贵州·贵客松 赛道二方案书</div>
+    <div>更新于 2026-08-28 · 依据 PR #1209 实际代码、《贵客松选手手册》可读部分、县级融媒体与新闻规范公开资料</div>
+    <div>仓库：<span class="mono">docs/gatekeeper/</span> — plan.md（本文）· market-landscape.md · business-process.md · README.md</div>
+  </footer>
+
+</div>
