@@ -21,3 +21,19 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+      - name: Build container
+        run: docker build --tag guiks-gd-content-moderation:ci .
+      - name: Smoke-test container readiness
+        run: |
+          docker run --detach --name moderation-ci --publish 3300:3300 guiks-gd-content-moderation:ci
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:3300/readyz; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs moderation-ci
+          exit 1
+      - name: Clean up test container
+        if: always()
+        run: docker rm --force moderation-ci || true
