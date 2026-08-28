@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server';
 import { pathToFileURL } from 'node:url';
 import { Hono } from 'hono';
-import { config, usingMockUpstream } from './config.js';
+import { config, requiresGatewayToken, usingMockUpstream } from './config.js';
 import { closeWorkflowRepository, getWorkflowRepository } from './db/repository.js';
 import { snapshot } from './lib/store.js';
 import { eventsRoutes } from './routes/events.js';
@@ -27,17 +27,22 @@ app.get('/readyz', (c) => {
         ? 'mock'
         : 'missing'
       : 'configured';
-    const ready = database && model !== 'missing';
+    const gatewayAuth = config.gatewayToken
+      ? 'configured'
+      : requiresGatewayToken()
+        ? 'missing'
+        : 'demo-open';
+    const ready = database && model !== 'missing' && gatewayAuth !== 'missing';
     return c.json(
-      { status: ready ? 'ready' : 'not-ready', checks: { database, model } },
+      { status: ready ? 'ready' : 'not-ready', checks: { database, model, gatewayAuth } },
       ready ? 200 : 503,
     );
   } catch {
     return c.json({ status: 'not-ready', checks: { database: false, model: 'unknown' } }, 503);
   }
 });
-// 「把关人」是这个产品的正面。遗留的 AuditGate 控制台还有用（红队、策略、
-// 逐用户计量），但它不是首页——打开根路径应当直接进稿件工作台。
+// 遗留的 AuditGate 控制台还有用（红队、策略、逐用户计量），但它不是
+// guiks-gd-content-moderation 的首页——打开根路径应当直接进稿件工作台。
 app.get('/console', (c) => c.html(renderConsole({ targetLabel: config.targetLabel })));
 app.get('/api/state', (c) => c.json(snapshot()));
 app.get('/api/meta', (c) =>

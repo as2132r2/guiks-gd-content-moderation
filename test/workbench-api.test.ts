@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { config } from '../src/config.js';
+import { getWorkflowRepository } from '../src/db/repository.js';
 import { app } from '../src/index.js';
+import { subscribe } from '../src/lib/bus.js';
+import { reset, usageSnapshot } from '../src/lib/store.js';
 import type { WorkbenchView } from '../src/routes/workbench.js';
 
 const SOURCE =
@@ -81,6 +85,7 @@ describe('入口准入', () => {
 
     const gateRecord = after.trace.find((event) => event.actor === '入口准入');
     expect(gateRecord?.data).toMatchObject({ modelInvoked: false });
+    expect(after.trace.filter((event) => event.kind.startsWith('model-'))).toEqual([]);
   });
 
   it('asks a sensitive but legitimate topic for its 选题依据 instead of refusing it', async () => {
@@ -125,7 +130,105 @@ describe('入口准入', () => {
 });
 
 describe('工作台主链', () => {
+  it('records a paired failure and keeps the manuscript retryable when the model is unavailable', async () => {
+    const { body } = await create();
+    const id = body.manuscript.id;
+    const mutableConfig = config as unknown as { allowMockUpstream: boolean };
+    const previous = mutableConfig.allowMockUpstream;
+
+    try {
+      mutableConfig.allowMockUpstream = false;
+      const response = await move(id, { to: 'generated', role: 'editor' });
+      expect(response.status).toBe(502);
+      expect(await response.json()).toMatchObject({ error: 'model_upstream_failed' });
+    } finally {
+      mutableConfig.allowMockUpstream = previous;
+    }
+
+    const after = await view(id);
+    expect(after.manuscript.status).toBe('admitted');
+    expect(after.artifacts).toEqual([]);
+    const requested = after.trace.filter((event) => event.kind === 'model-requested');
+    const completed = after.trace.filter((event) => event.kind === 'model-completed');
+    expect(requested).toHaveLength(1);
+    expect(completed).toHaveLength(1);
+    expect(completed[0]!.data).toMatchObject({
+      callId: requested[0]!.data.callId,
+      outcome: 'error',
+      errorCode: 'mock_disabled',
+      mode: 'mock',
+    });
+  });
+
+  it('retries a transient terminal-trace write so completed calls stay paired', async () => {
+    const { body } = await create();
+    const id = body.manuscript.id;
+    const repository = getWorkflowRepository();
+    const original = repository.appendTrace.bind(repository);
+    let injected = false;
+    repository.appendTrace = ((manuscriptId, input) => {
+      if (!injected && input.kind === 'model-completed') {
+        injected = true;
+        throw new Error('injected transient write failure');
+      }
+      return original(manuscriptId, input);
+    }) as typeof repository.appendTrace;
+
+    try {
+      expect((await move(id, { to: 'generated', role: 'editor' })).status).toBe(200);
+    } finally {
+      repository.appendTrace = original;
+    }
+
+    const after = await view(id);
+    const requested = after.trace.filter((event) => event.kind === 'model-requested');
+    const completed = after.trace.filter((event) => event.kind === 'model-completed');
+    expect(injected).toBe(true);
+    expect(requested).toHaveLength(2);
+    expect(completed).toHaveLength(2);
+    expect(new Set(completed.map((event) => event.data.callId))).toEqual(
+      new Set(requested.map((event) => event.data.callId)),
+    );
+  });
+
+  it('deduplicates concurrent generation before a second model batch can run', async () => {
+    const { body } = await create();
+    const responses = await Promise.all([
+      move(body.manuscript.id, { to: 'generated', role: 'editor' }),
+      move(body.manuscript.id, { to: 'generated', role: 'editor' }),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+
+    const after = await view(body.manuscript.id);
+    expect(after.artifacts).toHaveLength(2);
+    expect(after.trace.filter((event) => event.kind === 'model-requested')).toHaveLength(2);
+    expect(after.trace.filter((event) => event.kind === 'model-completed')).toHaveLength(2);
+  });
+
+  it('publishes model traces with the shared workflow SSE envelope', async () => {
+    const { body } = await create();
+    const streamed: unknown[] = [];
+    const unsubscribe = subscribe((message) => {
+      if (message.name === 'trace') streamed.push(message.data);
+    });
+    try {
+      expect((await move(body.manuscript.id, { to: 'generated', role: 'editor' })).status).toBe(200);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(streamed).toHaveLength(4);
+    for (const event of streamed) {
+      expect(event).toMatchObject({
+        type: 'trace',
+        manuscriptId: body.manuscript.id,
+        data: { traceId: expect.any(String), kind: expect.stringMatching(/^model-/) },
+      });
+    }
+  });
+
   it('walks 素材 → 准入 → 生成 → 预检 and lowers AI 参与度 when a human rewrites a sentence', async () => {
+    reset();
     const { body } = await create();
     const id = body.manuscript.id;
 
@@ -138,6 +241,44 @@ describe('工作台主链', () => {
     ]);
     expect(generated.aiShare).toBe(1);
     expect(generated.segmentCount).toBeGreaterThan(0);
+
+    // 每个产物对应一对可持久化的模型调用凭证，并用 callId 配对。
+    const requested = generated.trace.filter((event) => event.kind === 'model-requested');
+    const completed = generated.trace.filter((event) => event.kind === 'model-completed');
+    expect(requested).toHaveLength(2);
+    expect(completed).toHaveLength(2);
+    expect(new Set(requested.map((event) => event.data.callId)).size).toBe(2);
+    expect(new Set(completed.map((event) => event.data.callId))).toEqual(
+      new Set(requested.map((event) => event.data.callId)),
+    );
+    expect(new Set(completed.map((event) => event.data.operation))).toEqual(
+      new Set(['broadcast-script', 'short-video-copy']),
+    );
+    for (const event of completed) {
+      expect(event.data).toMatchObject({
+        requestedModel: 'GLM-5.2',
+        servedModel: 'GLM-5.2',
+        usageSource: 'estimated',
+        mode: 'mock',
+        outcome: 'success',
+      });
+      expect(Number(event.data.inputTokens)).toBeGreaterThan(0);
+      expect(Number(event.data.outputTokens)).toBeGreaterThan(0);
+      expect(Number(event.data.totalTokens)).toBe(
+        Number(event.data.inputTokens) + Number(event.data.outputTokens),
+      );
+      expect(Number(event.data.latencyMs)).toBeGreaterThanOrEqual(0);
+    }
+    expect(new Set(generated.artifacts.map((item) => item.artifact.model))).toEqual(
+      new Set(completed.map((event) => event.data.servedModel)),
+    );
+    const usage = usageSnapshot();
+    expect(usage.totals.requests).toBe(2);
+    expect(usage.totals.tokensIn).toBeGreaterThan(0);
+    expect(usage.users[0]?.user).toBe('编辑·张敏');
+    const legacyState = await (await app.request('/api/state')).json();
+    expect(JSON.stringify(legacyState)).not.toContain(SOURCE);
+    expect(JSON.stringify(legacyState)).toContain('正文已从运行时事件中移除');
 
     // ④ 预检 —— 缺失的 AI 标识会自动补写，最终标注里只留下待人工处理项。
     expect((await move(id, { to: 'preflight', role: 'editor' })).status).toBe(200);

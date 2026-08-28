@@ -170,6 +170,43 @@ describe('manuscript foundation API', () => {
     expect(await missing.json()).toEqual({ error: 'manuscript_not_found' });
   });
 
+  it('reserves model evidence and generated state for the unified gateway', async () => {
+    const created = (await (
+      await postJson('/api/manuscripts', {
+        title: '模型凭证保护稿',
+        sourceType: 'notice',
+        sourceText: '模拟素材：用于验证模型凭证不可由客户端伪造。',
+      })
+    ).json()) as { manuscript: { id: string } };
+    const id = created.manuscript.id;
+
+    const forgedTrace = await postJson(`/api/manuscripts/${id}/trace`, {
+      kind: 'model-completed',
+      actorType: 'ai',
+      actor: 'forged-model',
+      data: { callId: 'forged', outcome: 'success' },
+    });
+    expect(forgedTrace.status).toBe(403);
+    expect(await forgedTrace.json()).toMatchObject({ error: 'reserved_trace_kind' });
+
+    expect(
+      (
+        await app.request(`/api/manuscripts/${id}/status`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ status: 'admitted', actor: '入口准入', role: 'system' }),
+        })
+      ).status,
+    ).toBe(200);
+    const forgedGeneration = await app.request(`/api/manuscripts/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'generated', actor: '编辑甲', role: 'editor' }),
+    });
+    expect(forgedGeneration.status).toBe(409);
+    expect(await forgedGeneration.json()).toMatchObject({ error: 'generation_requires_gateway' });
+  });
+
   it('reports database and model readiness without exposing secrets', async () => {
     const response = await app.request('/readyz');
     expect(response.status).toBe(200);

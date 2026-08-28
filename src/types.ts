@@ -29,6 +29,8 @@ export interface Finding {
 
 export interface AuditEvent {
   id: string;
+  /** Correlates the request and response sides of one model invocation. */
+  callId?: string;
   ts: number;
   direction: 'request' | 'response';
   /** target label / base_url the traffic belongs to */
@@ -38,7 +40,7 @@ export interface AuditEvent {
   tokens?: { in: number; out: number };
   /** one-line summary for the stream row */
   summary: string;
-  /** full text (prompt or completion) */
+  /** Sanitized by default; full text is allowed only for controlled fake-data scenarios. */
   body: string;
   findings: Finding[];
 }

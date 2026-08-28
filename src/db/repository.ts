@@ -89,6 +89,36 @@ const buildSegments = (
 const toSegmentRows = (segments: SentenceSegment[]) =>
   segments.map((segment) => ({ ...segment, sourceRef: segment.sourceRef ?? null }));
 
+interface PreparedArtifact {
+  artifact: ContentArtifact;
+  segments: SentenceSegment[];
+}
+
+function prepareArtifact(
+  manuscriptId: string,
+  input: CreateArtifactInput,
+  createdAt: number,
+): PreparedArtifact {
+  const artifactId = randomUUID();
+  const segments = buildSegments(manuscriptId, artifactId, input.segments ?? [], createdAt);
+  const aiShare = segments.length > 0 ? computeAiShare(segments) : input.aiShare;
+  const origin = deriveArtifactOrigin(segments) ?? input.origin;
+  return {
+    artifact: {
+      id: artifactId,
+      manuscriptId,
+      kind: input.kind,
+      content: input.content,
+      origin,
+      ...(aiShare === undefined ? {} : { aiShare }),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+      createdAt,
+    },
+    segments,
+  };
+}
+
 /**
  * An artifact's coarse origin, derived from its sentences. `mixed` is the
  * honest answer the moment a human has touched a generated draft.
@@ -108,7 +138,74 @@ const countOrigins = (segments: SentenceSegment[]): JsonObject => {
 };
 
 export class WorkflowRepository {
-  constructor(private readonly database: DatabaseHandle) {}
+  constructor(private readonly database: DatabaseHandle) {
+    this.reconcileInterruptedModelCalls();
+  }
+
+  private nextTraceTimestamp(manuscriptId: string): number {
+    const row = this.database.sqlite
+      .prepare('SELECT MAX(created_at) AS latest FROM trace_events WHERE manuscript_id = ?')
+      .get(manuscriptId) as { latest?: number | null } | undefined;
+    return Math.max(Date.now(), (row?.latest ?? 0) + 1);
+  }
+
+  /** Close model calls left open by a previous process crash. */
+  private reconcileInterruptedModelCalls(): void {
+    const rows = this.database.sqlite
+      .prepare(
+        `SELECT manuscript_id, kind, actor, data_json, created_at
+         FROM trace_events
+         WHERE kind IN ('model-requested', 'model-completed')
+         ORDER BY created_at ASC`,
+      )
+      .all() as Array<{
+      manuscript_id: string;
+      kind: 'model-requested' | 'model-completed';
+      actor: string;
+      data_json: string;
+      created_at: number;
+    }>;
+
+    const terminal = new Set<string>();
+    const requested = new Map<
+      string,
+      (typeof rows)[number] & { callId: string; data: JsonObject }
+    >();
+    for (const row of rows) {
+      const data = parseJsonObject(row.data_json);
+      const callId = typeof data.callId === 'string' ? data.callId : '';
+      if (!callId) continue;
+      const key = `${row.manuscript_id}:${callId}`;
+      if (row.kind === 'model-completed') terminal.add(key);
+      else requested.set(key, { ...row, callId, data });
+    }
+
+    for (const [key, row] of requested) {
+      if (terminal.has(key)) continue;
+      const createdAt = this.nextTraceTimestamp(row.manuscript_id);
+      this.database.orm
+        .insert(traceEvents)
+        .values({
+          id: randomUUID(),
+          manuscriptId: row.manuscript_id,
+          kind: 'model-completed',
+          actorType: 'ai',
+          actor: row.actor,
+          dataJson: JSON.stringify({
+            callId: row.callId,
+            operation: row.data.operation ?? 'unknown',
+            requestedModel: row.data.requestedModel ?? row.actor,
+            mode: row.data.mode ?? 'unknown',
+            initiatedBy: row.data.initiatedBy ?? 'unknown',
+            latencyMs: Math.max(0, createdAt - row.created_at),
+            outcome: 'error',
+            errorCode: 'process_interrupted',
+          }),
+          createdAt,
+        })
+        .run();
+    }
+  }
 
   healthcheck(): boolean {
     const row = this.database.sqlite.prepare('SELECT 1 AS ok').get() as { ok?: number } | undefined;
@@ -286,7 +383,7 @@ export class WorkflowRepository {
   ): Manuscript | undefined {
     const existing = this.findManuscript(id);
     if (!existing) return undefined;
-    const now = Date.now();
+    const now = this.nextTraceTimestamp(id);
     const reviewRound = existing.reviewRound + (options.incrementReviewRound ? 1 : 0);
 
     this.database.orm.transaction((tx) => {
@@ -310,27 +407,12 @@ export class WorkflowRepository {
   }
 
   addArtifact(manuscriptId: string, input: CreateArtifactInput): ContentArtifact | undefined {
-
     if (!this.findManuscript(manuscriptId)) return undefined;
-    const createdAt = Date.now();
-    const artifactId = randomUUID();
-    const segments = buildSegments(manuscriptId, artifactId, input.segments ?? [], createdAt);
-
-    // Sentence provenance is the authority; the caller-supplied ratio and
-    // origin are only fallbacks for artifacts nobody has segmented yet.
-    const aiShare = segments.length > 0 ? computeAiShare(segments) : input.aiShare;
-    const origin = deriveArtifactOrigin(segments) ?? input.origin;
-    const artifact: ContentArtifact = {
-      id: artifactId,
+    const { artifact, segments } = prepareArtifact(
       manuscriptId,
-      kind: input.kind,
-      content: input.content,
-      origin,
-      ...(aiShare === undefined ? {} : { aiShare }),
-      ...(input.model ? { model: input.model } : {}),
-      ...(input.metadata ? { metadata: input.metadata } : {}),
-      createdAt,
-    };
+      input,
+      this.nextTraceTimestamp(manuscriptId),
+    );
 
     this.database.orm.transaction((tx) => {
       tx.insert(contentArtifacts)
@@ -357,8 +439,8 @@ export class WorkflowRepository {
           manuscriptId,
 
           kind: 'artifact-created',
-          actorType: origin === 'human' ? 'human' : 'ai',
-          actor: input.model ?? origin,
+          actorType: artifact.origin === 'human' ? 'human' : 'ai',
+          actor: input.model ?? artifact.origin,
           dataJson: JSON.stringify({
             artifactId: artifact.id,
             kind: artifact.kind,
@@ -375,6 +457,92 @@ export class WorkflowRepository {
         .run();
     });
     return artifact;
+  }
+
+  /**
+   * Commit a generation batch and its state transition atomically. A retry can
+   * never observe one artifact without the other or duplicate a half-finished
+   * generation after a persistence error.
+   */
+  completeGeneration(
+    manuscriptId: string,
+    inputs: CreateArtifactInput[],
+    actor: string,
+  ): { manuscript: Manuscript; artifacts: ContentArtifact[] } | undefined {
+    const existing = this.findManuscript(manuscriptId);
+    if (!existing || existing.status !== 'admitted' || inputs.length === 0) return undefined;
+
+    const startedAt = this.nextTraceTimestamp(manuscriptId);
+    const prepared = inputs.map((input, index) => ({
+      input,
+      ...prepareArtifact(manuscriptId, input, startedAt + index),
+    }));
+    const transitionAt = startedAt + prepared.length;
+
+    this.database.orm.transaction((tx) => {
+      for (const { input, artifact, segments } of prepared) {
+        tx.insert(contentArtifacts)
+          .values({
+            id: artifact.id,
+            manuscriptId: artifact.manuscriptId,
+            kind: artifact.kind,
+            content: artifact.content,
+            origin: artifact.origin,
+            aiShare: artifact.aiShare ?? null,
+            model: artifact.model ?? null,
+            metadataJson: artifact.metadata ? JSON.stringify(artifact.metadata) : null,
+            createdAt: artifact.createdAt,
+          })
+          .run();
+        if (segments.length > 0) tx.insert(sentenceSegments).values(toSegmentRows(segments)).run();
+        tx.insert(traceEvents)
+          .values({
+            id: randomUUID(),
+            manuscriptId,
+            kind: 'artifact-created',
+            actorType: artifact.origin === 'human' ? 'human' : 'ai',
+            actor: input.model ?? artifact.origin,
+            dataJson: JSON.stringify({
+              artifactId: artifact.id,
+              kind: artifact.kind,
+              origin: artifact.origin,
+              aiShare: artifact.aiShare ?? null,
+              segmentCount: segments.length,
+              origins: countOrigins(segments),
+              // Preserve the generated version for the before/after contrast,
+              // even after a human revises the live artifact.
+              content: artifact.content,
+            }),
+            createdAt: artifact.createdAt,
+          })
+          .run();
+      }
+
+      tx.update(manuscripts)
+        .set({ status: 'generated', updatedAt: transitionAt })
+        .where(eq(manuscripts.id, manuscriptId))
+        .run();
+      tx.insert(traceEvents)
+        .values({
+          id: randomUUID(),
+          manuscriptId,
+          kind: 'status-changed',
+          actorType: 'human',
+          actor,
+          dataJson: JSON.stringify({
+            from: existing.status,
+            to: 'generated',
+            round: existing.reviewRound,
+          }),
+          createdAt: transitionAt,
+        })
+        .run();
+    });
+
+    const manuscript = this.findManuscript(manuscriptId);
+    return manuscript
+      ? { manuscript, artifacts: prepared.map(({ artifact }) => artifact) }
+      : undefined;
   }
 
   findArtifact(manuscriptId: string, artifactId: string): ContentArtifact | undefined {
@@ -411,7 +579,7 @@ export class WorkflowRepository {
     const existing = this.findArtifact(manuscriptId, artifactId);
     if (!existing) return undefined;
 
-    const now = Date.now();
+    const now = this.nextTraceTimestamp(manuscriptId);
 
     const segments = buildSegments(manuscriptId, artifactId, input.segments, now);
     const aiShare = computeAiShare(segments) ?? null;
@@ -518,7 +686,7 @@ export class WorkflowRepository {
       round: input.round ?? manuscript.reviewRound,
       ...(input.countersignParty ? { countersignParty: input.countersignParty } : {}),
       ...(input.opinion ? { opinion: input.opinion } : {}),
-      createdAt: Date.now(),
+      createdAt: this.nextTraceTimestamp(manuscriptId),
     };
 
     this.database.orm.transaction((tx) => {
@@ -559,7 +727,7 @@ export class WorkflowRepository {
       actorType: input.actorType,
       actor: input.actor,
       data: input.data ?? {},
-      createdAt: Date.now(),
+      createdAt: this.nextTraceTimestamp(manuscriptId),
     };
     this.database.orm
       .insert(traceEvents)

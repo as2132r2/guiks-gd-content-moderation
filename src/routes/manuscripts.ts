@@ -142,6 +142,15 @@ manuscriptRoutes.patch('/api/manuscripts/:id/status', async (c) => {
   // nothing.
   const current = getWorkflowRepository().findManuscript(c.req.param('id'));
   if (!current) return c.json({ error: 'manuscript_not_found' }, 404);
+  if (parsed.data.status === 'generated') {
+    return c.json(
+      {
+        error: 'generation_requires_gateway',
+        message: '生成状态只能由工作台在模型调用与产物事务完成后推进。',
+      },
+      409,
+    );
+  }
   const refusal = checkTransition({
     from: current.status,
     to: parsed.data.status,
@@ -225,6 +234,15 @@ manuscriptRoutes.post('/api/manuscripts/:id/reviews', async (c) => {
 manuscriptRoutes.post('/api/manuscripts/:id/trace', async (c) => {
   const parsed = appendTraceSchema.safeParse(await readJson(c.req));
   if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
+  if (parsed.data.kind === 'model-requested' || parsed.data.kind === 'model-completed') {
+    return c.json(
+      {
+        error: 'reserved_trace_kind',
+        message: '模型调用凭证只能由统一网关写入。',
+      },
+      403,
+    );
+  }
 
   const trace = getWorkflowRepository().appendTrace(c.req.param('id'), {
     ...parsed.data,

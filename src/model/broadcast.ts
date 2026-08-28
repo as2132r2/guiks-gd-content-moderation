@@ -61,20 +61,27 @@ function buildMessages(task: GenerationTask, sourceText: string): ChatMessage[] 
  * interleaved gateway calls make the 留痕 timeline unreadable.
  */
 export async function generateBroadcastArtifacts(input: {
+  manuscriptId: string;
   title: string;
   sourceText: string;
   actor: string;
 }): Promise<GeneratedArtifact[]> {
   const out: GeneratedArtifact[] = [];
   for (const task of TASKS) {
-    const { reply, model } = await throughGateway(buildMessages(task, input.sourceText), {
+    const { reply, telemetry } = await throughGateway(buildMessages(task, input.sourceText), {
       target: `把关人·生产层（${input.actor}）`,
+      trace: {
+        manuscriptId: input.manuscriptId,
+        actor: input.actor,
+        operation: task.kind,
+      },
+      governanceUser: input.actor,
     });
     out.push({
       kind: task.kind,
       label: task.label,
       content: reply.trim(),
-      model,
+      model: telemetry.servedModel,
     });
   }
   return out;
