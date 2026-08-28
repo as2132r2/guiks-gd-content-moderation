@@ -279,6 +279,44 @@ export function renderWorkbench(): string {
   .hit .dt b { color:var(--ink); font-family:var(--mono); }
   .hit .dt b.warn { color:var(--warn); }
   .hit code { font-family:var(--mono); font-size:11px; color:var(--accent-deep); }
+
+  /* ---------- 对照组 ---------- */
+  .vs {
+    display:grid; grid-template-columns:auto 1fr 1fr; gap:1px;
+    background:var(--line); border:1px solid var(--line);
+    border-radius:var(--radius); overflow:hidden; margin-bottom:18px;
+  }
+  .vs-hd {
+    grid-column:span 1; padding:10px 16px; background:var(--panel-2);
+    font-size:12px; font-family:var(--mono); letter-spacing:.5px;
+  }
+  .vs-hd:first-child { grid-column:2; }
+  .vs-hd.off { color:var(--block); }
+  .vs-hd.on { color:var(--accent-deep); }
+  .vs-k {
+    padding:12px 16px; background:var(--panel-2); font-size:13px;
+    color:var(--faint); white-space:nowrap;
+  }
+  .vs-c { padding:12px 16px; background:var(--panel); font-size:14px; }
+  .vs-c.off { color:var(--block); }
+  .vs-c.on { color:var(--ink); }
+  @media (max-width:860px) {
+    .vs { grid-template-columns:1fr 1fr; }
+    .vs-k { grid-column:span 2; padding-bottom:2px; background:var(--panel); }
+    .vs-hd:first-child { grid-column:1; }
+  }
+
+  .doc.ship { border-color:var(--block); margin-bottom:10px; }
+  .doc.ship h4 { color:var(--block); }
+  .doc.ship h4 .dim { color:var(--faint); font-family:var(--mono); font-size:11px; font-weight:400; }
+  .doc.ship .body { white-space:pre-wrap; font-family:var(--serif); }
+
+  .closer {
+    margin-top:18px; padding:16px 20px; border-radius:var(--radius);
+    background:var(--panel-2); border-left:3px solid var(--accent);
+    font-family:var(--serif); font-size:16px; line-height:1.8;
+  }
+  .closer b { color:var(--accent-deep); }
 </style>
 </head>
 <body>
@@ -349,7 +387,7 @@ export function renderWorkbench(): string {
     'signed':'签发'
   };
 
-  var state = { list:[], view:null, role:'editor', currentId:null, prevShare:null, editing:null, error:'' };
+  var state = { list:[], view:null, role:'editor', currentId:null, prevShare:null, editing:null, error:'', contrast:null, showContrast:false };
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -387,6 +425,8 @@ export function renderWorkbench(): string {
     state.currentId = id;
     state.editing = null;
     state.error = '';
+    state.showContrast = false;
+    state.contrast = null;
     return api('/api/workbench/' + encodeURIComponent(id)).then(function (view) {
       applyView(view);
     });
@@ -774,6 +814,7 @@ export function renderWorkbench(): string {
   };
 
   function tracePanel(view) {
+    if (state.showContrast) return contrastPanel(view);
     var out = '<div class="card"><h3>⑥ AI 参与度追溯</h3>' +
       '<p>整条链路的收口：每句话谁写的、命中过哪些规则、被谁在哪一级放行、谁最终签发。' +
       '这些数字只有站在生产现场才拿得到——拿到成品的审校产品给不出它们。</p></div>';
@@ -808,6 +849,108 @@ export function renderWorkbench(): string {
 
     out += '<h2 class="hd">责任链</h2>' + responsibility(view);
     out += '<h2 class="hd">规则命中</h2>' + ruleHits(view);
+    out += '<div class="actions-bar" style="margin-top:18px">' +
+      '<button class="btn" id="contrast-on">对照组：关掉把关人会怎样</button>' +
+      '<span class="hint">同一份通稿，减去把关。收口那一镜。</span></div>';
+    return out;
+  }
+
+  // ——————————————————— 对照组（演示脚本 2:50）———————————————————
+
+  var CONTRAST_ROWS = [
+    {
+      k: '这次调用该不该发生',
+      off: function () { return '没人问'; },
+      on: function (c) {
+        var label = { 'blocked':'硬拦，模型完全没被调用',
+                      'reason-required':'要理由，填了选题依据才放行',
+                      'admitted-logged':'仅留痕放行' }[c['with'].admissionDecision];
+        return label || c['with'].admissionDecision;
+      }
+    },
+    {
+      k: '稿子里的问题',
+      off: function (c) {
+        var n = c.without.issuesShipped;
+        return n === 0 ? '没有检查' : n + ' 处直接播出去';
+      },
+      on: function (c) {
+        var fixed = c['with'].issuesCaught - c['with'].issuesRemaining;
+        return '当场抓到 ' + c['with'].issuesCaught + ' 处（拦下 ' + c['with'].block +
+          '　标红 ' + c['with'].redact + '　留痕 ' + c['with'].flag + '）' +
+          (fixed > 0 ? '，人已改掉 ' + fixed + ' 处' : '');
+      }
+    },
+    {
+      k: '哪几句是 AI 写的',
+      off: function () { return '不知道'; },
+      on: function (c) {
+        return c['with'].aiShare == null
+          ? '未测量'
+          : c['with'].segmentCount + ' 句逐句可查，AI 参与度 ' + pct(c['with'].aiShare);
+      }
+    },
+    {
+      k: '有没有 AI 生成内容标识',
+      off: function () { return '没有'; },
+      on: function (c) {
+        return c.without.aiLabelled === false && c['with'].flag > 0
+          ? '预检已标出缺失并给出补写建议'
+          : '已按《标识办法》检查';
+      }
+    },
+    {
+      k: '出事找谁',
+      off: function () { return '查不到'; },
+      on: function (c) {
+        var who = c['with'].accountableActors + ' 人签字';
+        return c['with'].signedBy ? who + '，签发人 ' + c['with'].signedBy : who;
+      }
+    },
+    {
+      k: '留下了什么记录',
+      off: function () { return '无'; },
+      on: function (c) { return c['with'].traceEvents + ' 条留痕'; }
+    }
+  ];
+
+  var KIND_LABEL_C = { 'broadcast-script':'播报稿', 'short-video-copy':'短视频文案' };
+
+  function contrastPanel(view) {
+    var c = state.contrast;
+    if (!c) return '<div class="empty">正在取对照数据…</div>';
+
+    var out = '<div class="card"><h3>对照组 · 关掉把关人</h3>' +
+      '<p>同一份通稿，减去把关。下面每个数字都指回真实留痕，不是模拟出来的。</p></div>';
+
+    out += '<div class="vs">' +
+      '<div class="vs-hd off">关掉把关人</div><div class="vs-hd on">把关人</div>' +
+      CONTRAST_ROWS.map(function (row) {
+        return '<div class="vs-k">' + esc(row.k) + '</div>' +
+          '<div class="vs-c off">' + esc(row.off(c)) + '</div>' +
+          '<div class="vs-c on">' + esc(row.on(c)) + '</div>';
+      }).join('') +
+      '</div>';
+
+    if (c.without.issuesShipped > 0) {
+      out += '<h2 class="hd">本来会播出去的稿子</h2>' +
+        '<p class="hint">这是模型<strong>原样写出来</strong>的那一版。关掉把关人就没有预检标注，' +
+        '编辑根本不知道要改哪里——所以下面这些问题直接进了播出流程：' +
+        '禁用词 ' + c.without.bannedTermsShipped +
+        ' 处、与原通稿不符 ' + c.without.inconsistenciesShipped +
+        ' 处、一校差错 ' + c.without.proofreadIssuesShipped + ' 处。</p>' +
+        c.wouldShip.map(function (item) {
+          return '<div class="doc ship"><h4>' + esc(KIND_LABEL_C[item.kind] || item.kind) +
+            '<span class="dim">未经预检 · 无 AI 标识 · 无来源记录</span></h4>' +
+            '<div class="body">' + esc(item.content) + '</div></div>';
+        }).join('');
+    }
+
+    out += '<div class="closer">私有化解决不了这个，外挂的内容审核 API 也解决不了' +
+      '——<b>因为它们都看不见生产过程。</b></div>';
+
+    out += '<div class="actions-bar" style="margin-top:16px">' +
+      '<button class="btn" id="contrast-off">返回追溯图谱</button></div>';
     return out;
   }
 
@@ -977,6 +1120,14 @@ export function renderWorkbench(): string {
 
     var save = target.closest('[data-save]');
     if (save) { saveRevision(save.getAttribute('data-save')); return; }
+
+    if (target.closest('#contrast-on')) {
+      api('/api/workbench/' + encodeURIComponent(state.currentId) + '/contrast')
+        .then(function (data) { state.contrast = data; state.showContrast = true; renderPanel(); })
+        .catch(function (error) { state.error = error.message; renderPanel(); });
+      return;
+    }
+    if (target.closest('#contrast-off')) { state.showContrast = false; renderPanel(); return; }
 
     var move = target.closest('[data-to]');
     if (move) { advance(move.getAttribute('data-to'), move.getAttribute('data-reason') === '1'); return; }

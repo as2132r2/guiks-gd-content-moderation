@@ -306,6 +306,76 @@ workbenchRoutes.get('/api/workbench/:id', (c) => {
 });
 
 /**
+ * 对照组：同一份通稿，关掉把关人会怎样。
+ *
+ * 不重跑、不模拟——它就是**同一份产物减去把关**之后剩下的东西。所以这一屏上
+ * 的每个数字都能指回真实留痕，被追问「这是演的还是真的」时答得出来。
+ */
+workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
+  const view = buildView(c.req.param('id'));
+  if (!view) return c.json({ error: 'manuscript_not_found' }, 404);
+
+  // 对照的是**生成时那一版**，不是改完的那一版。关掉把关人就没有预检标注，
+  // 编辑根本不知道要改哪里——所以直接播出去的是模型原样写的东西。
+  const asShipped = view.artifacts.map((item) => {
+    const created = view.trace.find(
+      (event) =>
+        event.kind === 'artifact-created' && event.data.artifactId === item.artifact.id,
+    );
+    const original = asText(created?.data.content) || item.artifact.content;
+    const { annotations } = runPreflight({
+      artifactId: item.artifact.id,
+      sentences: splitSentences(original),
+      sourceText: view.manuscript.sourceText,
+    });
+    return { kind: item.artifact.kind, content: original, annotations };
+  });
+
+  const shipped = asShipped.flatMap((item) => item.annotations);
+  const count = (category: string) =>
+    shipped.filter((annotation) => annotation.category === category).length;
+
+  // 「出事找谁」数的是**不同的人**，不是审批次数：同一个人走两级只算一个人头。
+  const accountable = new Set(view.reviews.map((review) => review.actor));
+  const hardBlocked = view.manuscript.status === 'admission-blocked';
+
+  return c.json({
+    manuscriptId: view.manuscript.id,
+    title: view.manuscript.title,
+    hardBlocked,
+    /** 关掉把关人时，这就是会直接发出去的东西——模型原样写的那一版。 */
+    wouldShip: asShipped.map((item) => ({ kind: item.kind, content: item.content })),
+    without: {
+      admissionChecked: false,
+      // 硬拦那一档的对照最刺眼：模型本来会被调用，内容本来会产生。
+      modelInvoked: true,
+      issuesShipped: shipped.length,
+      bannedTermsShipped: count('banned-term'),
+      inconsistenciesShipped: count('inconsistency'),
+      proofreadIssuesShipped: count('typo') + count('punctuation') + count('format'),
+      aiLabelled: false,
+      aiShareKnown: false,
+      accountableActors: 0,
+      traceEvents: 0,
+    },
+    with: {
+      admissionDecision: view.admission.decision,
+      modelInvoked: !hardBlocked,
+      /** 把关人在生成那一刻抓到了多少。 */
+      issuesCaught: shipped.length,
+      ...summarize(shipped),
+      /** 走完流程后还剩多少——人改掉了的那些不再计入。 */
+      issuesRemaining: view.artifacts.reduce((sum, item) => sum + item.annotations.length, 0),
+      ...(view.aiShare === undefined ? {} : { aiShare: view.aiShare }),
+      segmentCount: view.segmentCount,
+      accountableActors: accountable.size,
+      traceEvents: view.trace.length,
+      ...(view.signOff ? { signedBy: view.signOff.actor } : {}),
+    },
+  });
+});
+
+/**
  * The one button. Every stage advance goes through here so the state machine
  * is the only thing that decides what may happen next.
  */

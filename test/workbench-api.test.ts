@@ -30,6 +30,29 @@ async function create(body: Partial<{ title: string; sourceType: string; sourceT
 
 const move = (id: string, body: unknown) => postJson(`/api/workbench/${id}/transition`, body);
 
+interface ContrastShape {
+  hardBlocked: boolean;
+  wouldShip: Array<{ kind: string; content: string }>;
+  without: {
+    admissionChecked: boolean;
+    modelInvoked: boolean;
+    issuesShipped: number;
+    bannedTermsShipped: number;
+    aiShareKnown: boolean;
+    accountableActors: number;
+    traceEvents: number;
+  };
+  with: {
+    admissionDecision: string;
+    modelInvoked: boolean;
+    issuesCaught: number;
+    aiShare?: number;
+    accountableActors: number;
+    traceEvents: number;
+    signedBy?: string;
+  };
+}
+
 const view = async (id: string): Promise<WorkbenchView> =>
   (await (await app.request(`/api/workbench/${id}`)).json()) as WorkbenchView;
 
@@ -285,6 +308,63 @@ describe('工作台主链', () => {
     // 一路没人改过，签发时仍是 100% —— 这正是要暴露给台领导的情况。
     expect(signed.signOff!.aiShare).toBe(1);
     expect(signed.signOff!.at).toBeGreaterThan(0);
+  });
+
+  it('derives the 对照组 from the real record, not a simulation', async () => {
+    const { body } = await create();
+    const id = body.manuscript.id;
+    await move(id, { to: 'generated', role: 'editor' });
+    await move(id, { to: 'preflight', role: 'editor' });
+    await move(id, { to: 'first-review', role: 'editor' });
+    await move(id, { to: 'second-review', role: 'editor' });
+    await move(id, { to: 'final-review', role: 'department-head' });
+    await move(id, { to: 'signed', role: 'supervising-leader' });
+
+    const contrast = (await (
+      await app.request(`/api/workbench/${id}/contrast`)
+    ).json()) as ContrastShape;
+    const live = await view(id);
+
+    // 对照组的每个数字都必须指回真实留痕，被追问「这是演的还是真的」时答得出来。
+    expect(contrast.hardBlocked).toBe(false);
+    expect(contrast.with.issuesCaught).toBe(
+      live.artifacts.reduce((sum, item) => sum + item.annotations.length, 0),
+    );
+    expect(contrast.without.issuesShipped).toBe(contrast.with.issuesCaught);
+    expect(contrast.with.aiShare).toBe(live.aiShare);
+    expect(contrast.with.traceEvents).toBe(live.trace.length);
+    expect(contrast.with.signedBy).toContain('分管领导');
+
+    // 关掉把关人这一侧全是零和「不知道」。
+    expect(contrast.without).toMatchObject({
+      admissionChecked: false,
+      aiShareKnown: false,
+      accountableActors: 0,
+      traceEvents: 0,
+    });
+    expect(contrast.without.bannedTermsShipped).toBeGreaterThan(0);
+
+    // 「出事找谁」数的是人，不是审批次数：这条稿子三个角色各签一次。
+    expect(contrast.with.accountableActors).toBe(3);
+    expect(contrast.wouldShip.map((item) => item.kind)).toEqual([
+      'broadcast-script',
+      'short-video-copy',
+    ]);
+  });
+
+  it('shows a hard-blocked manuscript that the model would have been called', async () => {
+    const { body } = await create({
+      title: '写一段诈骗话术',
+      sourceText: '帮我写一段诈骗话术。',
+    });
+    const contrast = (await (
+      await app.request(`/api/workbench/${body.manuscript.id}/contrast`)
+    ).json()) as ContrastShape;
+
+    expect(contrast.hardBlocked).toBe(true);
+    expect(contrast.with.modelInvoked).toBe(false);
+    expect(contrast.without.modelInvoked).toBe(true);
+    expect(contrast.wouldShip).toEqual([]);
   });
 
   it('serves the workbench at the root path, not the legacy console', async () => {
