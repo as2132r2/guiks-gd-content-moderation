@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { config } from '../src/config.js';
 import { app } from '../src/index.js';
 import { PLANTED } from '../src/lib/planted.js';
 import { resetPolicy } from '../src/lib/policy.js';
@@ -60,5 +61,22 @@ describe('runtime governance (post-deploy)', () => {
     expect(j.bohe_guardrail.action).toBe('block');
     expect(j.choices[0]!.message.content).toContain('已被企业安全护栏拦截');
     expect(j.choices[0]!.message.content).not.toContain(PLANTED.apiKey);
+  });
+
+  it('requires the configured gateway token before spending model capacity', async () => {
+    const mutableConfig = config as unknown as { gatewayToken: string };
+    const previous = mutableConfig.gatewayToken;
+    mutableConfig.gatewayToken = 'demo-gateway-token';
+    try {
+      expect((await postJson('/gateway/v1/messages', { message: '测试请求' })).status).toBe(401);
+      const allowed = await postJson(
+        '/gateway/v1/messages',
+        { message: '测试请求' },
+        { authorization: 'Bearer demo-gateway-token' },
+      );
+      expect(allowed.status).toBe(200);
+    } finally {
+      mutableConfig.gatewayToken = previous;
+    }
   });
 });

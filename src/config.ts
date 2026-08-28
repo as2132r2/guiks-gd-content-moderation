@@ -52,6 +52,9 @@ export const config = {
   upstreamUrl: process.env.UPSTREAM_URL ?? '',
   upstreamKey: process.env.UPSTREAM_KEY ?? '',
   upstreamModel: process.env.UPSTREAM_MODEL ?? 'GLM-5.2',
+  upstreamTimeoutMs: integerEnv('UPSTREAM_TIMEOUT_MS', 30_000, 1_000, 300_000),
+  /** Optional in demo, mandatory for the public HTTP gateway in production. */
+  gatewayToken: process.env.GATEWAY_TOKEN?.trim() ?? '',
 
   /**
    * What we point the red team at.

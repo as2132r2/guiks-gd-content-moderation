@@ -83,6 +83,75 @@ describe('workflow repository', () => {
     });
   });
 
+  it('commits both generated artifacts and the state transition atomically', () => {
+    const manuscript = repository.createManuscript({
+      title: '原子生成测试',
+      sourceType: 'notice',
+      sourceText: '模拟素材原文。',
+    });
+    repository.updateStatus(manuscript.id, 'admitted', '入口准入');
+
+    expect(() =>
+      repository.completeGeneration(
+        manuscript.id,
+        [
+          {
+            kind: 'broadcast-script',
+            content: '第一份产物。',
+            origin: 'ai',
+            segments: [{ text: '第一份产物。', origin: 'ai' }],
+          },
+          {
+            kind: 'short-video-copy',
+            // Force the second insert to violate the NOT NULL constraint.
+            content: undefined as unknown as string,
+            origin: 'ai',
+          },
+        ],
+        '测试编辑',
+      ),
+    ).toThrow();
+
+    const after = repository.getAggregate(manuscript.id);
+    expect(after?.manuscript.status).toBe('admitted');
+    expect(after?.artifacts).toEqual([]);
+    expect(after?.trace.some((event) => event.kind === 'artifact-created')).toBe(false);
+  });
+
+  it('closes a model request left open by an interrupted process', () => {
+    const manuscript = repository.createManuscript({
+      title: '中断恢复测试',
+      sourceType: 'notice',
+      sourceText: '模拟素材原文。',
+    });
+    repository.appendTrace(manuscript.id, {
+      kind: 'model-requested',
+      actorType: 'ai',
+      actor: 'glm-test',
+      data: {
+        callId: 'interrupted-call',
+        operation: 'broadcast-script',
+        requestedModel: 'glm-test',
+        mode: 'upstream',
+        initiatedBy: '测试编辑',
+      },
+    });
+
+    // Constructing the repository models a process restart over the same DB.
+    repository = new WorkflowRepository(database);
+    const completed = repository
+      .getAggregate(manuscript.id)
+      ?.trace.find(
+        (event) =>
+          event.kind === 'model-completed' && event.data.callId === 'interrupted-call',
+      );
+    expect(completed?.data).toMatchObject({
+      outcome: 'error',
+      errorCode: 'process_interrupted',
+      operation: 'broadcast-script',
+    });
+  });
+
   it('derives AI 参与度 from sentence origins and recomputes it on a rewrite', () => {
     const manuscript = repository.createManuscript({
       title: '句级来源测试',

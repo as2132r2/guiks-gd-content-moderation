@@ -27,9 +27,14 @@ app.get('/readyz', (c) => {
         ? 'mock'
         : 'missing'
       : 'configured';
-    const ready = database && model !== 'missing';
+    const gatewayAuth = config.gatewayToken
+      ? 'configured'
+      : config.appMode === 'production'
+        ? 'missing'
+        : 'demo-open';
+    const ready = database && model !== 'missing' && gatewayAuth !== 'missing';
     return c.json(
-      { status: ready ? 'ready' : 'not-ready', checks: { database, model } },
+      { status: ready ? 'ready' : 'not-ready', checks: { database, model, gatewayAuth } },
       ready ? 200 : 503,
     );
   } catch {

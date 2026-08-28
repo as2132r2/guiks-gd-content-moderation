@@ -43,9 +43,11 @@ import {
   type WorkflowRole,
 } from '../domain/workflow.js';
 import { publish } from '../lib/bus.js';
+import { UpstreamError } from '../lib/upstream.js';
 import { generateBroadcastArtifacts } from '../model/broadcast.js';
 import { runAdmission, runPreflight } from '../rules/index.js';
 import { renderWorkbench } from '../views/workbench-view.js';
+import { ModelTraceError } from './gateway.js';
 
 const createSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -463,6 +465,7 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
 
   const transition = findTransition(manuscript.status, to, role)!;
   const actor = actorName(role);
+  let updated: Manuscript | undefined;
 
   if (
     transition.from === 'countersign' &&
@@ -477,24 +480,61 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
 
   // 生成 and 预检 are side effects of their transition, not separate buttons.
   if (transition.from === 'admitted' && to === 'generated') {
-    const generated = await generateBroadcastArtifacts({
-      title: manuscript.title,
-      sourceText: manuscript.sourceText,
-      actor,
-    });
-    for (const item of generated) {
-      // Everything the model wrote starts as `ai`; the ratio only moves when a
-      // human actually rewrites something.
-      const sentences = splitSentences(item.content);
-      repository.addArtifact(id, {
-        kind: item.kind,
-        content: item.content,
-        origin: 'ai',
-        model: item.model,
-        metadata: { aiGenerated: true, aiLabel: '人工智能生成' },
-        segments: sentences.map((text) => ({ text, origin: 'ai' as const })),
+    let generated: Awaited<ReturnType<typeof generateBroadcastArtifacts>>;
+    try {
+      generated = await generateBroadcastArtifacts({
+        manuscriptId: id,
+        title: manuscript.title,
+        sourceText: manuscript.sourceText,
+        actor,
       });
+    } catch (error) {
+      // The gateway has already written a paired error trace. Keep the workflow
+      // at admitted so a retry cannot look like a successful generation.
+      if (error instanceof UpstreamError) {
+        return c.json(
+          {
+            error: 'model_upstream_failed',
+            message: '模型暂时不可用，稿件状态未推进，请稍后重试。',
+          },
+          502,
+        );
+      }
+      if (error instanceof ModelTraceError) {
+        return c.json(
+          {
+            error: 'model_trace_unavailable',
+            message: '调用留痕暂时不可用，系统未放行本次生成。',
+          },
+          503,
+        );
+      }
+      throw error;
     }
+
+    // Both artifacts and the `generated` transition commit in one transaction.
+    const completed = repository.completeGeneration(
+      id,
+      generated.map((item) => {
+        const sentences = splitSentences(item.content);
+        return {
+          kind: item.kind,
+          content: item.content,
+          origin: 'ai' as const,
+          model: item.model,
+          metadata: { aiGenerated: true, aiLabel: '人工智能生成' },
+          segments: sentences.map((text) => ({ text, origin: 'ai' as const })),
+        };
+      }),
+      actor,
+    );
+    if (!completed) {
+      return c.json(
+        { error: 'generation_conflict', message: '稿件状态已变化，请刷新后重试。' },
+        409,
+      );
+    }
+    updated = completed.manuscript;
   }
 
   if ((transition.from === 'generated' || transition.from === 'revision') && to === 'preflight') {
@@ -514,7 +554,7 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
     });
   }
 
-  const updated = repository.updateStatus(id, to, actor, {
+  updated ??= repository.updateStatus(id, to, actor, {
     incrementReviewRound: transition.from === 'revision' && to === 'preflight',
   });
   emit(id, { action: 'transition', from: transition.from, to, role, actor });

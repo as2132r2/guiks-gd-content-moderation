@@ -222,6 +222,7 @@ export function renderWorkbench(): string {
   .tl .ev.hum::before { background:var(--accent); border-color:var(--accent); }
   .tl .k { font-size:12px; }
   .tl .m { font-size:11px; color:var(--faint); font-family:var(--mono); margin-top:2px; }
+  .tl .d { font-size:11px; color:var(--muted); font-family:var(--mono); margin-top:3px; line-height:1.45; }
 
   .placeholder { border:1px dashed var(--line-strong); border-radius:var(--radius); padding:22px; color:var(--faint); }
   .placeholder h3 { color:var(--muted); font-family:var(--serif); margin:0 0 8px; font-size:15px; }
@@ -1180,6 +1181,24 @@ export function renderWorkbench(): string {
   }
 
   /** 留痕 starts at 稿件建立, well before there is anything to measure. */
+  function traceDetail(event) {
+    if (event.kind !== 'model-requested' && event.kind !== 'model-completed') return '';
+    var data = event.data || {};
+    var operation = KIND_LABEL[data.operation] || data.operation || '模型任务';
+    var model = data.servedModel || data.requestedModel || event.actor;
+    if (event.kind === 'model-requested') {
+      return operation + ' · ' + model + ' · 已送入统一网关';
+    }
+    if (data.outcome === 'error') {
+      return operation + ' · ' + model + ' · 调用失败（' + (data.errorCode || 'upstream_failure') + '）';
+    }
+    var input = typeof data.inputTokens === 'number' ? data.inputTokens : 0;
+    var output = typeof data.outputTokens === 'number' ? data.outputTokens : 0;
+    var latency = typeof data.latencyMs === 'number' ? Math.round(data.latencyMs) : 0;
+    var estimate = data.usageSource === 'estimated' ? '约 ' : '';
+    return operation + ' · ' + model + ' · ' + estimate + input + '↓ / ' + output + '↑ tokens · ' + latency + 'ms';
+  }
+
   function renderTimeline() {
     var trace = state.view ? (state.view.trace || []) : [];
     $('timeline').innerHTML = trace.length === 0
@@ -1189,6 +1208,7 @@ export function renderWorkbench(): string {
           return '<div class="ev ' + cls + '">' +
             '<div class="k">' + esc(TRACE_LABEL[event.kind] || event.kind) + '</div>' +
             '<div class="m">' + clock(event.createdAt) + ' · ' + esc(event.actor) + '</div>' +
+            (traceDetail(event) ? '<div class="d">' + esc(traceDetail(event)) + '</div>' : '') +
             '</div>';
         }).join('');
   }

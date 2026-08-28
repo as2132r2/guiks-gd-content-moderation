@@ -71,7 +71,12 @@ export async function askTarget(message: string): Promise<GatewayResult> {
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: message },
   ];
-  return throughGateway(messages, { target: config.targetLabel });
+  return throughGateway(messages, {
+    target: config.targetLabel,
+    // This target contains planted fake data and exists specifically so the
+    // legacy red-team console can show a full controlled exchange.
+    retainAuditBody: true,
+  });
 }
 
 export const targetRoutes = new Hono();
