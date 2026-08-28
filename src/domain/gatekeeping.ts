@@ -49,16 +49,25 @@ export const preflightActions = ['block', 'redact', 'flag'] as const;
 export type PreflightAction = (typeof preflightActions)[number];
 
 export const annotationCategories = [
+  // 一校：错别字、语病、标点、格式（plan §七 把这一档归为「L1 全自动」）
+  'typo',
+  'punctuation',
+  'format',
+  // 二校 / 复审：词表与事实
   'banned-term',
   'caution-term',
   'leader-title',
   'inconsistency',
+  // 标识与判断
   'ai-label',
   'judgment',
 ] as const;
 export type AnnotationCategory = (typeof annotationCategories)[number];
 
 export const annotationCategoryLabels: Readonly<Record<AnnotationCategory, string>> = {
+  typo: '错别字与用词',
+  punctuation: '标点差错',
+  format: '格式规范',
   'banned-term': '禁用词',
   'caution-term': '慎用词',
   'leader-title': '领导表述规范',

@@ -74,8 +74,132 @@ describe('输出预检', () => {
     }
   });
 
+  it('leaves clean copy completely alone', () => {
+    // 一校的产出编辑要逐条看，误报一多就没人看了。这条是「宁可少抓」的守门用例。
+    const clean = [
+      '全县乡村振兴现场推进会今天召开。',
+      '会议指出，要压实责任、狠抓落实（含各乡镇）。',
+      '项目总投资 3.2亿元，预计带动就业 1200 人。',
+      '本内容由人工智能生成，已经人工审核。',
+    ];
+    expect(preflight(clean, SOURCE).annotations).toEqual([]);
+  });
+});
+
+describe('一校规则（错别字 / 标点 / 格式）', () => {
+  const SRC = '全县推进会今天召开。';
+  const only = (sentence: string) =>
+    preflight([sentence, '本内容由人工智能生成。'], SRC).annotations.filter(
+      (a) => a.segmentOrdinal === 0,
+    );
+
+  it('catches half-width punctuation in Chinese copy', () => {
+    const hit = only('会议指出,要压实责任。')[0];
+    expect(hit).toMatchObject({ category: 'punctuation', action: 'flag' });
+    expect(hit!.title).toContain('半角标点');
+  });
+
+  it('catches a repeated punctuation mark', () => {
+    expect(only('会议今天召开。。')[0]).toMatchObject({ category: 'punctuation' });
+  });
+
+  it('catches a half-width period used as a full stop', () => {
+    const hit = only('会议今天召开.')[0];
+    expect(hit).toMatchObject({ category: 'punctuation', suggestion: '。' });
+  });
+
+  it('catches half-width brackets around Chinese', () => {
+    expect(only('会议(含各乡镇)今天召开。')[0]).toMatchObject({ category: 'punctuation' });
+  });
+
+  it('catches an unbalanced bracket pair', () => {
+    const hit = only('会议（含各乡镇今天召开。')[0];
+    expect(hit).toMatchObject({ category: 'punctuation' });
+    expect(hit!.title).toContain('不成对');
+  });
+
+  it('catches known typos and suggests the fix', () => {
+    expect(only('设备已按装完毕。')[0]).toMatchObject({ category: 'typo', suggestion: '安装' });
+    expect(only('全县上下渡过难关。')[0]).toMatchObject({ category: 'typo', suggestion: '度过' });
+  });
+
+  it('catches a character repeated three times or more', () => {
+    expect(only('会议强调调调落实。')[0]).toMatchObject({ category: 'typo' });
+  });
+
+  it('catches full-width digits, full-width spaces and runs of spaces', () => {
+    expect(only('投资３亿元。')[0]).toMatchObject({ category: 'format' });
+    expect(only('　会议今天召开。')[0]).toMatchObject({ category: 'format' });
+    expect(only('会议  今天召开。')[0]).toMatchObject({ category: 'format' });
+  });
+
+  it('anchors a pattern hit on the exact span it matched', () => {
+    const sentence = '会议指出,要压实责任。';
+    const hit = only(sentence)[0]!;
+    expect(sentence.slice(hit.start, hit.end)).toBe('出,');
+  });
+
+  it('finds every occurrence in one sentence, not just the first', () => {
+    // 正则带 g 被复用，lastIndex 没归零就会漏后面的命中。
+    expect(only('设备已按装,线路也按装完毕。').filter((a) => a.category === 'typo')).toHaveLength(2);
+  });
+});
+
+describe('词表覆盖', () => {
+  const check = (sentence: string) =>
+    preflight([sentence, '本内容由人工智能生成。'], '会议。').annotations.filter(
+      (a) => a.segmentOrdinal === 0,
+    );
+
+  it('covers the 称谓 rules', () => {
+    expect(check('几名打工仔参加了活动。')[0]).toMatchObject({
+      category: 'banned-term',
+      action: 'block',
+      suggestion: '务工人员',
+    });
+    expect(check('残废人代表发言。')[0]).toMatchObject({ suggestion: '残疾人' });
+  });
+
+  it('covers 领导活动 wording', () => {
+    expect(check('县长亲切接见了代表。')[0]).toMatchObject({ category: 'caution-term' });
+    expect(check('活动隆重举行。')[0]).toMatchObject({ category: 'banned-term', suggestion: '举行' });
+  });
+
+  it('covers the 职务写法 rules at every level', () => {
+    for (const [wrong, right] of [
+      ['省省委书记', '省委书记'],
+      ['市市委书记', '市委书记'],
+      ['县县委书记', '县委书记'],
+    ]) {
+      const hit = check(`中共XX${wrong}出席。`)[0];
+      expect(hit).toMatchObject({ category: 'leader-title', action: 'redact', suggestion: right });
+    }
+  });
+});
+
+describe('准入词表覆盖', () => {
+  it('routes newly added 敏感题材 to the 要理由 lane', () => {
+    for (const term of ['疫情', '欠薪', '停产', '举报']) {
+      expect(runAdmission({ title: '通报', sourceText: `关于${term}的情况通报。` })).toMatchObject({
+        decision: 'reason-required',
+      });
+    }
+  });
+
+  it('routes newly added 公器私用 cases to 只标不拦', () => {
+    for (const term of ['论文', '简历', '婚礼致辞']) {
+      const result = runAdmission({ title: '帮忙', sourceText: `帮我写个${term}。` });
+      expect(result.decision).toBe('admitted-logged');
+      expect(result.offDutyUse).toBe(true);
+    }
+  });
+});
+
+describe('审片动作计数', () => {
   it('counts the three 审片动作 separately', () => {
-    const { summary } = preflight(['会议隆重召开，县领导亲自出席。', '总投资 3.6亿元。'], SOURCE);
+    const source = '全县推进会今天召开。项目总投资 3.2亿元，预计带动就业 1200 人。';
+    const { summary } = preflight(['会议隆重召开，县领导亲自出席。', '总投资 3.6亿元。'], source);
+    // 隆重召开 block / 3.6亿元 redact / 亲自 flag + 缺 AI 标识 flag
     expect(summary).toEqual({ block: 1, redact: 1, flag: 2 });
   });
 });
