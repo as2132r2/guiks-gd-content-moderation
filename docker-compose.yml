@@ -1,0 +1,41 @@
+# 贵客松广电内容项目 —— 独立演示 stack。
+#
+# ⚠️ 这是一套【独立】的 compose：自己的 compose 文件、自己的容器(audit-gate)、
+#    自己的端口(3300)。它和主应用 bohe-console 没有任何耦合 ——
+#    不共用容器、不共用端口、不共用数据库，绝不塞进 bohe-console 的 compose。
+#
+# 从 audit-gate/ 目录启动：
+#   docker compose -f docker-compose.yml up -d --build
+# 打开 http://localhost:3300
+
+services:
+  app:
+    build: .
+    container_name: guiks-gd-content-moderation
+    ports:
+      - "3300:3300"
+    restart: unless-stopped
+    environment:
+      # 全部可选。不填任何一项也能零配置跑（内置确定性 mock 上游，无需 API key）。
+      PORT: 3300
+      # 控制台里显示的「接管目标」标签（受控靶子）。
+      TARGET_LABEL: ${TARGET_LABEL:-县级融媒体中心（演示环境）}
+      # 留空 = 用内置 mock 上游；填真实 base_url 才会去代理真实上游。
+      UPSTREAM_URL: ${UPSTREAM_URL:-}
+      UPSTREAM_KEY: ${UPSTREAM_KEY:-}
+      UPSTREAM_MODEL: ${UPSTREAM_MODEL:-GLM-5.2}
+      # demo 内存里保留多少条审计流量。
+      MAX_AUDITS: ${MAX_AUDITS:-500}
+    healthcheck:
+      # 命中内置 /healthz，用 Node 自带 fetch，无需额外依赖。
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3300/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
