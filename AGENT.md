@@ -1,8 +1,8 @@
-# CLAUDE.md
+# AGENT.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents when working with code in this repository.
 
-> **同步维护要求：** 本文件与 [AGENT.md](AGENT.md) 是等价的协作指引。每次修改其中任一文件时，必须同步更新另一份文件，确保两者内容和约束一致。
+> **同步维护要求：** 本文件与 [CLAUDE.md](CLAUDE.md) 是等价的协作指引。每次修改其中任一文件时，必须同步更新另一份文件，确保两者内容和约束一致。
 
 ## 项目
 
@@ -63,13 +63,10 @@ docker compose up --build
 
 底座已就位：网关、双向 scan 钩子、护栏、策略、SSE、逐用户计量、红队与评分、稿件工作流的契约/持久化/REST、healthz+readyz、Docker、CI。
 
-
-
 **已落地**：
 
 - 入口准入与输出预检的**结果契约**在 [src/domain/gatekeeping.ts](src/domain/gatekeeping.ts)，规则实现在 [src/rules/](src/rules/)，工作台在 [src/routes/workbench.ts](src/routes/workbench.ts) + [src/views/workbench-view.ts](src/views/workbench-view.ts)，稿件生成在 [src/model/](src/model/)。换 detector 只换 `src/rules/` 的函数体，界面不动。
 - 句级切分与改稿后的来源判定在 [src/domain/segmentation.ts](src/domain/segmentation.ts)：**来源由服务端判定，不接受客户端上报**——被考核的人能自己标「我改过」，这个数就什么都不是了。
-
 - 句级来源标记**已落地**：`sentenceOrigins` + `SentenceSegment` 在契约里，`sentence_segments` 表在 migration `0002`，AI 参与度算在 [src/domain/ai-share.ts](src/domain/ai-share.ts)（`(ai + ai-edited×0.5)/总句数`，权重可调）。产物带 `segments` 创建时自动算，人改稿后调 `PUT /api/manuscripts/:id/artifacts/:artifactId/segments` 整段替换并重算，写 `segments-recorded` 追溯。
 **AI 参与度和产物级 `origin` 都只由句级来源推导，不接受手工填**——带了 `segments` 就忽略请求里的 `aiShare` 与 `origin`（全 `ai` → `ai`，一句 AI 都没有 → `human`，其余 `mixed`；`source` 算非 AI）。
 
