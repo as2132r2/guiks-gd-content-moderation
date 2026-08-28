@@ -93,6 +93,33 @@ export interface ArtifactView {
   annotations: Annotation[];
 }
 
+/**
+ * 一次 AI 参与度的变动。生成时是起点，之后每一次人工改稿都推低它一格。
+ *
+ * 追溯图谱靠这条序列回答台领导真正关心的问题: 这篇稿子一路走下来，人到底
+ * 有没有动过它。
+ */
+export interface ProvenancePoint {
+  at: number;
+  event: 'generated' | 'revised';
+  artifactId: string;
+  artifactKind: string;
+  actor: string;
+  /** 稿件级 AI 参与度 —— 折线画的是这个，终点必须等于页面上的大数字。 */
+  share: number;
+  /** 这一次动到的那个产物自己的比例。 */
+  artifactShare: number;
+  /** 稿件当时的总句数。 */
+  segmentCount: number;
+}
+
+export interface SignOff {
+  actor: string;
+  at: number;
+  /** 签发那一刻的 AI 参与度。100% 一路签发 = 三审三校形同虚设。 */
+  aiShare?: number;
+}
+
 export interface WorkbenchView {
   manuscript: Manuscript;
   stage: string;
@@ -108,6 +135,59 @@ export interface WorkbenchView {
   /** Every role's legal moves, so switching roles needs no round trip. */
   actions: Record<WorkflowRole, Transition[]>;
   waitingOn?: WorkflowRole;
+  /** AI 参与度随流转的变化，供追溯图谱画折线。 */
+  provenance: ProvenancePoint[];
+  signOff?: SignOff;
+}
+
+const asNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const asText = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/**
+ * Rebuild the AI 参与度 curve from the audit trail rather than storing it
+ * twice. 留痕 is the record of what happened; deriving from it means the graph
+ * can never disagree with the trail it claims to visualise.
+ */
+function readProvenance(trace: readonly TraceEvent[]): ProvenancePoint[] {
+  // 每个产物的最新状态，随时间往前滚。稿件级比例 = Σ(比例×句数) / Σ句数，
+  // 因为 比例×句数 就是这个产物的加权 AI 句数。
+  const live = new Map<string, { share: number; count: number }>();
+  const points: ProvenancePoint[] = [];
+
+  const ordered = [...trace].sort((a, b) => a.createdAt - b.createdAt);
+  for (const event of ordered) {
+    const isCreate = event.kind === 'artifact-created';
+    const isRevise = event.kind === 'segments-recorded';
+    if (!isCreate && !isRevise) continue;
+
+    const artifactShare = asNumber(event.data.aiShare);
+    const count = asNumber(event.data.segmentCount);
+    const artifactId = asText(event.data.artifactId);
+    if (artifactShare === undefined || count === undefined || count === 0 || !artifactId) continue;
+
+    live.set(artifactId, { share: artifactShare, count });
+
+    let weighted = 0;
+    let total = 0;
+    for (const entry of live.values()) {
+      weighted += entry.share * entry.count;
+      total += entry.count;
+    }
+
+    points.push({
+      at: event.createdAt,
+      event: isCreate ? 'generated' : 'revised',
+      artifactId,
+      artifactKind: asText(event.data.kind),
+      actor: event.actor,
+      share: total === 0 ? 0 : Math.round((weighted / total) * 10_000) / 10_000,
+      artifactShare,
+      segmentCount: total,
+    });
+  }
+  return points;
 }
 
 function buildView(manuscriptId: string): WorkbenchView | undefined {
@@ -135,6 +215,8 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
   ) as Record<WorkflowRole, Transition[]>;
 
   const owner = waitingOn(manuscript.status);
+  const signed = trace.find((event) => event.kind === 'signed');
+  const share = computeAiShare(segments);
   return {
     manuscript,
     stage: stageOf(manuscript.status),
@@ -142,12 +224,22 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
     admission: runAdmission(manuscript),
     artifacts: artifactViews,
     preflight: summarize(allAnnotations),
-    ...(computeAiShare(segments) === undefined ? {} : { aiShare: computeAiShare(segments) }),
+    ...(share === undefined ? {} : { aiShare: share }),
     segmentCount: segments.length,
     reviews,
     trace,
     actions,
     ...(owner ? { waitingOn: owner } : {}),
+    provenance: readProvenance(trace),
+    ...(signed
+      ? {
+          signOff: {
+            actor: signed.actor,
+            at: signed.createdAt,
+            ...(share === undefined ? {} : { aiShare: share }),
+          },
+        }
+      : {}),
   };
 }
 
@@ -166,6 +258,8 @@ function admissionStatus(result: AdmissionResult): ManuscriptStatus {
 
 export const workbenchRoutes = new Hono();
 
+// 根路径就是工作台。/workbench 保留为别名，旧链接和书签不会断。
+workbenchRoutes.get('/', (c) => c.html(renderWorkbench()));
 workbenchRoutes.get('/workbench', (c) => c.html(renderWorkbench()));
 
 workbenchRoutes.get('/api/workbench', (c) =>

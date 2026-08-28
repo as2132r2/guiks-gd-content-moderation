@@ -36,7 +36,9 @@ app.get('/readyz', (c) => {
     return c.json({ status: 'not-ready', checks: { database: false, model: 'unknown' } }, 503);
   }
 });
-app.get('/', (c) => c.html(renderConsole({ targetLabel: config.targetLabel })));
+// 「把关人」是这个产品的正面。遗留的 AuditGate 控制台还有用（红队、策略、
+// 逐用户计量），但它不是首页——打开根路径应当直接进稿件工作台。
+app.get('/console', (c) => c.html(renderConsole({ targetLabel: config.targetLabel })));
 app.get('/api/state', (c) => c.json(snapshot()));
 app.get('/api/meta', (c) =>
   c.json({
