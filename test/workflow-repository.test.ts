@@ -62,6 +62,27 @@ describe('workflow repository', () => {
     expect(repository.getAggregate('missing')).toBeUndefined();
   });
 
+  it('persists the admission verdict independently from the active term list', () => {
+    const manuscript = repository.createManuscript({
+      title: '准入固化',
+      sourceType: 'notice',
+      sourceText: '模拟素材。',
+    });
+    repository.saveAdmissionResult(manuscript.id, {
+      decision: 'reason-required',
+      reasonCode: 'sensitive-topic',
+      message: '请填写选题依据。',
+      hits: [{ ruleId: 'AD-R-TEST', evidence: '事故' }],
+    });
+
+    expect(repository.getAdmissionResult(manuscript.id)).toEqual({
+      decision: 'reason-required',
+      reasonCode: 'sensitive-topic',
+      message: '请填写选题依据。',
+      hits: [{ ruleId: 'AD-R-TEST', evidence: '事故' }],
+    });
+  });
+
   it('derives AI 参与度 from sentence origins and recomputes it on a rewrite', () => {
     const manuscript = repository.createManuscript({
       title: '句级来源测试',

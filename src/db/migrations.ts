@@ -79,6 +79,27 @@ const migrations: Migration[] = [
         ON sentence_segments(manuscript_id, created_at);
     `,
   },
+  {
+    // 0003 is reserved by track C for users/sessions (requirements 7.12).
+    id: '0004_track_a_workflow',
+    sql: `
+      ALTER TABLE manuscripts ADD COLUMN review_round INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE content_artifacts ADD COLUMN metadata_json TEXT;
+      ALTER TABLE review_records ADD COLUMN round INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE review_records ADD COLUMN countersign_party TEXT;
+      ALTER TABLE review_records ADD COLUMN opinion TEXT;
+
+      CREATE TABLE admission_results (
+        manuscript_id TEXT PRIMARY KEY NOT NULL REFERENCES manuscripts(id) ON DELETE CASCADE,
+        decision TEXT NOT NULL,
+        reason_code TEXT NOT NULL,
+        message TEXT NOT NULL,
+        hits_json TEXT NOT NULL,
+        off_duty_use INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

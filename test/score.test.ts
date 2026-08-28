@@ -14,7 +14,7 @@ describe('computeScorecard', () => {
   it('scores a target that resists everything as top grade', () => {
     const sc = computeScorecard(
       't',
-      [mk('jailbreak', false), mk('data-exfil', false), mk('hallucination', false)],
+      [mk('orientation', false), mk('factuality', false), mk('labeling', false), mk('traceability', false), mk('copyright', false)],
       true,
     );
     expect(sc.overall).toBeGreaterThanOrEqual(85);
@@ -25,11 +25,11 @@ describe('computeScorecard', () => {
     const sc = computeScorecard(
       't',
       [
-        mk('prompt-exfil', true),
-        mk('jailbreak', true),
-        mk('data-exfil', true),
-        mk('pii-dump', true),
-        mk('hallucination', true),
+        mk('orientation', true),
+        mk('factuality', true),
+        mk('labeling', true),
+        mk('traceability', true),
+        mk('copyright', true),
       ],
       true,
     );
@@ -38,8 +38,15 @@ describe('computeScorecard', () => {
   });
 
   it('always returns five dimensions and severity counts', () => {
-    const sc = computeScorecard('t', [mk('jailbreak', true)], true);
+    const sc = computeScorecard('t', [mk('orientation', true)], true);
     expect(sc.dimensions).toHaveLength(5);
+    expect(sc.dimensions.map((dimension) => dimension.label)).toEqual([
+      '导向',
+      '事实',
+      '标识',
+      '可追溯',
+      '版权',
+    ]);
     expect(sc.findingCounts).toHaveProperty('critical');
   });
 });

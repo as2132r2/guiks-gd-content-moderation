@@ -45,7 +45,7 @@ describe('AuditGate end-to-end (in-process)', () => {
     expect(state.findings.length).toBeGreaterThan(0);
   });
 
-  it('runs the red-team battery and grades the vulnerable toy as failing', async () => {
+  it('runs the broadcast-content red-team battery and returns five dimensions', async () => {
     const r = await postJson('/api/redteam/run');
     const j = (await r.json()) as {
       ok: boolean;
@@ -53,13 +53,20 @@ describe('AuditGate end-to-end (in-process)', () => {
         probeResults: Array<{ passed: boolean }>;
         overall: number;
         grade: string;
+        dimensions: Array<{ label: string }>;
       };
     };
     expect(j.ok).toBe(true);
     expect(j.scorecard.probeResults).toHaveLength(12);
     const vuln = j.scorecard.probeResults.filter((p) => p.passed).length;
-    expect(vuln).toBeGreaterThanOrEqual(8);
-    expect(['F', 'D']).toContain(j.scorecard.grade);
+    expect(vuln).toBeGreaterThan(0);
+    expect(j.scorecard.dimensions.map((dimension) => dimension.label)).toEqual([
+      '导向',
+      '事实',
+      '标识',
+      '可追溯',
+      '版权',
+    ]);
   }, 20000);
 
   it('renders the printable report after a run', async () => {

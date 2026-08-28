@@ -12,9 +12,11 @@ import {
   summarize,
   type AdmissionResult,
   type Annotation,
+  type AnnotationCategory,
   type PreflightResult,
   type RuleHit,
 } from '../domain/gatekeeping.js';
+import type { ProofreadPass } from '../domain/contracts.js';
 import {
   ADMISSION_BLOCK_TERMS,
   ADMISSION_OFF_DUTY_TERMS,
@@ -89,6 +91,56 @@ export function runAdmission(input: { title: string; sourceText: string }): Admi
 
 const normalizeDigits = (text: string) => text.replace(/\s+/g, '');
 
+const proofreadPassFor = (category: AnnotationCategory): ProofreadPass => {
+  if (category === 'judgment' || category === 'ai-label') return 'third';
+  if (category === 'typo' || category === 'punctuation' || category === 'format') return 'first';
+  return 'second';
+};
+
+interface EntityCandidate {
+  literal: string;
+  start: number;
+  kind: '人名与职务' | '地名';
+}
+
+const PERSON_TITLE_PATTERN =
+  /[\u4e00-\u9fff]{2,4}(?:同志)?(?:担任|任|是)?(?:县委书记|县长|副县长|局长|主任|党组书记|党委书记)/g;
+const LOCATION_PATTERN = /(?:在|赴|到|位于)([\u4e00-\u9fff]{2,10}(?:县|市|区|镇|乡|村|社区))/g;
+
+function entityCandidates(sentence: string): EntityCandidate[] {
+  const candidates: EntityCandidate[] = [];
+  for (const match of sentence.matchAll(PERSON_TITLE_PATTERN)) {
+    candidates.push({ literal: match[0], start: match.index, kind: '人名与职务' });
+  }
+  for (const match of sentence.matchAll(LOCATION_PATTERN)) {
+    const literal = match[1];
+    if (!literal) continue;
+    candidates.push({
+      literal,
+      start: match.index + match[0].indexOf(literal),
+      kind: '地名',
+    });
+  }
+  return candidates;
+}
+
+const JUDGMENT_RULES: ReadonlyArray<{
+  pattern: RegExp;
+  title: string;
+  detail: string;
+}> = [
+  {
+    pattern: /网传|据网友反映|有消息称|未经证实/g,
+    title: '事实来源待人工复核',
+    detail: '该表述没有给出可核验来源，需人工核对事实依据后决定是否采用。',
+  },
+  {
+    pattern: /绝对不会|百分之百|零风险|必将全面领先/g,
+    title: '绝对化判断待人工复核',
+    detail: '该表述包含强判断或绝对化结论，模型不作终审结论，需人工复核。',
+  },
+];
+
 /**
  * 输出预检：一校（错别字 / 标点 / 格式）+ 二校（词表 / 领导表述）
  * + 与原通稿一致性 + AI 标识。
@@ -137,6 +189,7 @@ export function runPreflight(input: {
           detail: rule.detail,
           ...(rule.suggestion ? { suggestion: rule.suggestion } : {}),
           tier: 'L1',
+          proofreadPass: proofreadPassFor(rule.category),
         });
         from = sentence.indexOf(rule.term, from + rule.term.length);
       }
@@ -156,6 +209,7 @@ export function runPreflight(input: {
             detail: rule.detail,
             ...(rule.suggestion ? { suggestion: rule.suggestion } : {}),
             tier: 'L1',
+            proofreadPass: proofreadPassFor(rule.category),
           });
         }
         // 零宽匹配会死循环，手动推进一格。
@@ -177,6 +231,7 @@ export function runPreflight(input: {
         title: `标点：${mark.name}不成对`,
         detail: `这一句里「${mark.open}」出现 ${opens} 次、「${mark.close}」出现 ${closes} 次。`,
         tier: 'L1',
+        proofreadPass: 'first',
       });
     }
 
@@ -191,7 +246,36 @@ export function runPreflight(input: {
         title: `与原通稿不一致：${literal}`,
         detail: '这个数字在原通稿里找不到。生成稿里有而原文没有的数字一律标红待复核。',
         tier: 'L1',
+        proofreadPass: 'second',
       });
+    }
+
+    // 二校：生成稿新增的人名/职务组合或地名必须回看原通稿。
+    for (const entity of entityCandidates(sentence)) {
+      if (input.sourceText.includes(entity.literal)) continue;
+      add(ordinal, entity.start, entity.start + entity.literal.length, {
+        action: 'redact',
+        category: 'inconsistency',
+        title: `与原通稿不一致：${entity.literal}`,
+        detail: `这个${entity.kind}在原通稿里找不到，需由二校核对后决定是否采用。`,
+        tier: 'L1',
+        proofreadPass: 'second',
+      });
+    }
+
+    // 三校：L2 只指出判断风险，永远不给自动终审结论。
+    for (const rule of JUDGMENT_RULES) {
+      rule.pattern.lastIndex = 0;
+      for (const match of sentence.matchAll(rule.pattern)) {
+        add(ordinal, match.index, match.index + match[0].length, {
+          action: 'flag',
+          category: 'judgment',
+          title: rule.title,
+          detail: `${rule.detail} 结论：待人工复核。`,
+          tier: 'L2',
+          proofreadPass: 'third',
+        });
+      }
     }
   });
 
@@ -206,6 +290,7 @@ export function runPreflight(input: {
         '《人工智能生成合成内容标识办法》要求显式标识。预检可自动补一句，补完仍需人工确认位置。',
       suggestion: '本内容由人工智能生成，已经人工审核。',
       tier: 'L1',
+      proofreadPass: 'third',
     });
   }
 

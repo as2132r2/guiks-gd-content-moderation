@@ -65,7 +65,7 @@ export async function askTarget(message: string): Promise<GatewayResult> {
       target: config.targetLabel,
       model: `external:${config.targetFormat}`,
     });
-    return { reply, findings, tokens };
+    return { reply, model: `external:${config.targetFormat}`, findings, tokens };
   }
   const messages: ChatMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },

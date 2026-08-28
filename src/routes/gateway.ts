@@ -15,6 +15,7 @@ const approx = (s: string) => Math.max(1, Math.round(s.length / 3));
 
 export interface GatewayResult {
   reply: string;
+  model: string;
   findings: Finding[];
   tokens: { in: number; out: number };
 }
@@ -63,6 +64,7 @@ export async function throughGateway(
 
   return {
     reply: text,
+    model,
     findings: [...reqEvent.findings, ...respEvent.findings],
     tokens: { in: reqEvent.tokens?.in ?? 0, out: respEvent.tokens?.out ?? 0 },
   };

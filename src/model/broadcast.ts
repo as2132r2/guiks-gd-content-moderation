@@ -67,14 +67,14 @@ export async function generateBroadcastArtifacts(input: {
 }): Promise<GeneratedArtifact[]> {
   const out: GeneratedArtifact[] = [];
   for (const task of TASKS) {
-    const { reply } = await throughGateway(buildMessages(task, input.sourceText), {
+    const { reply, model } = await throughGateway(buildMessages(task, input.sourceText), {
       target: `把关人·生产层（${input.actor}）`,
     });
     out.push({
       kind: task.kind,
       label: task.label,
       content: reply.trim(),
-      model: 'gatekeeper-gateway',
+      model,
     });
   }
   return out;

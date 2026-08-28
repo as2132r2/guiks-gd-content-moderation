@@ -49,11 +49,9 @@ export async function callUpstream(
     // 广电主链的生成请求先走稿件 mock；其余流量仍归当前 AuditGate 场景。
     text = broadcastMockReply(messages) ?? getScenario().mockReply(messages);
   } else {
-    try {
-      text = await realReply(messages, model);
-    } catch (e) {
-      text = `[上游不可用，回退到受控演示] ${(e as Error).message}`;
-    }
+    // A configured real upstream fails visibly; production never fabricates a
+    // successful model response. The deterministic fallback is mock mode only.
+    text = await realReply(messages, model);
   }
   return { text, tokens: { in: inTokens, out: approxTokens(text) } };
 }

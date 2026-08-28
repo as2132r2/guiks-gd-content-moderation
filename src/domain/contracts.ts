@@ -23,7 +23,9 @@ export const manuscriptStatuses = [
   'preflight',
   'first-review',
   'second-review',
+  'countersign',
   'final-review',
+  'revision',
   'signed',
   'published',
 ] as const;
@@ -31,6 +33,14 @@ export type ManuscriptStatus = (typeof manuscriptStatuses)[number];
 
 export const admissionDecisions = ['blocked', 'reason-required', 'admitted-logged'] as const;
 export type AdmissionDecision = (typeof admissionDecisions)[number];
+
+export const admissionReasonCodes = [
+  'illegal-unrelated',
+  'sensitive-topic',
+  'off-duty-use',
+  'routine',
+] as const;
+export type AdmissionReasonCode = (typeof admissionReasonCodes)[number];
 
 export const artifactKinds = ['source', 'broadcast-script', 'short-video-copy'] as const;
 export type ArtifactKind = (typeof artifactKinds)[number];
@@ -52,6 +62,7 @@ export const reviewStages = [
   'preflight',
   'editor',
   'department-head',
+  'countersign',
   'supervising-leader',
 ] as const;
 export type ReviewStage = (typeof reviewStages)[number];
@@ -97,6 +108,8 @@ export interface Manuscript {
   sourceType: ContentSourceType;
   sourceText: string;
   status: ManuscriptStatus;
+  /** 当前三审三校轮次；复核修改完成并重新预检时递增。 */
+  reviewRound: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -110,6 +123,8 @@ export interface ContentArtifact {
   /** 0..1. Omitted when the contribution cannot yet be measured. */
   aiShare?: number;
   model?: string;
+  /** 隐式 AI 标识等随产物保存的机器可读元数据。 */
+  metadata?: JsonObject;
   createdAt: number;
 }
 
@@ -134,6 +149,10 @@ export interface ReviewRecord {
   decision: ReviewDecision;
   actor: string;
   reason?: string;
+  /** 第几轮三审三校；复核修改后重新预检时递增。 */
+  round: number;
+  countersignParty?: string;
+  opinion?: string;
   createdAt: number;
 }
 
@@ -177,12 +196,14 @@ export interface CreateArtifactInput {
   /** Ignored when `segments` are supplied: the ratio is recomputed from them. */
   aiShare?: number;
   model?: string;
+  metadata?: JsonObject;
   segments?: CreateSegmentInput[];
 }
 
 /** A handoff rewrite: sentences are replaced wholesale, AI 参与度 recomputed. */
 export interface ReplaceSegmentsInput {
   actor: string;
+  actorType?: ActorType;
   segments: CreateSegmentInput[];
 }
 
@@ -191,6 +212,9 @@ export interface RecordReviewInput {
   decision: ReviewDecision;
   actor: string;
   reason?: string;
+  round?: number;
+  countersignParty?: string;
+  opinion?: string;
 }
 
 export interface AppendTraceInput {

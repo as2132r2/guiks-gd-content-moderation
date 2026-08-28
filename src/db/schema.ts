@@ -8,6 +8,7 @@ export const manuscripts = sqliteTable(
     sourceType: text('source_type').notNull(),
     sourceText: text('source_text').notNull(),
     status: text('status').notNull(),
+    reviewRound: integer('review_round').notNull().default(1),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -26,6 +27,7 @@ export const contentArtifacts = sqliteTable(
     origin: text('origin').notNull(),
     aiShare: real('ai_share'),
     model: text('model'),
+    metadataJson: text('metadata_json'),
     createdAt: integer('created_at').notNull(),
   },
   (table) => [index('content_artifacts_manuscript_idx').on(table.manuscriptId, table.createdAt)],
@@ -65,10 +67,25 @@ export const reviewRecords = sqliteTable(
     decision: text('decision').notNull(),
     actor: text('actor').notNull(),
     reason: text('reason'),
+    round: integer('round').notNull().default(1),
+    countersignParty: text('countersign_party'),
+    opinion: text('opinion'),
     createdAt: integer('created_at').notNull(),
   },
   (table) => [index('review_records_manuscript_idx').on(table.manuscriptId, table.createdAt)],
 );
+
+export const admissionResults = sqliteTable('admission_results', {
+  manuscriptId: text('manuscript_id')
+    .primaryKey()
+    .references(() => manuscripts.id, { onDelete: 'cascade' }),
+  decision: text('decision').notNull(),
+  reasonCode: text('reason_code').notNull(),
+  message: text('message').notNull(),
+  hitsJson: text('hits_json').notNull(),
+  offDutyUse: integer('off_duty_use', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at').notNull(),
+});
 
 export const traceEvents = sqliteTable(
   'trace_events',
@@ -89,6 +106,7 @@ export const traceEvents = sqliteTable(
 
 export const schema = {
   manuscripts,
+  admissionResults,
   contentArtifacts,
   sentenceSegments,
   reviewRecords,

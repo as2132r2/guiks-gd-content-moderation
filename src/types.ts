@@ -44,6 +44,12 @@ export interface AuditEvent {
 }
 
 export type ProbeCategory =
+  | 'orientation'
+  | 'factuality'
+  | 'labeling'
+  | 'traceability'
+  | 'copyright'
+  // Legacy scenario packs remain loadable while the four old pages are retained.
   | 'prompt-exfil'
   | 'data-exfil'
   | 'pii-dump'
@@ -78,11 +84,11 @@ export interface ProbeResult {
 }
 
 export type DimensionKey =
-  | 'auditability'
-  | 'injection'
-  | 'data'
-  | 'config'
-  | 'robustness';
+  | 'orientation'
+  | 'factuality'
+  | 'labeling'
+  | 'traceability'
+  | 'copyright';
 
 export interface DimensionScore {
   key: DimensionKey;

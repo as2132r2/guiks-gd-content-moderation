@@ -9,20 +9,17 @@
  * Keep this file free of HTTP, database and provider concepts, exactly like
  * contracts.ts next to it.
  */
-import type { AdmissionDecision, SentenceOrigin } from './contracts.js';
+import {
+  admissionReasonCodes,
+  type AdmissionDecision,
+  type AdmissionReasonCode,
+  type ProofreadPass,
+  type SentenceOrigin,
+} from './contracts.js';
 
 /** Why the entry gate reached its verdict. Drives the copy the editor sees. */
-export const admissionReasonCodes = [
-  /** 明确违法且与新闻业务无关 → 硬拦，模型完全不碰 */
-  'illegal-unrelated',
-  /** 涉敏感题材但可能是正当报道 → 要理由 */
-  'sensitive-topic',
-  /** 公器私用：不违法，但不是业务用途 → 只标不拦 */
-  'off-duty-use',
-  /** 正常业务 → 仅留痕 */
-  'routine',
-] as const;
-export type AdmissionReasonCode = (typeof admissionReasonCodes)[number];
+export { admissionReasonCodes };
+export type { AdmissionReasonCode };
 
 export interface RuleHit {
   /** Stable rule id so a hit can be traced back to the word list entry. */
@@ -101,6 +98,8 @@ export interface Annotation {
    * L2 一律输出「待人工复核」，不给自动终审结论 (方案 §六).
    */
   tier: 'L1' | 'L2';
+  /** 这条标注由哪一校负责处理。校次不是状态。 */
+  proofreadPass: ProofreadPass;
 }
 
 export interface PreflightSummary {

@@ -57,6 +57,8 @@ const transitionSchema = z.object({
   to: z.enum(manuscriptStatuses),
   role: z.enum(workflowRoles),
   reason: z.string().trim().min(1).max(2_000).optional(),
+  countersignParty: z.string().trim().min(1).max(100).optional(),
+  opinion: z.string().trim().min(1).max(2_000).optional(),
 });
 
 const reviseSchema = z.object({
@@ -159,8 +161,9 @@ function readProvenance(trace: readonly TraceEvent[]): ProvenancePoint[] {
   const ordered = [...trace].sort((a, b) => a.createdAt - b.createdAt);
   for (const event of ordered) {
     const isCreate = event.kind === 'artifact-created';
-    const isRevise = event.kind === 'segments-recorded';
-    if (!isCreate && !isRevise) continue;
+    const isSegmentUpdate = event.kind === 'segments-recorded';
+    const isRevise = isSegmentUpdate && event.actorType === 'human';
+    if (!isCreate && !isSegmentUpdate) continue;
 
     const artifactShare = asNumber(event.data.aiShare);
     const count = asNumber(event.data.segmentCount);
@@ -168,6 +171,9 @@ function readProvenance(trace: readonly TraceEvent[]): ProvenancePoint[] {
     if (artifactShare === undefined || count === undefined || count === 0 || !artifactId) continue;
 
     live.set(artifactId, { share: artifactShare, count });
+
+    // 自动补标识会改变句数，但不是一次人工改稿：更新曲线基线，不新增拐点。
+    if (!isCreate && !isRevise) continue;
 
     let weighted = 0;
     let total = 0;
@@ -221,7 +227,7 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
     manuscript,
     stage: stageOf(manuscript.status),
     statusLabel: statusLabels[manuscript.status],
-    admission: runAdmission(manuscript),
+    admission: getWorkflowRepository().getAdmissionResult(manuscriptId) ?? runAdmission(manuscript),
     artifacts: artifactViews,
     preflight: summarize(allAnnotations),
     ...(share === undefined ? {} : { aiShare: share }),
@@ -256,6 +262,63 @@ function admissionStatus(result: AdmissionResult): ManuscriptStatus {
   return 'admitted';
 }
 
+/** 自动补显式标识、写隐式元数据，并把本轮预检命中固化到追溯链。 */
+function persistPreflight(manuscriptId: string, round: number): void {
+  const repository = getWorkflowRepository();
+  const aggregate = repository.getAggregate(manuscriptId);
+  if (!aggregate) return;
+
+  for (const artifact of aggregate.artifacts.filter((item) => item.kind !== 'source')) {
+    const own = aggregate.segments.filter((segment) => segment.artifactId === artifact.id);
+    const sentences = own.length > 0 ? own.map((segment) => segment.text) : splitSentences(artifact.content);
+    const checked = runPreflight({
+      artifactId: artifact.id,
+      sentences,
+      sourceText: aggregate.manuscript.sourceText,
+    });
+    const label = checked.annotations.find(
+      (annotation) => annotation.category === 'ai-label' && annotation.suggestion,
+    );
+
+    if (label?.suggestion) {
+      repository.replaceArtifactSegments(manuscriptId, artifact.id, {
+        actor: '输出预检·自动标识',
+        actorType: 'system',
+        segments: [
+          ...own.map((segment) => ({
+            text: segment.text,
+            origin: segment.origin,
+            ...(segment.sourceRef ? { sourceRef: segment.sourceRef } : {}),
+          })),
+          { text: label.suggestion, origin: 'ai' as const },
+        ],
+      });
+    }
+
+    repository.setArtifactMetadata(manuscriptId, artifact.id, {
+      ...(artifact.metadata ?? {}),
+      aiGenerated: true,
+      aiLabel: '人工智能生成',
+      labeledAt: Date.now(),
+    });
+
+    repository.appendTrace(manuscriptId, {
+      kind: 'rule-hit',
+      actorType: 'system',
+      actor: '输出预检',
+      data: {
+        artifactId: artifact.id,
+        kind: artifact.kind,
+        round,
+        ...checked.summary,
+        rules: checked.annotations.map((annotation) => annotation.category),
+        proofreadPasses: checked.annotations.map((annotation) => annotation.proofreadPass),
+        autoFixed: label ? ['ai-label'] : [],
+      },
+    });
+  }
+}
+
 export const workbenchRoutes = new Hono();
 
 // 根路径就是工作台。/workbench 保留为别名，旧链接和书签不会断。
@@ -280,6 +343,7 @@ workbenchRoutes.post('/api/workbench', async (c) => {
   const repository = getWorkflowRepository();
   const admission = runAdmission(parsed.data);
   const manuscript = repository.createManuscript(parsed.data);
+  repository.saveAdmissionResult(manuscript.id, admission);
 
   repository.appendTrace(manuscript.id, {
     kind: 'rule-hit',
@@ -388,7 +452,7 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
   const manuscript = repository.findManuscript(id);
   if (!manuscript) return c.json({ error: 'manuscript_not_found' }, 404);
 
-  const { to, role, reason } = parsed.data;
+  const { to, role, reason, countersignParty, opinion } = parsed.data;
   const refusal = checkTransition({ from: manuscript.status, to, actor: role, ...(reason ? { reason } : {}) });
   if (refusal) {
     return c.json(
@@ -399,6 +463,17 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
 
   const transition = findTransition(manuscript.status, to, role)!;
   const actor = actorName(role);
+
+  if (
+    transition.from === 'countersign' &&
+    to === 'final-review' &&
+    (!countersignParty || !opinion)
+  ) {
+    return c.json(
+      { error: 'countersign_details_required', message: '完成会签必须填写会签方和会签意见。' },
+      400,
+    );
+  }
 
   // 生成 and 预检 are side effects of their transition, not separate buttons.
   if (transition.from === 'admitted' && to === 'generated') {
@@ -416,27 +491,15 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
         content: item.content,
         origin: 'ai',
         model: item.model,
+        metadata: { aiGenerated: true, aiLabel: '人工智能生成' },
         segments: sentences.map((text) => ({ text, origin: 'ai' as const })),
       });
     }
   }
 
-  if (transition.from === 'generated' && to === 'preflight') {
-    const view = buildView(id);
-    for (const artifactView of view?.artifacts ?? []) {
-      const summary = summarize(artifactView.annotations);
-      repository.appendTrace(id, {
-        kind: 'rule-hit',
-        actorType: 'system',
-        actor: '输出预检',
-        data: {
-          artifactId: artifactView.artifact.id,
-          kind: artifactView.artifact.kind,
-          ...summary,
-          rules: artifactView.annotations.map((annotation) => annotation.category),
-        },
-      });
-    }
+  if ((transition.from === 'generated' || transition.from === 'revision') && to === 'preflight') {
+    const round = manuscript.reviewRound + (transition.from === 'revision' ? 1 : 0);
+    persistPreflight(id, round);
   }
 
   if (transition.stage) {
@@ -445,10 +508,15 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
       decision: transition.kind === 'return' ? 'changes-requested' : 'approved',
       actor,
       ...(reason ? { reason } : {}),
+      round: manuscript.reviewRound + (transition.from === 'revision' ? 1 : 0),
+      ...(countersignParty ? { countersignParty } : {}),
+      ...(opinion ? { opinion } : {}),
     });
   }
 
-  const updated = repository.updateStatus(id, to, actor);
+  const updated = repository.updateStatus(id, to, actor, {
+    incrementReviewRound: transition.from === 'revision' && to === 'preflight',
+  });
   emit(id, { action: 'transition', from: transition.from, to, role, actor });
 
   const view = buildView(id);

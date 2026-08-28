@@ -138,7 +138,7 @@ describe('工作台主链', () => {
     expect(generated.aiShare).toBe(1);
     expect(generated.segmentCount).toBeGreaterThan(0);
 
-    // ④ 预检 —— 禁用词、与原通稿不符的数字、缺 AI 标识，三样都要标出来。
+    // ④ 预检 —— 缺失的 AI 标识会自动补写，最终标注里只留下待人工处理项。
     expect((await move(id, { to: 'preflight', role: 'editor' })).status).toBe(200);
     const checked = await view(id);
     const categories = checked.artifacts.flatMap((item) =>
@@ -146,8 +146,10 @@ describe('工作台主链', () => {
     );
     expect(categories).toContain('banned-term');
     expect(categories).toContain('inconsistency');
-    expect(categories).toContain('ai-label');
+    expect(categories).not.toContain('ai-label');
     expect(checked.preflight.block).toBeGreaterThan(0);
+    expect(checked.artifacts.every((item) => item.artifact.content.includes('人工智能生成'))).toBe(true);
+    expect(checked.artifacts.every((item) => item.artifact.metadata?.aiGenerated === true)).toBe(true);
 
     const misquote = checked.artifacts
       .flatMap((item) => item.annotations)
@@ -156,6 +158,11 @@ describe('工作台主链', () => {
 
     // 预检命中进留痕，追溯图谱要靠它。
     expect(checked.trace.filter((event) => event.actor === '输出预检').length).toBeGreaterThan(0);
+    expect(
+      checked.trace
+        .filter((event) => event.actor === '输出预检')
+        .every((event) => Array.isArray(event.data.autoFixed)),
+    ).toBe(true);
 
     // 人改一句 → 该句降级 ai-edited，AI 参与度当场下降。
     const script = checked.artifacts[0]!;
@@ -196,7 +203,11 @@ describe('工作台主链', () => {
     const current = await view(id);
     expect(current.waitingOn).toBe('department-head');
     expect(current.actions.editor).toEqual([]);
-    expect(current.actions['department-head']).toHaveLength(2);
+    expect(current.actions['department-head'].map((action) => action.to)).toEqual([
+      'final-review',
+      'countersign',
+      'revision',
+    ]);
   });
 
   it('records every handoff separately even when one person holds several roles', async () => {
@@ -232,23 +243,66 @@ describe('工作台主链', () => {
     await move(id, { to: 'first-review', role: 'editor' });
     await move(id, { to: 'second-review', role: 'editor' });
 
-    const bare = await move(id, { to: 'first-review', role: 'department-head' });
+    const bare = await move(id, { to: 'revision', role: 'department-head' });
     expect(bare.status).toBe(400);
     expect(await bare.json()).toMatchObject({ error: 'reason_required' });
 
     const returned = await move(id, {
-      to: 'first-review',
+      to: 'revision',
       role: 'department-head',
       reason: '第三句的投资额与原通稿不符，请核对后再报。',
     });
     expect(returned.status).toBe(200);
 
     const after = await view(id);
-    expect(after.manuscript.status).toBe('first-review');
+    expect(after.manuscript.status).toBe('revision');
     const rejection = after.reviews.find((review) => review.decision === 'changes-requested');
     expect(rejection).toMatchObject({
       stage: 'department-head',
       reason: '第三句的投资额与原通稿不符，请核对后再报。',
+      round: 1,
+    });
+
+    expect((await move(id, { to: 'preflight', role: 'editor' })).status).toBe(200);
+    const rerun = await view(id);
+    expect(rerun.manuscript).toMatchObject({ status: 'preflight', reviewRound: 2 });
+    const preflightRounds = rerun.trace
+      .filter((event) => event.actor === '输出预检')
+      .map((event) => event.data.round);
+    expect(preflightRounds).toContain(1);
+    expect(preflightRounds).toContain(2);
+  });
+
+  it('supports optional countersign and records party, opinion and round', async () => {
+    const { body } = await create();
+    const id = body.manuscript.id;
+    await move(id, { to: 'generated', role: 'editor' });
+    await move(id, { to: 'preflight', role: 'editor' });
+    await move(id, { to: 'first-review', role: 'editor' });
+    await move(id, { to: 'second-review', role: 'editor' });
+    expect((await move(id, { to: 'countersign', role: 'department-head' })).status).toBe(200);
+
+    const missing = await move(id, { to: 'final-review', role: 'department-head' });
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toMatchObject({ error: 'countersign_details_required' });
+
+    expect(
+      (
+        await move(id, {
+          to: 'final-review',
+          role: 'department-head',
+          countersignParty: '县应急管理局',
+          opinion: '事实数据已核验，同意报送终审。',
+        })
+      ).status,
+    ).toBe(200);
+
+    const after = await view(id);
+    expect(after.manuscript.status).toBe('final-review');
+    expect(after.reviews.find((review) => review.stage === 'countersign')).toMatchObject({
+      countersignParty: '县应急管理局',
+      opinion: '事实数据已核验，同意报送终审。',
+      round: 1,
     });
   });
 

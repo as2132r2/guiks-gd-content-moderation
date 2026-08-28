@@ -48,13 +48,13 @@ describe('稿件状态机', () => {
 
   it('will not let a manuscript be returned without a reason', () => {
     expect(
-      checkTransition({ from: 'second-review', to: 'first-review', actor: 'department-head' })?.code,
+      checkTransition({ from: 'second-review', to: 'revision', actor: 'department-head' })?.code,
     ).toBe('reason_required');
 
     expect(
       checkTransition({
         from: 'second-review',
-        to: 'first-review',
+        to: 'revision',
         actor: 'department-head',
         reason: '第二段数字与原通稿不符，请核对后再报。',
       }),
@@ -76,14 +76,20 @@ describe('稿件状态机', () => {
     ).toBeNull();
   });
 
-  it('offers exactly one primary action per role, so the page has one button', () => {
-    for (const status of ['admitted', 'generated', 'preflight', 'first-review', 'second-review', 'final-review'] as const) {
+  it('offers one primary action except for the explicit optional countersign branch', () => {
+    for (const status of ['admitted', 'generated', 'preflight', 'first-review', 'final-review', 'revision'] as const) {
       const owner = waitingOn(status);
       expect(owner).toBeDefined();
       const advances = nextActions(status, owner!).filter((move) => move.kind === 'advance');
       expect(advances).toHaveLength(1);
       expect(primaryAction(status, owner!)).toBeDefined();
     }
+
+    expect(
+      nextActions('second-review', 'department-head')
+        .filter((move) => move.kind === 'advance')
+        .map((move) => move.to),
+    ).toEqual(['final-review', 'countersign']);
   });
 
   it('gives a role nothing to do when it is not their turn', () => {
@@ -96,7 +102,21 @@ describe('稿件状态机', () => {
     expect(stageOf('admission-blocked')).toBe('admission');
     expect(stageOf('preflight')).toBe('preflight');
     expect(stageOf('final-review')).toBe('review');
+    expect(stageOf('countersign')).toBe('review');
+    expect(stageOf('revision')).toBe('review');
     expect(stageOf('published')).toBe('trace');
+  });
+
+  it('returns every review level to revision and then reruns preflight', () => {
+    for (const [from, actor] of [
+      ['first-review', 'editor'],
+      ['second-review', 'department-head'],
+      ['countersign', 'department-head'],
+      ['final-review', 'supervising-leader'],
+    ] as const) {
+      expect(checkTransition({ from, to: 'revision', actor, reason: '请复核。' })).toBeNull();
+    }
+    expect(checkTransition({ from: 'revision', to: 'preflight', actor: 'editor' })).toBeNull();
   });
 
   it('records a review stage on every human handoff', () => {

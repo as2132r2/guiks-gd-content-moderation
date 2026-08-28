@@ -62,7 +62,9 @@ export const statusLabels: Readonly<Record<ManuscriptStatus, string>> = {
   preflight: '预检完成',
   'first-review': '待初审',
   'second-review': '待复审',
+  countersign: '待会签',
   'final-review': '待终审',
+  revision: '复核修改',
   signed: '已签发',
   published: '已发布',
 };
@@ -161,7 +163,7 @@ export const transitions: readonly Transition[] = [
   },
   {
     from: 'first-review',
-    to: 'preflight',
+    to: 'revision',
     actor: 'editor',
     kind: 'return',
     label: '退回修改',
@@ -178,12 +180,37 @@ export const transitions: readonly Transition[] = [
   },
   {
     from: 'second-review',
-    to: 'first-review',
+    to: 'countersign',
+    actor: 'department-head',
+    kind: 'advance',
+    label: '复审通过，发起会签',
+    stage: 'department-head',
+  },
+  {
+    from: 'second-review',
+    to: 'revision',
     actor: 'department-head',
     kind: 'return',
-    label: '退回初审',
+    label: '退回复核修改',
     requiresReason: true,
     stage: 'department-head',
+  },
+  {
+    from: 'countersign',
+    to: 'final-review',
+    actor: 'department-head',
+    kind: 'advance',
+    label: '完成会签，报送终审',
+    stage: 'countersign',
+  },
+  {
+    from: 'countersign',
+    to: 'revision',
+    actor: 'department-head',
+    kind: 'return',
+    label: '会签后退回复核修改',
+    requiresReason: true,
+    stage: 'countersign',
   },
   {
     from: 'final-review',
@@ -195,12 +222,22 @@ export const transitions: readonly Transition[] = [
   },
   {
     from: 'final-review',
-    to: 'second-review',
+    to: 'revision',
     actor: 'supervising-leader',
     kind: 'return',
-    label: '退回复审',
+    label: '退回复核修改',
     requiresReason: true,
     stage: 'supervising-leader',
+  },
+
+  // 任一审级退回后，编辑改稿并重跑预检；随后从待初审开始新一轮。
+  {
+    from: 'revision',
+    to: 'preflight',
+    actor: 'editor',
+    kind: 'advance',
+    label: '完成复核修改并重新预检',
+    stage: 'preflight',
   },
 
   // 多平台发布不做，按钮只演示状态变化 (方案 §十三).
@@ -327,7 +364,7 @@ export const workbenchStages = [
   {
     key: 'review',
     label: '三审流转',
-    statuses: ['first-review', 'second-review', 'final-review'],
+    statuses: ['first-review', 'second-review', 'countersign', 'final-review', 'revision'],
   },
   { key: 'trace', label: 'AI 参与度追溯', statuses: ['signed', 'published'] },
 ] as const satisfies ReadonlyArray<{

@@ -84,6 +84,38 @@ describe('输出预检', () => {
     ];
     expect(preflight(clean, SOURCE).annotations).toEqual([]);
   });
+
+  it('assigns findings to the responsible proofread pass', () => {
+    const result = preflight(
+      ['设备已按装,李强任县长到白云县调研。', '网传项目零风险。', '本内容由人工智能生成。'],
+      '张伟任县长到青云县调研。',
+    );
+    expect(result.annotations.find((item) => item.category === 'typo')?.proofreadPass).toBe('first');
+    expect(result.annotations.find((item) => item.category === 'punctuation')?.proofreadPass).toBe('first');
+    expect(result.annotations.find((item) => item.category === 'inconsistency')?.proofreadPass).toBe('second');
+    expect(result.annotations.find((item) => item.category === 'judgment')?.proofreadPass).toBe('third');
+  });
+
+  it('flags generated names, titles and locations that are absent from the source', () => {
+    const source = '张伟任县长到青云县调研。';
+    const result = preflight(['李强任县长到白云县调研。', '本内容由人工智能生成。'], source);
+    const titles = result.annotations
+      .filter((item) => item.category === 'inconsistency')
+      .map((item) => item.title);
+    expect(titles.some((title) => title.includes('李强任县长'))).toBe(true);
+    expect(titles.some((title) => title.includes('白云县'))).toBe(true);
+    expect(preflight(['张伟任县长到青云县调研。', '本内容由人工智能生成。'], source).annotations).toEqual([]);
+  });
+
+  it('emits L2 judgment findings only as 待人工复核', () => {
+    const hits = preflight(
+      ['网传该项目百分之百没有风险。', '本内容由人工智能生成。'],
+      '项目正在论证。',
+    ).annotations.filter((item) => item.category === 'judgment');
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.every((item) => item.tier === 'L2' && item.action === 'flag')).toBe(true);
+    expect(hits.every((item) => item.detail.includes('待人工复核'))).toBe(true);
+  });
 });
 
 describe('一校规则（错别字 / 标点 / 格式）', () => {

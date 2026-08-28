@@ -47,11 +47,11 @@ export const config = {
   /**
    * Upstream model behind the gateway (used in `toy` target mode). Empty = use
    * the built-in deterministic mock upstream (no key needed, reliable on stage).
-   * Set to a real OpenAI/Anthropic-compatible base URL to proxy a real model.
+   * Set to a real OpenAI-compatible base URL to proxy a real model.
    */
   upstreamUrl: process.env.UPSTREAM_URL ?? '',
   upstreamKey: process.env.UPSTREAM_KEY ?? '',
-  upstreamModel: process.env.UPSTREAM_MODEL ?? 'glm-4.6-mock',
+  upstreamModel: process.env.UPSTREAM_MODEL ?? 'GLM-5.2',
 
   /**
    * What we point the red team at.

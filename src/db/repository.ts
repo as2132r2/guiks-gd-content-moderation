@@ -20,8 +20,10 @@ import type {
   SentenceSegment,
   TraceEvent,
 } from '../domain/contracts.js';
+import type { AdmissionResult, RuleHit } from '../domain/gatekeeping.js';
 import { createDatabase, type DatabaseHandle } from './client.js';
 import {
+  admissionResults,
   contentArtifacts,
   manuscripts,
   reviewRecords,
@@ -51,6 +53,7 @@ const toArtifact = (row: ArtifactRow): ContentArtifact => ({
   origin: row.origin as ContentArtifact['origin'],
   ...(row.aiShare === null ? {} : { aiShare: row.aiShare }),
   ...(row.model === null ? {} : { model: row.model }),
+  ...(row.metadataJson === null ? {} : { metadata: parseJsonObject(row.metadataJson) }),
   createdAt: row.createdAt,
 });
 
@@ -120,6 +123,7 @@ export class WorkflowRepository {
       sourceType: input.sourceType,
       sourceText: input.sourceText,
       status: 'draft',
+      reviewRound: 1,
       createdAt: now,
       updatedAt: now,
     };
@@ -154,6 +158,59 @@ export class WorkflowRepository {
     return this.database.orm.select().from(manuscripts).where(eq(manuscripts.id, id)).get() as
       | Manuscript
       | undefined;
+  }
+
+  /** 固化入口准入结论，历史稿件不再随词表变化而改判。 */
+  saveAdmissionResult(manuscriptId: string, result: AdmissionResult): AdmissionResult | undefined {
+    if (!this.findManuscript(manuscriptId)) return undefined;
+    this.database.orm
+      .insert(admissionResults)
+      .values({
+        manuscriptId,
+        decision: result.decision,
+        reasonCode: result.reasonCode,
+        message: result.message,
+        hitsJson: JSON.stringify(result.hits),
+        offDutyUse: result.offDutyUse ?? false,
+        createdAt: Date.now(),
+      })
+      .onConflictDoUpdate({
+        target: admissionResults.manuscriptId,
+        set: {
+          decision: result.decision,
+          reasonCode: result.reasonCode,
+          message: result.message,
+          hitsJson: JSON.stringify(result.hits),
+          offDutyUse: result.offDutyUse ?? false,
+        },
+      })
+      .run();
+    return result;
+  }
+
+  getAdmissionResult(manuscriptId: string): AdmissionResult | undefined {
+    const row = this.database.orm
+      .select()
+      .from(admissionResults)
+      .where(eq(admissionResults.manuscriptId, manuscriptId))
+      .get();
+    if (!row) return undefined;
+
+    let hits: RuleHit[] = [];
+    try {
+      const parsed: unknown = JSON.parse(row.hitsJson);
+      if (Array.isArray(parsed)) hits = parsed as RuleHit[];
+    } catch {
+      // Damaged optional evidence must not hide the persisted verdict.
+    }
+
+    return {
+      decision: row.decision as AdmissionResult['decision'],
+      reasonCode: row.reasonCode as AdmissionResult['reasonCode'],
+      message: row.message,
+      hits,
+      ...(row.offDutyUse ? { offDutyUse: true } : {}),
+    };
   }
 
   getAggregate(id: string): ManuscriptAggregate | undefined {
@@ -196,6 +253,9 @@ export class WorkflowRepository {
       decision: row.decision as ReviewRecord['decision'],
       actor: row.actor,
       ...(row.reason === null ? {} : { reason: row.reason }),
+      round: row.round,
+      ...(row.countersignParty === null ? {} : { countersignParty: row.countersignParty }),
+      ...(row.opinion === null ? {} : { opinion: row.opinion }),
       createdAt: row.createdAt,
     }));
     const traceRows = this.database.orm
@@ -218,14 +278,20 @@ export class WorkflowRepository {
     return { manuscript, artifacts, segments, reviews, trace };
   }
 
-  updateStatus(id: string, status: ManuscriptStatus, actor: string): Manuscript | undefined {
+  updateStatus(
+    id: string,
+    status: ManuscriptStatus,
+    actor: string,
+    options: { incrementReviewRound?: boolean } = {},
+  ): Manuscript | undefined {
     const existing = this.findManuscript(id);
     if (!existing) return undefined;
     const now = Date.now();
+    const reviewRound = existing.reviewRound + (options.incrementReviewRound ? 1 : 0);
 
     this.database.orm.transaction((tx) => {
       tx.update(manuscripts)
-        .set({ status, updatedAt: now })
+        .set({ status, reviewRound, updatedAt: now })
         .where(eq(manuscripts.id, id))
         .run();
       tx.insert(traceEvents)
@@ -235,7 +301,7 @@ export class WorkflowRepository {
           kind: status === 'signed' ? 'signed' : 'status-changed',
           actorType: 'human',
           actor,
-          dataJson: JSON.stringify({ from: existing.status, to: status }),
+          dataJson: JSON.stringify({ from: existing.status, to: status, round: reviewRound }),
           createdAt: now,
         })
         .run();
@@ -262,11 +328,24 @@ export class WorkflowRepository {
       origin,
       ...(aiShare === undefined ? {} : { aiShare }),
       ...(input.model ? { model: input.model } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
       createdAt,
     };
 
     this.database.orm.transaction((tx) => {
-      tx.insert(contentArtifacts).values(artifact).run();
+      tx.insert(contentArtifacts)
+        .values({
+          id: artifact.id,
+          manuscriptId: artifact.manuscriptId,
+          kind: artifact.kind,
+          content: artifact.content,
+          origin: artifact.origin,
+          aiShare: artifact.aiShare ?? null,
+          model: artifact.model ?? null,
+          metadataJson: artifact.metadata ? JSON.stringify(artifact.metadata) : null,
+          createdAt: artifact.createdAt,
+        })
+        .run();
       if (segments.length > 0) tx.insert(sentenceSegments).values(toSegmentRows(segments)).run();
       tx.update(manuscripts)
         .set({ updatedAt: artifact.createdAt })
@@ -339,6 +418,7 @@ export class WorkflowRepository {
 
     // Emptying the sentences cannot invent a provenance: keep the last label.
     const origin = deriveArtifactOrigin(segments) ?? existing.origin;
+    const content = segments.map((segment) => segment.text).join('\n');
     // Drop the old ratio outright — an unmeasurable artifact has no share.
     const { aiShare: previousAiShare, ...carried } = existing;
 
@@ -346,7 +426,7 @@ export class WorkflowRepository {
       tx.delete(sentenceSegments).where(eq(sentenceSegments.artifactId, artifactId)).run();
       if (segments.length > 0) tx.insert(sentenceSegments).values(toSegmentRows(segments)).run();
       tx.update(contentArtifacts)
-        .set({ aiShare, origin })
+        .set({ aiShare, origin, content })
         .where(eq(contentArtifacts.id, artifactId))
         .run();
       tx.update(manuscripts).set({ updatedAt: now }).where(eq(manuscripts.id, manuscriptId)).run();
@@ -355,7 +435,7 @@ export class WorkflowRepository {
           id: randomUUID(),
           manuscriptId,
           kind: 'segments-recorded',
-          actorType: 'human',
+          actorType: input.actorType ?? 'human',
           actor: input.actor,
 
           dataJson: JSON.stringify({
@@ -376,7 +456,7 @@ export class WorkflowRepository {
 
 
     return {
-      artifact: { ...carried, origin, ...(aiShare === null ? {} : { aiShare }) },
+      artifact: { ...carried, content, origin, ...(aiShare === null ? {} : { aiShare }) },
       segments,
     };
   }
@@ -406,21 +486,28 @@ export class WorkflowRepository {
     });
     if (!result) return undefined;
 
-    // The stored artifact text has to follow its sentences, or the 追溯图谱 and
-    // the reading view would disagree about what was signed off.
-    const content = input.sentences.join('\n');
     const origin = artifactOriginOf(result.segments);
+    return { artifact: { ...result.artifact, origin }, segments: result.segments };
+  }
+
+  setArtifactMetadata(
+    manuscriptId: string,
+    artifactId: string,
+    metadata: JsonObject,
+  ): ContentArtifact | undefined {
+    const existing = this.findArtifact(manuscriptId, artifactId);
+    if (!existing) return undefined;
     this.database.orm
       .update(contentArtifacts)
-      .set({ content, origin })
+      .set({ metadataJson: JSON.stringify(metadata) })
       .where(eq(contentArtifacts.id, artifactId))
       .run();
-
-    return { artifact: { ...result.artifact, content, origin }, segments: result.segments };
+    return { ...existing, metadata };
   }
 
   recordReview(manuscriptId: string, input: RecordReviewInput): ReviewRecord | undefined {
-    if (!this.findManuscript(manuscriptId)) return undefined;
+    const manuscript = this.findManuscript(manuscriptId);
+    if (!manuscript) return undefined;
     const review: ReviewRecord = {
       id: randomUUID(),
       manuscriptId,
@@ -428,6 +515,9 @@ export class WorkflowRepository {
       decision: input.decision,
       actor: input.actor,
       ...(input.reason ? { reason: input.reason } : {}),
+      round: input.round ?? manuscript.reviewRound,
+      ...(input.countersignParty ? { countersignParty: input.countersignParty } : {}),
+      ...(input.opinion ? { opinion: input.opinion } : {}),
       createdAt: Date.now(),
     };
 
@@ -449,6 +539,9 @@ export class WorkflowRepository {
             stage: review.stage,
             decision: review.decision,
             reason: review.reason ?? null,
+            round: review.round,
+            countersignParty: review.countersignParty ?? null,
+            opinion: review.opinion ?? null,
           }),
           createdAt: review.createdAt,
         })
