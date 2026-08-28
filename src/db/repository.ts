@@ -283,11 +283,13 @@ export class WorkflowRepository {
           dataJson: JSON.stringify({
             artifactId: artifact.id,
             kind: artifact.kind,
-
             origin: artifact.origin,
             aiShare: artifact.aiShare ?? null,
             segmentCount: segments.length,
             origins: countOrigins(segments),
+            // 生成时的原文要留下来: 人改过之后就找不回来了, 而对照组问的正是
+            // 「没有把关人的话, 会播出去的是什么」—— 那是这一版, 不是改完的。
+            content: artifact.content,
           }),
           createdAt: artifact.createdAt,
         })
