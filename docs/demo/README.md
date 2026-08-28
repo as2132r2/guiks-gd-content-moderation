@@ -11,7 +11,8 @@
 | --- | --- | --- |
 | [source-notice.md](source-notice.md) | D.1 ✅ | 主通稿：走完整链路的那一份，含四条硬要求与实测数字 |
 | [admission-cases.md](admission-cases.md) | D.2 ✅ | 三组准入样例：要理由 / 硬拦 / 公器私用 |
-| *(待建)* | D.8–D.10 | 三分钟口播稿、操作清单、应急预案 |
+| [script.md](script.md) | D.8 / D.9 ✅ | 三分钟口播稿 + 操作清单（口播与操作写在一起）+ 常见追问答法 |
+| [runbook.md](runbook.md) | D.7 / D.10 ✅ | 演示前检查单、数字核对表、五种应急处置 |
 | [demo-fixtures.ts](../../src/routes/demo-fixtures.ts) | D.4–D.6 ✅ | 素材的唯一事实来源；播种 / 重置 / 填入示例三个端点 |
 | *(待建)* | D.11 | 作品说明一页 |
 
