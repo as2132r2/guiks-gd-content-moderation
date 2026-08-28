@@ -12,7 +12,7 @@
 - Hono + 服务端 HTML/Hono JSX + 少量浏览器 JavaScript
 - SQLite + Drizzle ORM
 - Claude Agent SDK
-- 统一模型 Gateway（GLM/DeepSeek，Anthropic 兼容协议）
+- 统一模型 Gateway（当前为 OpenAI-compatible Chat Completions；Anthropic Messages/SSE 适配待接入）
 - REST + SSE
 - Vitest + Docker Compose
 
@@ -32,7 +32,7 @@
 - SQLite/Drizzle 持久化与自动迁移
 - 稿件工作流 REST API 与 SSE 事件
 - `healthz` 存活检查和 `readyz` 数据库/模型就绪检查
-- 48 个自动化测试与 GitHub Actions
+- Vitest 全量自动化回归与 GitHub Actions
 
 这些能力将从“通用 AI 保密审计”改造为“县级融媒适播预检与生产追溯”。原说明保存在 [docs/legacy-auditgate-readme.md](docs/legacy-auditgate-readme.md)，组长方案保存在 [docs/design/broadcast-pivot.html](docs/design/broadcast-pivot.html)。
 
@@ -52,8 +52,13 @@ npm run build
 docker compose up --build
 ```
 
-默认使用内置确定性 Mock，不需要 API Key。真实模型只需在 `.env` 设置统一的
-`UPSTREAM_URL`、`UPSTREAM_KEY` 和 `UPSTREAM_MODEL`；业务代码不得自行读取这些变量。
+默认使用内置确定性 Mock，不需要 API Key。当前真实模型适配器使用 OpenAI-compatible
+Chat Completions；在 `.env` 设置统一的 `UPSTREAM_URL`、`UPSTREAM_KEY` 和
+`UPSTREAM_MODEL` 即可接入同协议代理，业务代码不得自行读取这些变量。Anthropic
+Messages/SSE 适配由轨道 A 接入后再启用。
+
+> 公网接入真实模型前，必须先合入轨道 C 的登录鉴权或在部署层统一保护所有业务路由。
+> `GATEWAY_TOKEN` 只保护原始 `/gateway/v1/messages` 接口，不能替代 Web 产品的用户鉴权。
 
 Docker 会以非 root 用户运行，并把 SQLite 数据保存在命名卷
 `moderation-data`。`docker compose down` 不会删除数据；只有明确执行

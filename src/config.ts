@@ -47,13 +47,14 @@ export const config = {
   /**
    * Upstream model behind the gateway (used in `toy` target mode). Empty = use
    * the built-in deterministic mock upstream (no key needed, reliable on stage).
-   * Set to a real OpenAI-compatible base URL to proxy a real model.
+   * Set to a real OpenAI-compatible Chat Completions base URL to proxy a model.
+   * Anthropic Messages/SSE needs its own adapter and is not implemented here.
    */
   upstreamUrl: process.env.UPSTREAM_URL ?? '',
   upstreamKey: process.env.UPSTREAM_KEY ?? '',
   upstreamModel: process.env.UPSTREAM_MODEL ?? 'GLM-5.2',
   upstreamTimeoutMs: integerEnv('UPSTREAM_TIMEOUT_MS', 30_000, 1_000, 300_000),
-  /** Optional in demo, mandatory for the public HTTP gateway in production. */
+  /** Optional only for a mock demo; required by the HTTP gateway with a real upstream. */
   gatewayToken: process.env.GATEWAY_TOKEN?.trim() ?? '',
 
   /**
@@ -75,3 +76,10 @@ export const config = {
 } as const;
 
 export const usingMockUpstream = () => config.upstreamUrl.trim() === '';
+
+/**
+ * Demo mock traffic may stay open on localhost. Any real upstream can spend
+ * provider quota, so its public HTTP gateway must have a token even in demo.
+ */
+export const requiresGatewayToken = () =>
+  config.appMode === 'production' || !usingMockUpstream();

@@ -191,6 +191,20 @@ describe('工作台主链', () => {
     );
   });
 
+  it('deduplicates concurrent generation before a second model batch can run', async () => {
+    const { body } = await create();
+    const responses = await Promise.all([
+      move(body.manuscript.id, { to: 'generated', role: 'editor' }),
+      move(body.manuscript.id, { to: 'generated', role: 'editor' }),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+
+    const after = await view(body.manuscript.id);
+    expect(after.artifacts).toHaveLength(2);
+    expect(after.trace.filter((event) => event.kind === 'model-requested')).toHaveLength(2);
+    expect(after.trace.filter((event) => event.kind === 'model-completed')).toHaveLength(2);
+  });
+
   it('publishes model traces with the shared workflow SSE envelope', async () => {
     const { body } = await create();
     const streamed: unknown[] = [];

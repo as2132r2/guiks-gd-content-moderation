@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目
 
-「把关人」——县级融媒体中心的稿件生产与监理 Demo（贵客松赛道二·广电方向）。一条六步主链：
+`guiks-gd-content-moderation`——县级融媒体中心的稿件生产与监理 Demo（贵客松赛道二·广电方向）。一条六步主链：
 
 ```
 素材入口 → 入口准入 → 稿件生成 → 输出预检 → 三审流转 → AI 参与度追溯
@@ -32,7 +32,7 @@ npm run build && npm run start:prod          # tsc → dist，node 运行
 docker compose up --build
 ```
 
-无需 API Key 即可启动：`UPSTREAM_URL` 为空时走 `src/lib/scenarios.ts` 里的确定性 mock。接真实模型只设 `UPSTREAM_URL` / `UPSTREAM_KEY` / `UPSTREAM_MODEL`（OpenAI 兼容的 `/chat/completions` 协议），**业务代码不得自行读取这三个变量**。测试里 `NODE_ENV=test` 自动使用 `:memory:` 数据库。
+无需 API Key 即可启动：`UPSTREAM_URL` 为空时走 `src/lib/scenarios.ts` 里的确定性 mock。当前真实模型适配器只支持 OpenAI-compatible Chat Completions；接同协议代理只设 `UPSTREAM_URL` / `UPSTREAM_KEY` / `UPSTREAM_MODEL`，**业务代码不得自行读取这三个变量**。Anthropic Messages/SSE 适配尚未接入（轨道 A）。测试里 `NODE_ENV=test` 自动使用 `:memory:` 数据库。
 
 ## 架构
 
@@ -55,6 +55,7 @@ docker compose up --build
 3. **迁移只追加，不改历史。** [src/db/migrations.ts](src/db/migrations.ts) 是手写的 id + SQL 数组，`drizzle.config.ts` 只用于 `db:studio`/`generate`，运行时不读 drizzle 生成物。schema 变更要同时改 `src/db/schema.ts` 和新增一条 migration。
 4. **生产 fail closed。** `APP_MODE=production` 且未配模型时，除非显式 `ALLOW_MOCK_UPSTREAM`，`/readyz` 返回 503。上游失败不得伪造成功内容。
 5. **`main` 必须随时能演示。** 短分支小 PR，`npm run check` 通过再提。
+6. **真实模型不裸奔。** `GATEWAY_TOKEN` 只保护原始网关接口；工作台、靶场、红队和 runtime 要等轨道 C 登录鉴权或部署层统一保护后，才能带真实上游公开部署。Mock 演示不受此限制。
 
 ### 双向治理的两个钩子
 
@@ -70,6 +71,7 @@ docker compose up --build
 **已落地**：
 
 - 入口准入与输出预检的**结果契约**在 [src/domain/gatekeeping.ts](src/domain/gatekeeping.ts)，规则实现在 [src/rules/](src/rules/)，工作台在 [src/routes/workbench.ts](src/routes/workbench.ts) + [src/views/workbench-view.ts](src/views/workbench-view.ts)，稿件生成在 [src/model/](src/model/)。换 detector 只换 `src/rules/` 的函数体，界面不动。
+- 模型调用按 `callId` 成对写入 `model-requested` / `model-completed`，完成事件持久化请求/实际模型、tokens、耗时与计量来源，并进入工作台留痕和 `trace` SSE。无稿件上下文的通用代理流量尚未写入 SQLite。
 - 句级切分与改稿后的来源判定在 [src/domain/segmentation.ts](src/domain/segmentation.ts)：**来源由服务端判定，不接受客户端上报**——被考核的人能自己标「我改过」，这个数就什么都不是了。
 - 句级来源标记**已落地**：`sentenceOrigins` + `SentenceSegment` 在契约里，`sentence_segments` 表在 migration `0002`，AI 参与度算在 [src/domain/ai-share.ts](src/domain/ai-share.ts)（`(ai + ai-edited×0.5)/总句数`，权重可调）。产物带 `segments` 创建时自动算，人改稿后调 `PUT /api/manuscripts/:id/artifacts/:artifactId/segments` 整段替换并重算，写 `segments-recorded` 追溯。
 **AI 参与度和产物级 `origin` 都只由句级来源推导，不接受手工填**——带了 `segments` 就忽略请求里的 `aiShare` 与 `origin`（全 `ai` → `ai`，一句 AI 都没有 → `human`，其余 `mixed`；`source` 算非 AI）。
@@ -92,7 +94,7 @@ docker compose up --build
 
 - **不说「安全」**——会被听成内容安全红海，且是防御性的；要说敢发、发得快、出了事说得清。
 - **不说「敏感词过滤」**——那层叫**「入口准入」**，判定的不是词，是这次调用该不该发生。
-- **不说 AuditGate**——代码目录名保持不动，对外一律说「把关人」。
+- **产品名使用 `guiks-gd-content-moderation`**——`AuditGate` 仅用于说明代码来源，不再使用旧产品名。
 - **不假装审校是空白**——方正 21 类 136 词库、黑马 30 年是既成事实。词表是配角，卖点是句级来源标记。
 - 《广播电视安全播出管理规定》管**技术**播出安全（停播、信号、设备），**不管内容差错**，别混着讲。
 - 演示素材若非来自真实机构，界面和作品说明必须写明「模拟/脱敏素材」。

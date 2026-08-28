@@ -4,7 +4,7 @@
 // model base_url at POST /gateway/v1/messages.
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
-import { config, usingMockUpstream } from '../config.js';
+import { config, requiresGatewayToken, usingMockUpstream } from '../config.js';
 import { getWorkflowRepository } from '../db/repository.js';
 import type { TraceEvent, WorkflowDomainEvent } from '../domain/contracts.js';
 import { publish } from '../lib/bus.js';
@@ -330,7 +330,7 @@ gatewayRoutes.post('/gateway/v1/messages', async (c) => {
     if (c.req.header('authorization') !== `Bearer ${config.gatewayToken}`) {
       return c.json({ error: 'gateway_unauthorized' }, 401);
     }
-  } else if (config.appMode === 'production') {
+  } else if (requiresGatewayToken()) {
     return c.json({ error: 'gateway_auth_not_configured' }, 503);
   }
 

@@ -322,6 +322,7 @@ function persistPreflight(manuscriptId: string, round: number): void {
 }
 
 export const workbenchRoutes = new Hono();
+const activeGenerations = new Set<string>();
 
 // 根路径就是工作台。/workbench 保留为别名，旧链接和书签不会断。
 workbenchRoutes.get('/', (c) => c.html(renderWorkbench()));
@@ -480,61 +481,72 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
 
   // 生成 and 预检 are side effects of their transition, not separate buttons.
   if (transition.from === 'admitted' && to === 'generated') {
-    let generated: Awaited<ReturnType<typeof generateBroadcastArtifacts>>;
-    try {
-      generated = await generateBroadcastArtifacts({
-        manuscriptId: id,
-        title: manuscript.title,
-        sourceText: manuscript.sourceText,
-        actor,
-      });
-    } catch (error) {
-      // The gateway has already written a paired error trace. Keep the workflow
-      // at admitted so a retry cannot look like a successful generation.
-      if (error instanceof UpstreamError) {
-        return c.json(
-          {
-            error: 'model_upstream_failed',
-            message: '模型暂时不可用，稿件状态未推进，请稍后重试。',
-          },
-          502,
-        );
-      }
-      if (error instanceof ModelTraceError) {
-        return c.json(
-          {
-            error: 'model_trace_unavailable',
-            message: '调用留痕暂时不可用，系统未放行本次生成。',
-          },
-          503,
-        );
-      }
-      throw error;
-    }
-
-    // Both artifacts and the `generated` transition commit in one transaction.
-    const completed = repository.completeGeneration(
-      id,
-      generated.map((item) => {
-        const sentences = splitSentences(item.content);
-        return {
-          kind: item.kind,
-          content: item.content,
-          origin: 'ai' as const,
-          model: item.model,
-          metadata: { aiGenerated: true, aiLabel: '人工智能生成' },
-          segments: sentences.map((text) => ({ text, origin: 'ai' as const })),
-        };
-      }),
-      actor,
-    );
-    if (!completed) {
+    if (activeGenerations.has(id)) {
       return c.json(
-        { error: 'generation_conflict', message: '稿件状态已变化，请刷新后重试。' },
+        { error: 'generation_in_progress', message: '稿件正在生成，请勿重复提交。' },
         409,
       );
     }
-    updated = completed.manuscript;
+    activeGenerations.add(id);
+    try {
+      let generated: Awaited<ReturnType<typeof generateBroadcastArtifacts>>;
+      try {
+        generated = await generateBroadcastArtifacts({
+          manuscriptId: id,
+          title: manuscript.title,
+          sourceText: manuscript.sourceText,
+          actor,
+        });
+      } catch (error) {
+        // The gateway has already written a paired error trace. Keep the workflow
+        // at admitted so a retry cannot look like a successful generation.
+        if (error instanceof UpstreamError) {
+          return c.json(
+            {
+              error: 'model_upstream_failed',
+              message: '模型暂时不可用，稿件状态未推进，请稍后重试。',
+            },
+            502,
+          );
+        }
+        if (error instanceof ModelTraceError) {
+          return c.json(
+            {
+              error: 'model_trace_unavailable',
+              message: '调用留痕暂时不可用，系统未放行本次生成。',
+            },
+            503,
+          );
+        }
+        throw error;
+      }
+
+      // Both artifacts and the `generated` transition commit in one transaction.
+      const completed = repository.completeGeneration(
+        id,
+        generated.map((item) => {
+          const sentences = splitSentences(item.content);
+          return {
+            kind: item.kind,
+            content: item.content,
+            origin: 'ai' as const,
+            model: item.model,
+            metadata: { aiGenerated: true, aiLabel: '人工智能生成' },
+            segments: sentences.map((text) => ({ text, origin: 'ai' as const })),
+          };
+        }),
+        actor,
+      );
+      if (!completed) {
+        return c.json(
+          { error: 'generation_conflict', message: '稿件状态已变化，请刷新后重试。' },
+          409,
+        );
+      }
+      updated = completed.manuscript;
+    } finally {
+      activeGenerations.delete(id);
+    }
   }
 
   if ((transition.from === 'generated' || transition.from === 'revision') && to === 'preflight') {

@@ -60,10 +60,9 @@
 | 3.6 | 接通真实模型（GLM） | 🟡 | 轨道 A | 已统一 OpenAI `/chat/completions` 协议、默认 `GLM-5.2` 并补请求/失败测试；仍需真实 URL/Key 做联调验收 |
 | 3.7 | 本台风格：风格 skill + 预置历史稿件 | ⬜ | 轨道 B | 只有一句 system prompt，无历史稿件样例 |
 
-> **3.6 有一个必须先拍板的冲突**：`.env.example` 与 CLAUDE.md 写「Anthropic 兼容」，
-> 但 [upstream.ts](../../src/lib/upstream.ts) 实际打的是 OpenAI 的 `/chat/completions`，
-> 且 `config.upstreamModel` 默认 `glm-4.6-mock` 而 `.env.example` 写 `GLM-5.2`。
-> **接真实模型之前必须统一，否则这一项会卡住。**
+> **3.6 当前边界**：[upstream.ts](../../src/lib/upstream.ts) 只实现 OpenAI-compatible
+> `/chat/completions`，且默认仍使用确定性 mock；文档与示例配置已按这一事实统一。
+> Anthropic Messages/SSE 适配仍由轨道 A 接入，接真实模型前还需确认目标代理协议与模型名。
 
 ## 四、预检层（输出预检）
 

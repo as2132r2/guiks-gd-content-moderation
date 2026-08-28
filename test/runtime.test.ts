@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../src/config.js';
 import { app } from '../src/index.js';
 import { PLANTED } from '../src/lib/planted.js';
@@ -77,6 +77,60 @@ describe('runtime governance (post-deploy)', () => {
       expect(allowed.status).toBe(200);
     } finally {
       mutableConfig.gatewayToken = previous;
+    }
+  });
+
+  it('requires a gateway token whenever a real upstream could spend provider quota', async () => {
+    const mutableConfig = config as unknown as { upstreamUrl: string; gatewayToken: string };
+    const previous = {
+      upstreamUrl: mutableConfig.upstreamUrl,
+      gatewayToken: mutableConfig.gatewayToken,
+    };
+    mutableConfig.upstreamUrl = 'https://provider.invalid/v1';
+    mutableConfig.gatewayToken = '';
+    try {
+      const response = await postJson('/gateway/v1/messages', { message: '不应发往上游' });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: 'gateway_auth_not_configured' });
+
+      const readiness = await app.request('/readyz');
+      expect(readiness.status).toBe(503);
+      expect(await readiness.json()).toMatchObject({
+        status: 'not-ready',
+        checks: { model: 'configured', gatewayAuth: 'missing' },
+      });
+    } finally {
+      mutableConfig.upstreamUrl = previous.upstreamUrl;
+      mutableConfig.gatewayToken = previous.gatewayToken;
+    }
+  });
+
+  it('maps an upstream 200 with invalid JSON to the stable gateway error contract', async () => {
+    const mutableConfig = config as unknown as { upstreamUrl: string; gatewayToken: string };
+    const previous = {
+      upstreamUrl: mutableConfig.upstreamUrl,
+      gatewayToken: mutableConfig.gatewayToken,
+    };
+    mutableConfig.upstreamUrl = 'https://provider.example/v1';
+    mutableConfig.gatewayToken = 'demo-gateway-token';
+    const upstreamFetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('not-json', { status: 200 }));
+    try {
+      const response = await postJson(
+        '/gateway/v1/messages',
+        { message: '测试非法上游响应' },
+        { authorization: 'Bearer demo-gateway-token' },
+      );
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({
+        error: 'upstream_unavailable',
+        code: 'upstream_invalid_response',
+      });
+    } finally {
+      upstreamFetch.mockRestore();
+      mutableConfig.upstreamUrl = previous.upstreamUrl;
+      mutableConfig.gatewayToken = previous.gatewayToken;
     }
   });
 });

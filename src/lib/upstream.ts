@@ -103,7 +103,13 @@ async function realReply(messages: ChatMessage[], model: string): Promise<Upstre
     );
   }
   if (!res.ok) throw new UpstreamError('upstream_http_error', res.status);
-  return parseOpenAiReply(await res.json(), messages, model);
+  let payload: unknown;
+  try {
+    payload = await res.json();
+  } catch {
+    throw new UpstreamError('upstream_invalid_response');
+  }
+  return parseOpenAiReply(payload, messages, model);
 }
 
 export async function callUpstream(
