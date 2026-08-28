@@ -608,3 +608,5 @@ workbenchRoutes.post('/api/workbench/:id/artifacts/:artifactId/revise', async (c
 /** Exposed for the view layer and tests; the page never computes legality itself. */
 export const workflowTransitions = transitions;
 export { isWorkflowRole };
+/** 演示夹具复用同一份准入结论→状态的映射，避免播种出来的稿件与真链路走偏。 */
+export { admissionStatus as admissionStatusOf };

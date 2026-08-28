@@ -384,6 +384,7 @@ export function renderWorkbench(): string {
   <aside class="list">
     <h2 class="hd">稿件</h2>
     <button class="btn wide" id="new-btn">＋ 新建稿件</button>
+    <button class="btn wide" id="seed-btn" style="margin-top:6px">演示准备（重置并建样例）</button>
     <div id="ms-list" style="margin-top:12px"></div>
   </aside>
 
@@ -572,6 +573,7 @@ export function renderWorkbench(): string {
       '<label class="f"><span>正文</span><textarea class="f" id="nf-text" placeholder="把通稿全文粘到这里…"></textarea></label>' +
       '<div class="actions-bar">' +
         '<button class="btn primary" id="nf-submit">提交入口准入</button>' +
+        '<button class="btn" id="nf-sample">填入示例通稿</button>' +
         '<span class="hint">提交后先判定这次调用该不该发生，再决定要不要让模型碰它。</span>' +
       '</div>' +
       (state.error ? '<div class="err">' + esc(state.error) + '</div>' : '') +
@@ -1311,6 +1313,26 @@ export function renderWorkbench(): string {
     }
 
     if (target.closest('#new-btn')) { showNew(); return; }
+
+    if (target.closest('#nf-sample')) {
+      api('/api/demo/fixtures').then(function (data) {
+        var t = $('nf-title'), y = $('nf-type'), x = $('nf-text');
+        if (t) t.value = data.mainNotice.title;
+        if (y) y.value = data.mainNotice.sourceType;
+        if (x) x.value = data.mainNotice.sourceText;
+      }).catch(function (error) { state.error = error.message; renderPanel(); });
+      return;
+    }
+
+    if (target.closest('#seed-btn')) {
+      // 彩排要反复重来。重置会清空全部稿件，所以问一次。
+      if (!window.confirm('将清空全部稿件，并重建三组准入样例。继续？')) return;
+      api('/api/demo/seed', { method: 'POST' }).then(function () {
+        state.view = null; state.currentId = null; state.contrast = null; state.showContrast = false;
+        return loadList().then(render);
+      }).catch(function (error) { state.error = error.message; renderPanel(); });
+      return;
+    }
     if (target.closest('#nf-submit')) { submitNew(); return; }
 
     var row = target.closest('.ms');

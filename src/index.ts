@@ -12,6 +12,7 @@ import { policyRoutes } from './routes/policy.js';
 import { redteamRoutes } from './routes/redteam.js';
 import { reportRoutes } from './routes/report.js';
 import { runtimeRoutes } from './routes/runtime.js';
+import { demoRoutes } from './routes/demo.js';
 import { targetRoutes } from './routes/target.js';
 import { workbenchRoutes } from './routes/workbench.js';
 import { renderConsole } from './views/console.js';
@@ -61,6 +62,8 @@ app.route('/', targetRoutes);
 app.route('/', monitorRoutes);
 app.route('/', manuscriptRoutes);
 app.route('/', workbenchRoutes);
+// 清空整库的端点不该存在于生产构建里。
+if (config.appMode === 'demo') app.route('/', demoRoutes);
 app.route('/', redteamRoutes);
 app.route('/', reportRoutes);
 app.route('/', runtimeRoutes);
