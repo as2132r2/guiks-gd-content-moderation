@@ -1,4 +1,4 @@
-<title>guiks-gd-content-moderation</title>
+<title>把关人</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -237,12 +237,12 @@
       <span>赛道二 · 传统行业 AI 解决方案</span>
       <span>方案书</span>
     </div>
-    <h1>guiks-gd-content-moderation</h1>
+    <h1>把关人</h1>
     <p class="subtitle">融媒稿件生产与监理平台</p>
     <div class="pitch">
       <span class="pitch-k">一句话</span>
       <p>
-        AI 把稿子写快十倍，审核跟不上就等于没提速——平台把三审三校里<strong>机械的校对自动化、判断留给人、每一步留痕</strong>，
+        AI 把稿子写快十倍，审核跟不上就等于没提速——把关人把三审三校里<strong>机械的校对自动化、判断留给人、每一步留痕</strong>，
         让 AI 写的稿子敢发出去。
       </p>
     </div>
@@ -272,11 +272,11 @@
     <div class="voice">
       <div class="voice-row">
         <span class="voice-k">书面 · 作品说明与提交材料</span>
-        <p class="voice-t">AI 把稿子写快十倍，审核跟不上就等于没提速——平台把三审三校里机械的校对自动化、判断留给人、每一步留痕，让 AI 写的稿子敢发出去。</p>
+        <p class="voice-t">AI 把稿子写快十倍，审核跟不上就等于没提速——把关人把三审三校里机械的校对自动化、判断留给人、每一步留痕，让 AI 写的稿子敢发出去。</p>
       </div>
       <div class="voice-row">
         <span class="voice-k">口播 · 上台第一句</span>
-        <p class="voice-t">AI 让县级台编辑一天能写五十篇稿，但三审三校还是那三个人——guiks-gd-content-moderation 就是补这个缺口的。</p>
+        <p class="voice-t">AI 让县级台编辑一天能写五十篇稿，但三审三校还是那三个人——把关人就是补这个缺口的。</p>
       </div>
       <div class="voice-row">
         <span class="voice-k">标语 · 封面与海报</span>
@@ -557,7 +557,7 @@
     <p class="flowline">
       选题与派工 → 成稿 + <strong style="color:var(--accent)">技术预检</strong> → 初审 + 一校 → 复核修改 → 复审 + 二校 → 征求意见/会签 → 终审 + 三校 → 签发与电子签章 → 多平台发布 → 发布后巡查
     </p>
-    <p><strong>「成稿 + 技术预检」这个节点是现成的，平台就挂在这里</strong>——不用说服任何人改流程。</p>
+    <p><strong>「成稿 + 技术预检」这个节点是现成的，把关人就挂在这里</strong>——不用说服任何人改流程。</p>
 
     <div class="table-wrap">
       <table>
@@ -620,7 +620,7 @@
         </div>
       </div>
       <div class="band">
-        架构硬约束：<strong>生产层调模型必须走统一网关</strong>，业务代码不许直连。
+        架构硬约束：<strong>生产层调模型必须走把关人网关</strong>，业务代码不许直连。
         这样审计天然全覆盖、零遗漏，博文已写好的 gateway / 护栏 / 策略 / 事件流 / 逐用户计量全部保住。
         <strong>它同时是入口准入闸的强制力来源</strong>——绕不过网关，就绕不过准入。
       </div>
@@ -820,7 +820,7 @@
       </div>
       <div class="shot">
         <span class="shot-t">2:50</span>
-        <div class="shot-b"><span class="shot-h">对照组：绕过治理链路再跑一遍</span>
+        <div class="shot-b"><span class="shot-h">对照组：关掉把关人再跑一遍</span>
         <span class="shot-d">同一份通稿，禁用词直接就出去了，没有标识，没人知道是 AI 写的，出了事查不到人。</span></div>
       </div>
     </div>
@@ -881,7 +881,7 @@
         </ul>
       </div>
     </div>
-    <p><strong>接口只有一个</strong>：生产层通过统一网关调模型，网关返回带标注的结果。两条线并行推进，最后一小时合。</p>
+    <p><strong>接口只有一个</strong>：生产层通过把关人网关调模型，网关返回带标注的结果。两条线并行推进，最后一小时合。</p>
 
     <h3>时间线</h3>
     <ol class="steps">
@@ -955,7 +955,7 @@
   </section>
 
   <footer>
-    <div>guiks-gd-content-moderation · 融媒稿件生产与监理平台 —— 多彩贵州·贵客松 赛道二方案书</div>
+    <div>把关人 · 融媒稿件生产与监理平台 —— 多彩贵州·贵客松 赛道二方案书</div>
     <div>更新于 2026-08-28 · 依据 PR #1209 实际代码、《贵客松选手手册》可读部分、县级融媒体与新闻规范公开资料</div>
     <div>仓库：<span class="mono">docs/gatekeeper/</span> — plan.md（本文）· market-landscape.md · business-process.md · README.md</div>
   </footer>

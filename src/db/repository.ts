@@ -449,7 +449,7 @@ export class WorkflowRepository {
             segmentCount: segments.length,
             origins: countOrigins(segments),
             // 生成时的原文要留下来: 人改过之后就找不回来了, 而对照组问的正是
-            // 「绕过平台治理会播出去什么」—— 那是这一版，不是改完的。
+            // 「没有把关人的话, 会播出去的是什么」—— 那是这一版, 不是改完的。
             content: artifact.content,
           }),
           createdAt: artifact.createdAt,

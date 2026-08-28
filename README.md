@@ -34,7 +34,7 @@
 - `healthz` 存活检查和 `readyz` 数据库/模型就绪检查
 - Vitest 全量自动化回归与 GitHub Actions
 
-这些能力将从“通用 AI 保密审计”改造为“县级融媒适播预检与生产追溯”。原说明保存在 [docs/legacy-auditgate-readme.md](docs/legacy-auditgate-readme.md)，组长原始方案保存在 [docs/design/broadcast-pivot.html](docs/design/broadcast-pivot.html)；原始文件中的旧称仅作为历史参考，不代表当前产品名。
+这些能力将从“通用 AI 保密审计”改造为“县级融媒适播预检与生产追溯”。原说明保存在 [docs/legacy-auditgate-readme.md](docs/legacy-auditgate-readme.md)，组长方案保存在 [docs/design/broadcast-pivot.html](docs/design/broadcast-pivot.html)。
 
 ## 本地运行
 

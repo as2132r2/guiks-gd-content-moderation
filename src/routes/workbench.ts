@@ -373,7 +373,7 @@ workbenchRoutes.get('/api/workbench/:id', (c) => {
 });
 
 /**
- * 对照组：同一份通稿，绕过平台治理链路会怎样。
+ * 对照组：同一份通稿，关掉把关人会怎样。
  *
  * 不重跑、不模拟——它就是**同一份产物减去把关**之后剩下的东西。所以这一屏上
  * 的每个数字都能指回真实留痕，被追问「这是演的还是真的」时答得出来。
@@ -382,7 +382,7 @@ workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
   const view = buildView(c.req.param('id'));
   if (!view) return c.json({ error: 'manuscript_not_found' }, 404);
 
-  // 对照的是**生成时那一版**，不是改完的那一版。绕过平台治理就没有预检标注，
+  // 对照的是**生成时那一版**，不是改完的那一版。关掉把关人就没有预检标注，
   // 编辑根本不知道要改哪里——所以直接播出去的是模型原样写的东西。
   const asShipped = view.artifacts.map((item) => {
     const created = view.trace.find(
@@ -410,7 +410,7 @@ workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
     manuscriptId: view.manuscript.id,
     title: view.manuscript.title,
     hardBlocked,
-    /** 绕过平台治理时，这就是会直接发出去的东西——模型原样写的那一版。 */
+    /** 关掉把关人时，这就是会直接发出去的东西——模型原样写的那一版。 */
     wouldShip: asShipped.map((item) => ({ kind: item.kind, content: item.content })),
     without: {
       admissionChecked: false,
@@ -430,7 +430,7 @@ workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
     with: {
       admissionDecision: view.admission.decision,
       modelInvoked: !hardBlocked,
-      /** 平台在生成那一刻抓到了多少。 */
+      /** 把关人在生成那一刻抓到了多少。 */
       issuesCaught: shipped.length,
       ...summarize(shipped),
       /** 走完流程后还剩多少——系统自动处理或人工改掉的命中不再计入。 */
