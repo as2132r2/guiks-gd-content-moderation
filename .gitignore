@@ -9,3 +9,9 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+# 本地凭据与转储，绝不入库
+secret/
+*.pem
+*.key
+*.sql.gz
