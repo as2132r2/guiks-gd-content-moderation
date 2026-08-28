@@ -8,6 +8,8 @@
 // for a finished view model — including which moves each role may make — and
 // renders whatever it is told. 一条路走到黑，没有分支.
 
+import { proofreadResponsibilities } from '../domain/workflow.js';
+
 /**
  * Render the manuscript workbench as a complete HTML document string.
  *
@@ -280,6 +282,44 @@ export function renderWorkbench(): string {
   .hit .dt b.warn { color:var(--warn); }
   .hit code { font-family:var(--mono); font-size:11px; color:var(--accent-deep); }
 
+  /* ---------- ⑤ 三审三校 ---------- */
+  .passes { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; margin-bottom:8px; }
+  .pass {
+    background:var(--panel); border:1px solid var(--line);
+    border-top:3px solid var(--line-strong); border-radius:0 0 10px 10px;
+    padding:14px 16px; display:flex; flex-direction:column; gap:9px;
+  }
+  .pass.done { border-top-color:var(--accent); }
+  .pass.live { border-top-color:var(--warn); background:linear-gradient(180deg,var(--warn-soft),transparent 60%); }
+  .pass-hd { display:flex; align-items:baseline; gap:10px; }
+  .pass-n { font-family:var(--serif); font-size:16px; font-weight:600; }
+  .pass-who { font-size:12px; color:var(--faint); font-family:var(--mono); margin-top:-6px; }
+  .st { margin-left:auto; font-size:11px; font-family:var(--mono); padding:2px 9px; border-radius:20px; white-space:nowrap; }
+  .st.ok { color:var(--accent-deep); background:var(--accent-soft); }
+  .st.back { color:var(--warn); background:var(--warn-soft); }
+  .st.now { color:var(--warn); background:var(--warn-soft); border:1px solid var(--warn); }
+  .st.idle { color:var(--faint); border:1px solid var(--line); }
+  .duties { display:flex; flex-wrap:wrap; gap:5px; }
+  .duty {
+    font-size:11px; color:var(--muted); background:var(--panel-2);
+    border:1px solid var(--line); border-radius:5px; padding:2px 8px;
+  }
+  .pass-ann { font-size:12px; color:var(--muted); line-height:1.9; }
+  .pass-ann b { color:var(--ink); font-family:var(--mono); }
+  .pass-ann .dim { color:var(--faint); }
+  .mini {
+    display:inline-block; font-size:11px; margin:0 4px 0 0; padding:1px 7px;
+    border-radius:4px; background:var(--panel-2); border-left:2px solid var(--line-strong);
+  }
+  .mini.a-block { border-left-color:var(--block); }
+  .mini.a-redact { border-left-color:var(--warn); }
+  .mini.a-flag { border-left-color:var(--info); }
+  .pass-rec {
+    font-size:12px; color:var(--muted); font-family:var(--mono);
+    border-top:1px solid var(--line); padding-top:8px; margin-top:auto;
+  }
+  .pass-reason { color:var(--warn); font-family:var(--sans); margin-top:5px; line-height:1.6; }
+
   /* ---------- 对照组 ---------- */
   .vs {
     display:grid; grid-template-columns:auto 1fr 1fr; gap:1px;
@@ -358,6 +398,9 @@ export function renderWorkbench(): string {
 <script>
 (function () {
   'use strict';
+
+  // 校次职责由契约注入，页面不另抄一份 (src/domain/workflow.ts 的 5.9)。
+  var PASSES = ${JSON.stringify(proofreadResponsibilities)};
 
   var STAGES = [
     { key:'source',     label:'素材入口' },
@@ -676,21 +719,138 @@ export function renderWorkbench(): string {
       '</div>';
   }
 
+  // ——————————————————— ⑤ 三审三校 ———————————————————
+
+  var REVIEW_LABEL = {
+    'editor':'初审', 'department-head':'复审', 'supervising-leader':'终审'
+  };
+
+  /**
+   * 标注归到哪一校。
+   *
+   * **临时放在页面层**：4.14 会把 proofreadPass 写进 Annotation 契约，
+   * 那之后这张表要删掉、改读字段。放在这里是为了不越过轨道边界去动
+   * src/domain/（requirements 第十一节碰撞点）。
+   *
+   * 注意：本段在模板字符串内，不能出现反引号。
+   */
+  var PASS_OF_CATEGORY = {
+    'typo':'first', 'punctuation':'first', 'format':'first',
+    'inconsistency':'second', 'leader-title':'second',
+    'banned-term':'second', 'caution-term':'second',
+    'judgment':'third', 'ai-label':'third'
+  };
+
+  /** 一次退回开启新一轮。轮次从现有审核记录派生，不需要新状态。 */
+  function groupRounds(reviews) {
+    var chain = reviews.filter(function (r) { return REVIEW_LABEL[r.stage]; });
+    var rounds = [[]];
+    chain.forEach(function (r) {
+      rounds[rounds.length - 1].push(r);
+      if (r.decision === 'changes-requested' || r.decision === 'rejected') rounds.push([]);
+    });
+    if (rounds.length > 1 && rounds[rounds.length - 1].length === 0) {
+      // 最后一次退回之后还没人再审，这一轮是空的但确实开着。
+      if (chain.length === 0) rounds.pop();
+    }
+    return rounds;
+  }
+
   function reviewPanel(view) {
-    var out = '<div class="placeholder"><h3>⑤ 三审流转</h3>' +
-      '<p style="margin:0">编辑 → 部门主任 → 分管领导。用右上角的身份切换器换角色；一个人可以同时持有多个角色，但每一次审批仍然分别留痕——合并的是人，不是责任。</p>' +
-      '<p style="margin:8px 0 0">退回必须写明理由，理由进审计。</p></div>';
-    out += '<h2 class="hd">已有审核记录</h2>';
-    out += view.reviews.length === 0
-      ? '<div class="empty">还没有审核记录。</div>'
-      : view.reviews.map(function (review) {
-          return '<div class="ann"><div class="top">' +
-            '<span class="tag">' + esc(review.stage) + '</span>' +
-            '<span class="ttl">' + esc(review.actor) + ' · ' + esc(review.decision) + '</span></div>' +
-            (review.reason ? '<div class="dt">' + esc(review.reason) + '</div>' : '') +
-            '</div>';
-        }).join('');
+    var annotations = view.artifacts.reduce(function (all, item) {
+      return all.concat(item.annotations);
+    }, []);
+    var rounds = groupRounds(view.reviews);
+    var lastRound = rounds.length - 1;
+
+    var out = '<div class="card"><h3>⑤ 三审三校流转</h3>' +
+      '<p>我们没有发明新流程。把三审三校里<strong>机械的那部分</strong>自动化了，' +
+      '<strong>判断的那部分</strong>留给人，并且让全程可追溯、责任到人。</p>' +
+      '<p class="hint" style="margin:0">一个人可以同时持有多个角色（县级台常常只有两个人），' +
+      '但每一次审批仍然分别留痕——<strong>合并的是人，不是责任</strong>。退回必须写明理由，理由进审计。</p>' +
+      '</div>';
+
+    rounds.forEach(function (round, index) {
+      if (rounds.length > 1) {
+        out += '<h2 class="hd">第 ' + (index + 1) + ' 轮' +
+          (index < lastRound ? '（已退回）' : '') + '</h2>';
+      }
+      out += '<div class="passes">' + PASSES.map(function (pass) {
+        return passCard(pass, round, annotations, index === lastRound, view);
+      }).join('') + '</div>';
+    });
+
+    out += '<p class="hint" style="margin-top:14px">' +
+      '会签（征求意见）在复审与终审之间，属于三审之外的分支——状态机还没有 ' +
+      '<code>countersign</code> 状态，本版未启用。</p>';
     return out;
+  }
+
+  function passCard(pass, round, annotations, isLive, view) {
+    var record = null;
+    for (var i = 0; i < round.length; i += 1) {
+      if (round[i].stage === pass.stage) record = round[i];
+    }
+    var mine = annotations.filter(function (a) {
+      return PASS_OF_CATEGORY[a.category] === pass.pass;
+    });
+    var waiting = isLive && !record && view.waitingOn === pass.stage;
+
+    var status;
+    if (record && (record.decision === 'changes-requested' || record.decision === 'rejected')) {
+      status = '<span class="st back">⟲ 退回</span>';
+    } else if (record) {
+      status = '<span class="st ok">✓ 通过</span>';
+    } else if (waiting) {
+      status = '<span class="st now">待处理</span>';
+    } else {
+      status = '<span class="st idle">未到</span>';
+    }
+
+    return '<div class="pass' + (waiting ? ' live' : '') + (record ? ' done' : '') + '">' +
+      '<div class="pass-hd">' +
+        '<span class="pass-n">' + esc(REVIEW_LABEL[pass.stage] + ' + ' + pass.label) + '</span>' +
+        status +
+      '</div>' +
+      '<div class="pass-who">' + esc(roleNameOf(pass.stage)) + '</div>' +
+      '<div class="duties">' + pass.responsibilities.map(function (d) {
+        return '<span class="duty">' + esc(d) + '</span>';
+      }).join('') + '</div>' +
+      '<div class="pass-ann">' +
+        (mine.length === 0
+          ? '<span class="dim">本校次没有待看的标注</span>'
+          : '<b>' + mine.length + ' 处</b>待看：' + distinctTitles(mine)) +
+      '</div>' +
+      (record
+        ? '<div class="pass-rec">' + esc(record.actor) + ' · ' + clock(record.createdAt) +
+          (record.reason ? '<div class="pass-reason">' + esc(record.reason) + '</div>' : '') +
+          '</div>'
+        : '') +
+      '</div>';
+  }
+
+  /**
+   * 同一条规则会在两个产物上各命中一次。逐条列出来只会看到重复的标题，
+   * 所以按标题合并、带上次数。
+   */
+  function distinctTitles(list) {
+    var order = [];
+    var seen = {};
+    list.forEach(function (a) {
+      if (seen[a.title]) { seen[a.title].n += 1; return; }
+      seen[a.title] = { n: 1, action: a.action };
+      order.push(a.title);
+    });
+    var shown = order.slice(0, 3).map(function (title) {
+      var e = seen[title];
+      return '<span class="mini a-' + esc(e.action) + '">' + esc(title) +
+        (e.n > 1 ? ' ×' + e.n : '') + '</span>';
+    }).join('');
+    return shown + (order.length > 3 ? '<span class="dim"> 等 ' + order.length + ' 类</span>' : '');
+  }
+
+  function roleNameOf(stage) {
+    return { 'editor':'编辑 / 记者', 'department-head':'部门主任', 'supervising-leader':'分管领导' }[stage] || stage;
   }
 
   // ——————————————————— ⑥ 追溯图谱 ———————————————————
