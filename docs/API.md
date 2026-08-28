@@ -30,8 +30,60 @@
 }
 ```
 
+
 `kind` 可选：`source`、`broadcast-script`、`short-video-copy`；`origin` 可选：
 `human`、`ai`、`mixed`。`aiShare` 范围为 0 到 1。
+
+可以在同一请求里带上句级来源，产物与句子一次事务写入：
+
+```json
+{
+  "kind": "broadcast-script",
+  "content": "生成后的播报稿",
+  "origin": "ai",
+  "model": "GLM-5.2",
+  "segments": [
+    { "text": "第一句由模型生成。", "origin": "ai" },
+    { "text": "第二句引自原通稿。", "origin": "source", "sourceRef": "原文第 2 段" }
+  ]
+}
+```
+
+
+`segments` 按数组顺序落 `ordinal`，句级 `origin` 可选 `ai`、`ai-edited`、`human`、`source`。
+
+**带了 `segments` 就忽略请求里的 `aiShare` 和产物级 `origin`**，两者都由句级来源派生：
+
+- `aiShare` = `(ai + ai-edited × 0.5) / 总句数`，权重在 `src/domain/ai-share.ts`
+- 产物 `origin`：全部句子都是 `ai` → `ai`；一句 `ai` / `ai-edited` 都没有 → `human`；其余 → `mixed`。
+  `source`（引自原通稿）算作非 AI——那不是模型写的。
+
+## 重写句级来源
+
+`PUT /api/manuscripts/:id/artifacts/:artifactId/segments`
+
+```json
+{
+  "actor": "部门主任",
+  "segments": [
+    { "text": "第一句主任改过。", "origin": "ai-edited" },
+    { "text": "第二句引自原通稿。", "origin": "source", "sourceRef": "原文第 2 段" }
+  ]
+}
+```
+
+
+整段替换该产物的句子，重算 AI 参与度与产物 `origin`，同时写一条 `segments-recorded` 追溯
+（含 `previousAiShare`、`previousOrigin` 与各来源句数）。**每次流转有人改稿就调一次**，
+参与度和产物来源都不允许手工填。产物不属于该稿件时返回 404 `artifact_not_found`。
+
+
+## 读取稿件聚合
+
+`GET /api/manuscripts/:id`
+
+返回 `manuscript`、`artifacts`、`segments`、`reviews`、`trace`。`segments` 先按产物顺序、
+再按 `ordinal` 排列，覆盖该稿件的全部产物；追溯图谱和 AI 参与度都从这里取数。
 
 ## 保存审核决定
 

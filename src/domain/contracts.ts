@@ -25,6 +25,7 @@ export const manuscriptStatuses = [
   'second-review',
   'final-review',
   'signed',
+  'published',
 ] as const;
 export type ManuscriptStatus = (typeof manuscriptStatuses)[number];
 
@@ -34,8 +35,17 @@ export type AdmissionDecision = (typeof admissionDecisions)[number];
 export const artifactKinds = ['source', 'broadcast-script', 'short-video-copy'] as const;
 export type ArtifactKind = (typeof artifactKinds)[number];
 
+
 export const artifactOrigins = ['human', 'ai', 'mixed'] as const;
 export type ArtifactOrigin = (typeof artifactOrigins)[number];
+
+/**
+ * Sentence-level provenance. Downstream 审校 products only ever receive a
+ * finished manuscript; we sit in the production line, so every sentence can
+ * carry who wrote it and AI 参与度 can be recomputed on every handoff.
+ */
+export const sentenceOrigins = ['ai', 'ai-edited', 'human', 'source'] as const;
+export type SentenceOrigin = (typeof sentenceOrigins)[number];
 
 export const reviewStages = [
   'admission',
@@ -62,7 +72,9 @@ export const traceKinds = [
   'model-requested',
   'model-completed',
   'artifact-created',
+
   'rule-hit',
+  'segments-recorded',
   'review-recorded',
   'signed',
 ] as const;
@@ -97,6 +109,20 @@ export interface ContentArtifact {
   createdAt: number;
 }
 
+
+export interface SentenceSegment {
+  id: string;
+  manuscriptId: string;
+  artifactId: string;
+  /** 0-based position inside the artifact; segments are always kept in order. */
+  ordinal: number;
+  text: string;
+  origin: SentenceOrigin;
+  /** For quoted sentences: which part of the source they came from. */
+  sourceRef?: string;
+  createdAt: number;
+}
+
 export interface ReviewRecord {
   id: string;
   manuscriptId: string;
@@ -117,9 +143,12 @@ export interface TraceEvent {
   createdAt: number;
 }
 
+
 export interface ManuscriptAggregate {
   manuscript: Manuscript;
   artifacts: ContentArtifact[];
+  /** Every artifact's sentences, ordered by artifact then by ordinal. */
+  segments: SentenceSegment[];
   reviews: ReviewRecord[];
   trace: TraceEvent[];
 }
@@ -130,12 +159,27 @@ export interface CreateManuscriptInput {
   sourceText: string;
 }
 
+
+export interface CreateSegmentInput {
+  text: string;
+  origin: SentenceOrigin;
+  sourceRef?: string;
+}
+
 export interface CreateArtifactInput {
   kind: ArtifactKind;
   content: string;
   origin: ArtifactOrigin;
+  /** Ignored when `segments` are supplied: the ratio is recomputed from them. */
   aiShare?: number;
   model?: string;
+  segments?: CreateSegmentInput[];
+}
+
+/** A handoff rewrite: sentences are replaced wholesale, AI 参与度 recomputed. */
+export interface ReplaceSegmentsInput {
+  actor: string;
+  segments: CreateSegmentInput[];
 }
 
 export interface RecordReviewInput {

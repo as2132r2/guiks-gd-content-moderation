@@ -5,6 +5,7 @@
 // its planted secrets the moment a user pushes. Reliable on stage, needs no key.
 // Set UPSTREAM_URL to proxy a real OpenAI-compatible model instead.
 import { config, usingMockUpstream } from '../config.js';
+import { broadcastMockReply } from '../model/broadcast-mock.js';
 import { getScenario } from './scenarios.js';
 
 export interface ChatMessage {
@@ -45,7 +46,8 @@ export async function callUpstream(
   const inTokens = messages.reduce((n, m) => n + approxTokens(m.content), 0);
   let text: string;
   if (usingMockUpstream()) {
-    text = getScenario().mockReply(messages);
+    // 广电主链的生成请求先走稿件 mock；其余流量仍归当前 AuditGate 场景。
+    text = broadcastMockReply(messages) ?? getScenario().mockReply(messages);
   } else {
     try {
       text = await realReply(messages, model);

@@ -55,8 +55,28 @@ const migrations: Migration[] = [
         data_json TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
+
       CREATE INDEX IF NOT EXISTS trace_events_manuscript_idx
         ON trace_events(manuscript_id, created_at);
+    `,
+  },
+  {
+    id: '0002_sentence_origin',
+    sql: `
+      CREATE TABLE IF NOT EXISTS sentence_segments (
+        id TEXT PRIMARY KEY NOT NULL,
+        manuscript_id TEXT NOT NULL REFERENCES manuscripts(id) ON DELETE CASCADE,
+        artifact_id TEXT NOT NULL REFERENCES content_artifacts(id) ON DELETE CASCADE,
+        ordinal INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        source_ref TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS sentence_segments_artifact_idx
+        ON sentence_segments(artifact_id, ordinal);
+      CREATE INDEX IF NOT EXISTS sentence_segments_manuscript_idx
+        ON sentence_segments(manuscript_id, created_at);
     `,
   },
 ];

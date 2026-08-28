@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import { pathToFileURL } from 'node:url';
 import { Hono } from 'hono';
 import { config, usingMockUpstream } from './config.js';
 import { closeWorkflowRepository, getWorkflowRepository } from './db/repository.js';
@@ -12,6 +13,7 @@ import { redteamRoutes } from './routes/redteam.js';
 import { reportRoutes } from './routes/report.js';
 import { runtimeRoutes } from './routes/runtime.js';
 import { targetRoutes } from './routes/target.js';
+import { workbenchRoutes } from './routes/workbench.js';
 import { renderConsole } from './views/console.js';
 
 export const app = new Hono();
@@ -51,13 +53,17 @@ app.route('/', gatewayRoutes);
 app.route('/', targetRoutes);
 app.route('/', monitorRoutes);
 app.route('/', manuscriptRoutes);
+app.route('/', workbenchRoutes);
 app.route('/', redteamRoutes);
 app.route('/', reportRoutes);
 app.route('/', runtimeRoutes);
 app.route('/', policyRoutes);
 
-// Start only when run directly (not when imported by tests).
-const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+// Start only when run directly (not when imported by tests). pathToFileURL is
+// what makes this work on Windows too — a Windows path never string-concats
+// into a valid file:// URL, so `npm run dev` used to exit silently there.
+const entryPoint = process.argv[1];
+const isMain = entryPoint !== undefined && import.meta.url === pathToFileURL(entryPoint).href;
 if (isMain) {
   const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
     // eslint-disable-next-line no-console
