@@ -31,6 +31,29 @@ export const contentArtifacts = sqliteTable(
   (table) => [index('content_artifacts_manuscript_idx').on(table.manuscriptId, table.createdAt)],
 );
 
+
+export const sentenceSegments = sqliteTable(
+  'sentence_segments',
+  {
+    id: text('id').primaryKey(),
+    manuscriptId: text('manuscript_id')
+      .notNull()
+      .references(() => manuscripts.id, { onDelete: 'cascade' }),
+    artifactId: text('artifact_id')
+      .notNull()
+      .references(() => contentArtifacts.id, { onDelete: 'cascade' }),
+    ordinal: integer('ordinal').notNull(),
+    text: text('text').notNull(),
+    origin: text('origin').notNull(),
+    sourceRef: text('source_ref'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    index('sentence_segments_artifact_idx').on(table.artifactId, table.ordinal),
+    index('sentence_segments_manuscript_idx').on(table.manuscriptId, table.createdAt),
+  ],
+);
+
 export const reviewRecords = sqliteTable(
   'review_records',
   {
@@ -63,4 +86,11 @@ export const traceEvents = sqliteTable(
   (table) => [index('trace_events_manuscript_idx').on(table.manuscriptId, table.createdAt)],
 );
 
-export const schema = { manuscripts, contentArtifacts, reviewRecords, traceEvents };
+
+export const schema = {
+  manuscripts,
+  contentArtifacts,
+  sentenceSegments,
+  reviewRecords,
+  traceEvents,
+};

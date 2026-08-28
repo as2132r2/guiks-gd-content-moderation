@@ -40,10 +40,18 @@ describe('manuscript foundation API', () => {
       ).status,
     ).toBe(201);
 
-    const statusResponse = await app.request(`/api/manuscripts/${id}/status`, {
+    // 状态机守卫: 草稿只能先过入口准入，跳不到待初审。
+    const illegalJump = await app.request(`/api/manuscripts/${id}/status`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ status: 'first-review', actor: '编辑甲' }),
+    });
+    expect(illegalJump.status).toBe(409);
+
+    const statusResponse = await app.request(`/api/manuscripts/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'admitted', actor: '入口准入', role: 'system' }),
     });
     expect(statusResponse.status).toBe(200);
 
@@ -65,10 +73,87 @@ describe('manuscript foundation API', () => {
       reviews: unknown[];
       trace: unknown[];
     };
-    expect(aggregate.manuscript.status).toBe('first-review');
+    expect(aggregate.manuscript.status).toBe('admitted');
     expect(aggregate.artifacts).toHaveLength(1);
+
     expect(aggregate.reviews).toHaveLength(1);
     expect(aggregate.trace).toHaveLength(5);
+  });
+
+  it('stores sentence origins and recomputes AI 参与度 on a rewrite', async () => {
+    const created = (await (
+      await postJson('/api/manuscripts', {
+        title: '句级来源演示稿',
+        sourceType: 'notice',
+        sourceText: '模拟素材：县里召开会议。',
+      })
+    ).json()) as { manuscript: { id: string } };
+    const id = created.manuscript.id;
+
+    const artifactResponse = await postJson(`/api/manuscripts/${id}/artifacts`, {
+      kind: 'broadcast-script',
+      content: '两句生成，两句来自原文。',
+      origin: 'ai',
+      model: 'mock-model',
+      segments: [
+        { text: '第一句由模型生成。', origin: 'ai' },
+        { text: '第二句由模型生成。', origin: 'ai' },
+        { text: '第三句引自原通稿。', origin: 'source', sourceRef: '原文第 1 段' },
+        { text: '第四句引自原通稿。', origin: 'source' },
+      ],
+    });
+    expect(artifactResponse.status).toBe(201);
+
+    const { artifact } = (await artifactResponse.json()) as {
+      artifact: { id: string; aiShare: number; origin: string };
+    };
+    expect(artifact.aiShare).toBe(0.5);
+    expect(artifact.origin).toBe('mixed');
+
+    const rewriteResponse = await app.request(
+      `/api/manuscripts/${id}/artifacts/${artifact.id}/segments`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          actor: '部门主任',
+          segments: [
+            { text: '第一句主任改过。', origin: 'ai-edited' },
+            { text: '第二句主任重写。', origin: 'human' },
+            { text: '第三句引自原通稿。', origin: 'source', sourceRef: '原文第 1 段' },
+            { text: '第四句引自原通稿。', origin: 'source' },
+          ],
+        }),
+      },
+    );
+    expect(rewriteResponse.status).toBe(200);
+
+    expect(await rewriteResponse.json()).toMatchObject({
+      artifact: { aiShare: 0.125, origin: 'mixed' },
+    });
+
+    const aggregate = (await (await app.request(`/api/manuscripts/${id}`)).json()) as {
+      segments: Array<{ origin: string; ordinal: number }>;
+      trace: Array<{ kind: string }>;
+    };
+    expect(aggregate.segments.map((segment) => segment.origin)).toEqual([
+      'ai-edited',
+      'human',
+      'source',
+      'source',
+    ]);
+    expect(aggregate.trace.map((event) => event.kind)).toContain('segments-recorded');
+
+    const unknownArtifact = await app.request(
+      `/api/manuscripts/${id}/artifacts/missing/segments`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ actor: '部门主任', segments: [{ text: '一句。', origin: 'human' }] }),
+      },
+    );
+    expect(unknownArtifact.status).toBe(404);
+    expect(await unknownArtifact.json()).toEqual({ error: 'artifact_not_found' });
   });
 
   it('returns stable validation and not-found errors', async () => {

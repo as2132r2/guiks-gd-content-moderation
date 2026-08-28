@@ -8,12 +8,19 @@ import {
   artifactOrigins,
   contentSourceTypes,
   manuscriptStatuses,
+
   reviewDecisions,
   reviewStages,
+  sentenceOrigins,
   traceKinds,
   type JsonObject,
   type WorkflowDomainEvent,
 } from '../domain/contracts.js';
+import {
+  checkTransition,
+  workflowRoles,
+  type TransitionActor,
+} from '../domain/workflow.js';
 import { publish } from '../lib/bus.js';
 
 const createManuscriptSchema = z.object({
@@ -22,12 +29,27 @@ const createManuscriptSchema = z.object({
   sourceText: z.string().min(1).max(500_000),
 });
 
+
+const segmentSchema = z.object({
+  text: z.string().min(1).max(5_000),
+  origin: z.enum(sentenceOrigins),
+  sourceRef: z.string().trim().min(1).max(200).optional(),
+});
+
+const segmentListSchema = z.array(segmentSchema).max(2_000);
+
 const createArtifactSchema = z.object({
   kind: z.enum(artifactKinds),
   content: z.string().min(1).max(500_000),
   origin: z.enum(artifactOrigins),
   aiShare: z.number().min(0).max(1).optional(),
   model: z.string().trim().min(1).max(100).optional(),
+  segments: segmentListSchema.optional(),
+});
+
+const replaceSegmentsSchema = z.object({
+  actor: z.string().trim().min(1).max(100),
+  segments: segmentListSchema,
 });
 
 const recordReviewSchema = z.object({
@@ -40,6 +62,13 @@ const recordReviewSchema = z.object({
 const updateStatusSchema = z.object({
   status: z.enum(manuscriptStatuses),
   actor: z.string().trim().min(1).max(100),
+  /**
+   * Who is making the move. `system` is the entry gate writing its own verdict;
+   * it is accepted here because this is the low-level foundation API that
+   * seeding and migrations use. The workbench always sends a human role.
+   */
+  role: z.enum([...workflowRoles, 'system'] as [TransitionActor, ...TransitionActor[]]).default('editor'),
+  reason: z.string().trim().min(1).max(2_000).optional(),
 });
 
 const appendTraceSchema = z.object({
@@ -108,6 +137,24 @@ manuscriptRoutes.patch('/api/manuscripts/:id/status', async (c) => {
   const parsed = updateStatusSchema.safeParse(await readJson(c.req));
   if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
 
+  // 状态机是唯一裁判。A status field that accepts anything is not a workflow —
+  // 草稿 could jump straight to 已签发 and the responsibility chain would mean
+  // nothing.
+  const current = getWorkflowRepository().findManuscript(c.req.param('id'));
+  if (!current) return c.json({ error: 'manuscript_not_found' }, 404);
+  const refusal = checkTransition({
+    from: current.status,
+    to: parsed.data.status,
+    actor: parsed.data.role,
+    ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
+  });
+  if (refusal) {
+    return c.json(
+      { error: refusal.code, message: refusal.message },
+      refusal.code === 'reason_required' ? 400 : 409,
+    );
+  }
+
   const manuscript = getWorkflowRepository().updateStatus(
     c.req.param('id'),
     parsed.data.status,
@@ -135,6 +182,28 @@ manuscriptRoutes.post('/api/manuscripts/:id/artifacts', async (c) => {
     origin: artifact.origin,
   });
   return c.json({ artifact }, 201);
+});
+
+
+manuscriptRoutes.put('/api/manuscripts/:id/artifacts/:artifactId/segments', async (c) => {
+  const parsed = replaceSegmentsSchema.safeParse(await readJson(c.req));
+  if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
+
+  const manuscriptId = c.req.param('id');
+  const result = getWorkflowRepository().replaceArtifactSegments(
+    manuscriptId,
+    c.req.param('artifactId'),
+    parsed.data,
+  );
+  if (!result) return c.json({ error: 'artifact_not_found' }, 404);
+  emitWorkflowEvent('trace', manuscriptId, {
+    action: 'segments-recorded',
+    artifactId: result.artifact.id,
+    segmentCount: result.segments.length,
+    aiShare: result.artifact.aiShare ?? null,
+    actor: parsed.data.actor,
+  });
+  return c.json(result);
 });
 
 manuscriptRoutes.post('/api/manuscripts/:id/reviews', async (c) => {
