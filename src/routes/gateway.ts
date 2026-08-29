@@ -4,7 +4,12 @@
 // model base_url at POST /gateway/v1/messages.
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
-import { config, requiresGatewayToken, usingMockUpstream } from '../config.js';
+import {
+  config,
+  isUpstreamModelAllowed,
+  requiresGatewayToken,
+  usingMockUpstream,
+} from '../config.js';
 import { getWorkflowRepository } from '../db/repository.js';
 import type { TraceEvent, WorkflowDomainEvent } from '../domain/contracts.js';
 import { publish } from '../lib/bus.js';
@@ -133,7 +138,7 @@ export async function throughGateway(
   const target = opts.target ?? config.targetLabel;
   const model = opts.model ?? config.upstreamModel;
   const callId = randomUUID();
-  const mode = usingMockUpstream() ? 'mock' : 'upstream';
+  const mode = usingMockUpstream(model) ? 'mock' : 'upstream';
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
   const requestSummary = opts.retainAuditBody
     ? oneLine(lastUser) || '(空请求)'
@@ -374,7 +379,7 @@ gatewayRoutes.post('/gateway/v1/messages', async (c) => {
     return c.json({ error: 'invalid_model' }, 400);
   }
   const requestedModel = typeof body.model === 'string' ? body.model : undefined;
-  if (requestedModel && requestedModel !== config.upstreamModel) {
+  if (requestedModel && !isUpstreamModelAllowed(requestedModel)) {
     return c.json({ error: 'model_not_allowed' }, 400);
   }
   const totalCharacters = messages.reduce((sum, message) => sum + message.content.length, 0);
@@ -396,12 +401,13 @@ gatewayRoutes.post('/gateway/v1/messages', async (c) => {
   try {
     result = await throughGateway(messages, { model: requestedModel, governanceUser: user });
   } catch (error) {
+    const quotaUnavailable = error instanceof UpstreamError && error.status === 429;
     return c.json(
       {
-        error: 'upstream_unavailable',
+        error: quotaUnavailable ? 'model_quota_unavailable' : 'upstream_unavailable',
         code: error instanceof UpstreamError ? error.code : 'upstream_failure',
       },
-      502,
+      quotaUnavailable ? 429 : 502,
     );
   }
   const { reply, tokens, telemetry, governance } = result;

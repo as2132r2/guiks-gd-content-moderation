@@ -32,7 +32,7 @@ npm run build && npm run start:prod          # tsc → dist，node 运行
 docker compose up --build
 ```
 
-无需 API Key 即可启动：`UPSTREAM_URL` 为空时走 `src/lib/scenarios.ts` 里的确定性 mock。当前真实模型适配器只支持 OpenAI-compatible Chat Completions；接同协议代理只设 `UPSTREAM_URL` / `UPSTREAM_KEY` / `UPSTREAM_MODEL`，**业务代码不得自行读取这三个变量**。Anthropic Messages/SSE 适配尚未接入（轨道 A）。测试里 `NODE_ENV=test` 自动使用 `:memory:` 数据库。
+无需 API Key 即可启动：`UPSTREAM_URL` 为空时走 `src/lib/scenarios.ts` 里的确定性 mock。当前真实模型适配器支持 OpenAI-compatible Chat Completions；单模型兼容配置使用 `UPSTREAM_URL` / `UPSTREAM_KEY` / `UPSTREAM_MODEL`，多模型部署使用 `UPSTREAM_PROFILES_JSON`，为每个模型独立绑定 URL / Key / thinking / timeout，并用 `UPSTREAM_MODEL` 指定默认模型。DeepSeek V4 低延迟演示建议 `thinking=disabled`；GLM-5.3 / GLM-5.3-Flash 必须使用 `provider-default`。**业务代码不得自行读取这些变量，浏览器 API 不得返回 URL / Key**。Anthropic Messages/SSE 需要另行实现适配器。测试里 `NODE_ENV=test` 自动使用 `:memory:` 数据库。
 
 ## 架构
 
@@ -79,14 +79,15 @@ docker compose up --build
 - **AI 参与度追溯图谱已落地**：`tracePanel` 在 [src/views/workbench-view.ts](src/views/workbench-view.ts)，
   五块内容——签发卡、AI 参与度折线、句级来源图谱、责任链、规则命中。折线画的是稿件级比例，从留痕重建。
 - **首页已是工作台**：`/` 直接进稿件工作台，`/workbench` 保留为别名；遗留 AuditGate 控制台移到 `/console`。
-- **轨道 A 审核内核已落地**：校次契约、`revision` 复核修改、可选 `countersign` 会签、审核轮次、会签表单与意见留痕、改稿后重新预检、实体一致性、L2「待人工复核」、AI 显式/隐式标识和准入结论持久化均已实现。migration 使用 `0004`（`0003` 预留给轨道 C 的用户表）。
-- **真实模型协议已统一**为 OpenAI 兼容 `/chat/completions`，默认模型 `GLM-5.2`；配置真实上游后失败会显式抛出，不伪造回退成功。仓库不保存真实 URL/Key，部署前仍需凭据联调。
+- **轨道 A 审核内核已落地**：校次契约、`revision` 复核修改、可选 `countersign` 会签、审核轮次、会签表单与意见留痕、改稿后重新预检、实体一致性、L2「待人工复核」、AI 显式/隐式标识和准入结论持久化均已实现。轨道 A migration 使用 `0004`，轨道 C 用户表使用 `0003`。
+- **轨道 C 登录鉴权已落地**：SQLite 用户与角色、scrypt 密码、签名会话、固定权限矩阵、真人留痕、production 强凭据与建号边界均已接入；模型列表和稿件业务接口同样受会话保护。
+- **真实模型协议与切换已落地**：OpenAI 兼容 `/chat/completions` 可接 GLM / DeepSeek；模型配置档把供应商 URL、Key、思考模式与超时绑定到模型，工作台可按次切换并写入模型留痕。DeepSeek V4 已用真实 Key 完成双产物、服务商计量与失败恢复验收；GLM-5.3 / GLM-5.3-Flash 的真实请求均已到达服务端并识别模型，但当前账户因余额或资源包不足返回 429，待充值后补成功响应验收。仓库不保存真实 URL/Key。
 - **红队与评分已转为广电口径**：12 发探针覆盖导向、事实、标识、可追溯、版权，评分使用同名五维。
 
 **还差**：
 
 - [src/lib/detectors.ts](src/lib/detectors.ts) 的 `scanRequest()` / `scanResponse()` 仍是 AuditGate 旧规格（提示注入词表 / PII + 密钥），**网关那条路还没接上广电规则**——新规则目前只在 `src/rules/` 里被工作台调用，两边最终要合，否则「绕不过网关就绕不过准入」这句在代码里还不成立。
-- 真实 GLM 的 URL / Key 尚未提供；协议、请求体和失败路径已有自动化测试，但部署联调仍待完成。
+- DeepSeek V4 已完成本地 Docker 真实联调；GLM 两个模型待账户补充余额或资源包后完成成功响应验收。其他部署环境仍需自行安全注入模型配置档与网关令牌。
 - `/console`、`/policy`、`/runtime`、`/report` 四个遗留页面未改（2238 行，讲广电时一个都不用）。
 - `test/fixtures/`、`docs/demo/` 仍不存在。
 
