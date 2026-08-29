@@ -12,7 +12,9 @@
  * 意义**。所以这里用 `app.request()` 在进程内打自己的 API，不需要另起服务，
  * 也不需要网络。
  *
- * **幂等**：先清空稿件再重建。账号是 upsert，已存在就跳过。
+ * **只增不删。** 播种不会碰库里已有的任何东西：账号已存在就跳过，稿件按标题
+ * 判重、已播过就跳过。**要清库是另一条命令**（`npm run reset:demo -- --yes`），
+ * 而且必须显式确认——播种和删数据是两件事，不能一个动作顺手把另一件也做了。
  */
 import { pathToFileURL } from 'node:url';
 
@@ -127,6 +129,22 @@ interface Crew {
   leader: Caller;
 }
 
+/**
+ * 这次要播的稿件 —— 全集减去库里已有的。
+ *
+ * 判重用标题。**只增不删**是定好的规矩：播种脚本永远不删别人的数据，
+ * 重复跑一次应该是空操作，而不是把库推平重来。
+ *
+ * 抽成纯函数是为了能测——真跑一次播种需要一个持久库，测试里跑不了。
+ */
+export function pendingManuscripts(
+  existingTitles: Iterable<string>,
+  seeds: readonly SeedManuscript[] = ALL_SEED_MANUSCRIPTS,
+): SeedManuscript[] {
+  const existing = new Set(existingTitles);
+  return seeds.filter((seed) => !existing.has(seed.title));
+}
+
 async function walk(crew: Crew, seed: SeedManuscript): Promise<string> {
   const call = crew.editor;
   const created = (await call('/api/workbench', 'POST', {
@@ -209,8 +227,12 @@ export async function seedDemoData(password: string): Promise<void> {
       (accounts.replaced > 0 ? `，重建 ${accounts.replaced}（原为 demo 账号，生产下登不进去）` : ''),
   );
 
-  const removed = getWorkflowRepository().deleteAllManuscripts();
-  if (removed > 0) log(`清空旧稿件 ${removed} 篇`);
+  const repository = getWorkflowRepository();
+  const pending = pendingManuscripts(repository.listManuscriptTitles());
+  const already = ALL_SEED_MANUSCRIPTS.length - pending.length;
+  log(`稿件：待播 ${pending.length}，已存在 ${already}（只增不删，不动库里已有的数据）`);
+  // 全都播过就什么也不做——但仍然把汇总打出来，运维要看的是「现在库里是什么样」。
+  if (pending.length === 0) log('  （无需播种。要推倒重来请先跑 npm run reset:demo -- --yes）');
 
   // 张敏持有全部三个流程角色，一个会话就能走完整条链；另外三个各司其职。
   const zhangmin = callerFor(await login('zhangmin', password));
@@ -218,8 +240,7 @@ export async function seedDemoData(password: string): Promise<void> {
   const lijianguo = callerFor(await login('lijianguo', password));
   const wangzhiyuan = callerFor(await login('wangzhiyuan', password));
 
-  const repository = getWorkflowRepository();
-  for (const seed of ALL_SEED_MANUSCRIPTS) {
+  for (const seed of pending) {
     const editor = seed.author === 'chenxue' ? chenxue : zhangmin;
     // 独走只有张敏能做——三个流程角色她一个人全有。陈雪只是编辑，
     // 标了 solo 也得有人接审批，落回三人分工。
@@ -239,7 +260,7 @@ export async function seedDemoData(password: string): Promise<void> {
     overallAiShare: number | null;
   };
   log(
-    `完成：稿件 ${overview.totals.manuscripts} 篇，已签发 ${overview.totals.signed}，` +
+    `完成：全库稿件 ${overview.totals.manuscripts} 篇，已签发 ${overview.totals.signed}，` +
       `留痕 ${overview.totals.traceEvents} 条，全台 AI 参与度 ` +
       `${overview.overallAiShare == null ? '未测量' : `${(overview.overallAiShare * 100).toFixed(1)}%`}`,
   );

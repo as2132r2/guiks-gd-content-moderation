@@ -608,6 +608,18 @@ export class WorkflowRepository {
       .map(toManuscript);
   }
 
+  /**
+   * 库里已有的全部标题。给播种脚本判重用。
+   *
+   * 不走 `listManuscripts()`：那个有 100 条上限，而播种要判的是「这一篇是不是
+   * 已经播过」——**漏判一条就多播一份重复稿件**，上限截断在这里是错误答案。
+   */
+  listManuscriptTitles(): string[] {
+    return (
+      this.database.sqlite.prepare('SELECT title FROM manuscripts').all() as Array<{ title: string }>
+    ).map((row) => row.title);
+  }
+
   findManuscript(id: string): Manuscript | undefined {
     const row = this.database.orm.select().from(manuscripts).where(eq(manuscripts.id, id)).get();
     return row ? toManuscript(row) : undefined;
