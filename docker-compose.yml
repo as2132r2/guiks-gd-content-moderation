@@ -19,19 +19,27 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      # 全部可选。不填任何一项也能零配置跑（内置确定性 mock 上游，无需 API key）。
+      # demo 可零配置跑；production 必须按 README 配置身份、机器凭据和上游。
       PORT: 3300
       APP_MODE: ${APP_MODE:-demo}
       DATABASE_PATH: /app/data/app.db
       FAIL_CLOSED: ${FAIL_CLOSED:-true}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:-}
+      SEED_DEMO_USERS: ${SEED_DEMO_USERS:-}
+      DEMO_SEED_PASSWORD: ${DEMO_SEED_PASSWORD:-gatekeeper-demo}
       # 留空时 demo=true、production=false；也可在 .env 中显式覆盖。
       ALLOW_MOCK_UPSTREAM: ${ALLOW_MOCK_UPSTREAM:-}
       # 控制台里显示的「接管目标」标签（受控靶子）。
       TARGET_LABEL: ${TARGET_LABEL:-融媒体中心（演示环境）}
-      # 留空 = 用内置 mock 上游；填真实 base_url 才会去代理真实上游。
+      # 单模型兼容配置：留空 URL = 内置 mock；填真实 base_url 才会代理真实上游。
       UPSTREAM_URL: ${UPSTREAM_URL:-}
       UPSTREAM_KEY: ${UPSTREAM_KEY:-}
       UPSTREAM_MODEL: ${UPSTREAM_MODEL:-GLM-5.2}
+      UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:-30000}
+      UPSTREAM_THINKING: ${UPSTREAM_THINKING:-provider-default}
+      # 多模型配置档（JSON 数组）优先于上述单模型 URL/Key；密钥仍只从部署环境注入。
+      UPSTREAM_PROFILES_JSON: ${UPSTREAM_PROFILES_JSON:-}
       # demo 内存里保留多少条审计流量。
       MAX_AUDITS: ${MAX_AUDITS:-500}
     volumes:

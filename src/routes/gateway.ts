@@ -2,9 +2,14 @@
 // the audit store, runs detectors on the way in and out, then forwards to the
 // upstream model. This is the "接管" layer — a target only needs to point its
 // model base_url at POST /gateway/v1/messages.
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
-import { config, requiresGatewayToken, usingMockUpstream } from '../config.js';
+import {
+  config,
+  isUpstreamModelAllowed,
+  requiresGatewayToken,
+  usingMockUpstream,
+} from '../config.js';
 import { getWorkflowRepository } from '../db/repository.js';
 import type { TraceEvent, WorkflowDomainEvent } from '../domain/contracts.js';
 import { publish } from '../lib/bus.js';
@@ -133,7 +138,7 @@ export async function throughGateway(
   const target = opts.target ?? config.targetLabel;
   const model = opts.model ?? config.upstreamModel;
   const callId = randomUUID();
-  const mode = usingMockUpstream() ? 'mock' : 'upstream';
+  const mode = usingMockUpstream(model) ? 'mock' : 'upstream';
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
   const requestSummary = opts.retainAuditBody
     ? oneLine(lastUser) || '(空请求)'
@@ -324,14 +329,28 @@ export function auditExchange(
 
 export const gatewayRoutes = new Hono();
 
+const credentialsMatch = (presented: string | undefined, expected: string): boolean => {
+  if (!presented) return false;
+  const left = Buffer.from(presented, 'utf8');
+  const right = Buffer.from(expected, 'utf8');
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+
 // OpenAI-compatible surface: a target points its base_url here.
 gatewayRoutes.post('/gateway/v1/messages', async (c) => {
+  if (requiresGatewayToken() && (!config.gatewayToken || !config.gatewayTokenReady)) {
+    return c.json({ error: 'gateway_auth_not_configured' }, 503);
+  }
   if (config.gatewayToken) {
-    if (c.req.header('authorization') !== `Bearer ${config.gatewayToken}`) {
+    const authorization = c.req.header('authorization');
+    const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+    const apiKey = c.req.header('x-api-key')?.trim();
+    if (
+      !credentialsMatch(bearer, config.gatewayToken) &&
+      !credentialsMatch(apiKey, config.gatewayToken)
+    ) {
       return c.json({ error: 'gateway_unauthorized' }, 401);
     }
-  } else if (requiresGatewayToken()) {
-    return c.json({ error: 'gateway_auth_not_configured' }, 503);
   }
 
   type GatewayBody = { model?: unknown; messages?: unknown; message?: unknown };
@@ -360,7 +379,7 @@ gatewayRoutes.post('/gateway/v1/messages', async (c) => {
     return c.json({ error: 'invalid_model' }, 400);
   }
   const requestedModel = typeof body.model === 'string' ? body.model : undefined;
-  if (requestedModel && requestedModel !== config.upstreamModel) {
+  if (requestedModel && !isUpstreamModelAllowed(requestedModel)) {
     return c.json({ error: 'model_not_allowed' }, 400);
   }
   const totalCharacters = messages.reduce((sum, message) => sum + message.content.length, 0);
@@ -382,12 +401,13 @@ gatewayRoutes.post('/gateway/v1/messages', async (c) => {
   try {
     result = await throughGateway(messages, { model: requestedModel, governanceUser: user });
   } catch (error) {
+    const quotaUnavailable = error instanceof UpstreamError && error.status === 429;
     return c.json(
       {
-        error: 'upstream_unavailable',
+        error: quotaUnavailable ? 'model_quota_unavailable' : 'upstream_unavailable',
         code: error instanceof UpstreamError ? error.code : 'upstream_failure',
       },
-      502,
+      quotaUnavailable ? 429 : 502,
     );
   }
   const { reply, tokens, telemetry, governance } = result;

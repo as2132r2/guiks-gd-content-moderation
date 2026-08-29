@@ -13,20 +13,30 @@
 import { Hono } from 'hono';
 import { getWorkflowRepository } from '../db/repository.js';
 import type { ContentSourceType } from '../domain/contracts.js';
+import { mayPerformAs, workflowActorLabel } from '../domain/permissions.js';
+import { requireAuth, type AuthEnv } from '../middleware/auth.js';
 import { runAdmission } from '../rules/index.js';
 import { DEMO_FIXTURES, MAIN_NOTICE, type DemoFixture } from './demo-fixtures.js';
 import { admissionStatusOf } from './workbench.js';
 
-export const demoRoutes = new Hono();
+export const demoRoutes = new Hono<AuthEnv>();
 
-function createFixture(fixture: DemoFixture) {
+demoRoutes.use('/api/demo/*', requireAuth);
+
+function createFixture(
+  fixture: DemoFixture,
+  actor: { label: string; userId: string },
+) {
   const repository = getWorkflowRepository();
   const admission = runAdmission(fixture);
-  const manuscript = repository.createManuscript({
-    title: fixture.title,
-    sourceType: fixture.sourceType as ContentSourceType,
-    sourceText: fixture.sourceText,
-  });
+  const manuscript = repository.createManuscript(
+    {
+      title: fixture.title,
+      sourceType: fixture.sourceType as ContentSourceType,
+      sourceText: fixture.sourceText,
+    },
+    actor,
+  );
 
   repository.appendTrace(manuscript.id, {
     kind: 'rule-hit',
@@ -55,16 +65,27 @@ function createFixture(fixture: DemoFixture) {
 
 /** 清空全部稿件。彩排要反复重来。 */
 demoRoutes.post('/api/demo/reset', (c) => {
+  if (!mayPerformAs(c.get('currentUser'), 'editor', 'manuscript:create')) {
+    return c.json({ error: 'role_not_allowed' }, 403);
+  }
   const deleted = getWorkflowRepository().deleteAllManuscripts();
   return c.json({ deleted });
 });
 
 /** 重置后建好三组准入样例。主通稿留给台上现场投料。 */
 demoRoutes.post('/api/demo/seed', (c) => {
+  const user = c.get('currentUser');
+  if (!mayPerformAs(user, 'editor', 'manuscript:create')) {
+    return c.json({ error: 'role_not_allowed' }, 403);
+  }
   const deleted = getWorkflowRepository().deleteAllManuscripts();
   // 倒序建立：列表按 updatedAt 倒序，倒着建才能让「要理由」排在最上面，
   // 和演示脚本 0:25 的讲解顺序一致。
-  const created = [...DEMO_FIXTURES].reverse().map(createFixture).reverse();
+  const actor = { label: workflowActorLabel(user, 'editor'), userId: user.id };
+  const created = [...DEMO_FIXTURES]
+    .reverse()
+    .map((fixture) => createFixture(fixture, actor))
+    .reverse();
   return c.json({ deleted, created });
 });
 

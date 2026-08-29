@@ -55,15 +55,22 @@ test/             确定性规则、接口、演示主链回归
 - SQLite 默认路径为 `./data/app.db`，Docker 内为 `/app/data/app.db`。
 - 应用启动时自动执行幂等迁移，开启外键、5 秒 busy timeout 和 WAL。
 - 稿件、产物、审核决定、状态变化和追溯使用事务写入。
-- `/healthz` 只判断进程存活；`/readyz` 同时判断数据库和模型配置。
+- `/healthz` 只判断进程存活；`/readyz` 在 production 同时判断数据库、模型配置、强格式会话
+  密钥、独立 HTTP Gateway 机器密钥，以及至少一个启用且角色合法的非 demo 账号。
 - Docker 使用 Node 22、多阶段构建、非 root 用户和独立持久卷。
 - `APP_MODE=production` 且未配置模型时，除非显式允许 Mock，否则 `/readyz` 返回 503。
+- production 不 seed 演示账号；一次性 CLI 通过隐藏 TTY/stdin 建立 `is_demo=0` 的固定角色账号。
+  数据卷从 demo 切换到 production 时，持久化的 demo 账号即使密码正确也不能登录。
+  每次会话重载同样检查该标记，旧 demo cookie 不能跨模式继续访问。
+- 遗留 policy/runtime/redteam/monitor/report/controlled-target 路由只在 demo 挂载；production
+  HTTP `/gateway/v1/messages` 使用独立强 API key。进程内 `throughGateway()` 仍是主链唯一模型
+  出口，不经过浏览器会话或 HTTP 机器认证。
 
 ## 黑客松内明确不做
 
 - 不做爬虫和外部采集系统对接，只粘贴/上传。
 - 不做真实多平台发布，按钮只演示状态变化。
-- 三个审核角色写死，不做完整账号与权限系统。
+- 做账号与固定角色组合，但不做权限配置后台、密码找回、SSO 或用户管理 UI。
 - 不做电子签章。
 - 不做 RAG 平台，历史稿件仅作为预置风格样例。
 - L2 模型判断最多一个场景，只标记“待人工复核”，不能替人终审。

@@ -1,9 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { app } from '../src/index.js';
 import { DEMO_FIXTURES, MAIN_NOTICE } from '../src/routes/demo-fixtures.js';
 import { runAdmission } from '../src/rules/index.js';
+import { authenticatedRequest, loginAs } from './helpers/auth.js';
 
-const post = (path: string) => app.request(path, { method: 'POST' });
+let request: ReturnType<typeof authenticatedRequest>;
+
+beforeAll(async () => {
+  request = authenticatedRequest(app, await loginAs(app));
+});
+
+const post = (path: string) => request(path, { method: 'POST' });
 
 interface SeedResult {
   deleted: number;
@@ -32,7 +39,7 @@ describe('演示夹具', () => {
 
   it('lists the seeded cases in the order the demo script walks them', async () => {
     await post('/api/demo/seed');
-    const list = (await (await app.request('/api/workbench')).json()) as {
+    const list = (await (await request('/api/workbench')).json()) as {
       items: Array<{ title: string }>;
     };
     // 0:25 先讲「要理由」，所以它必须排在列表最上面。
@@ -46,12 +53,12 @@ describe('演示夹具', () => {
     const reset = (await (await post('/api/demo/reset')).json()) as { deleted: number };
     expect(reset.deleted).toBeGreaterThanOrEqual(DEMO_FIXTURES.length);
 
-    const list = (await (await app.request('/api/workbench')).json()) as { items: unknown[] };
+    const list = (await (await request('/api/workbench')).json()) as { items: unknown[] };
     expect(list.items).toEqual([]);
   });
 
   it('serves the main notice for the 填入示例 button', async () => {
-    const data = (await (await app.request('/api/demo/fixtures')).json()) as {
+    const data = (await (await request('/api/demo/fixtures')).json()) as {
       mainNotice: { title: string; sourceText: string };
       cases: unknown[];
     };

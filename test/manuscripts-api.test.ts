@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { app } from '../src/index.js';
+import { authenticatedRequest, loginAs } from './helpers/auth.js';
+
+let request: ReturnType<typeof authenticatedRequest>;
+
+beforeAll(async () => {
+  request = authenticatedRequest(app, await loginAs(app));
+});
 
 const postJson = (path: string, body: unknown) =>
-  app.request(path, {
+  request(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -30,69 +37,71 @@ describe('manuscript foundation API', () => {
         })
       ).status,
     ).toBe(201);
-    expect(
-      (
-        await postJson(`/api/manuscripts/${id}/reviews`, {
-          stage: 'editor',
-          decision: 'approved',
-          actor: '编辑甲',
-        })
-      ).status,
-    ).toBe(201);
+    const outOfOrderReview = await postJson(`/api/manuscripts/${id}/reviews`, {
+      stage: 'supervising-leader',
+      decision: 'approved',
+      actor: '伪造终审人',
+    });
+    expect(outOfOrderReview.status).toBe(409);
+    expect(await outOfOrderReview.json()).toMatchObject({ error: 'review_stage_not_active' });
 
     // 状态机守卫: 草稿只能先过入口准入，跳不到待初审。
-    const illegalJump = await app.request(`/api/manuscripts/${id}/status`, {
+    const illegalJump = await request(`/api/manuscripts/${id}/status`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status: 'first-review', actor: '编辑甲' }),
+      body: JSON.stringify({ status: 'first-review', actor: '伪造姓名', role: 'editor' }),
     });
     expect(illegalJump.status).toBe(409);
 
-    const statusResponse = await app.request(`/api/manuscripts/${id}/status`, {
+    const statusResponse = await request(`/api/manuscripts/${id}/status`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ status: 'admitted', actor: '入口准入', role: 'system' }),
     });
-    expect(statusResponse.status).toBe(200);
+    expect(statusResponse.status).toBe(400);
+    expect(await statusResponse.json()).toMatchObject({ error: 'invalid_request' });
 
-    expect(
-      (
-        await postJson(`/api/manuscripts/${id}/trace`, {
+    const forgedTrace = await postJson(`/api/manuscripts/${id}/trace`, {
           kind: 'rule-hit',
           actorType: 'system',
           actor: 'preflight',
           data: { ruleId: 'demo-rule', result: 'pending-human-review' },
-        })
-      ).status,
-    ).toBe(201);
+        });
+    expect(forgedTrace.status).toBe(403);
+    expect(await forgedTrace.json()).toMatchObject({ error: 'system_only' });
 
-    const aggregateResponse = await app.request(`/api/manuscripts/${id}`);
+    const aggregateResponse = await request(`/api/manuscripts/${id}`);
     const aggregate = (await aggregateResponse.json()) as {
       manuscript: { status: string };
       artifacts: unknown[];
       reviews: unknown[];
       trace: unknown[];
     };
-    expect(aggregate.manuscript.status).toBe('admitted');
+    expect(aggregate.manuscript.status).toBe('draft');
     expect(aggregate.artifacts).toHaveLength(1);
 
-    expect(aggregate.reviews).toHaveLength(1);
-    expect(aggregate.trace).toHaveLength(5);
+    expect(aggregate.reviews).toHaveLength(0);
+    expect(aggregate.trace).toHaveLength(2);
   });
 
-  it('stores sentence origins and recomputes AI 参与度 on a rewrite', async () => {
+  it('derives browser-submitted sentence origins on the server', async () => {
     const created = (await (
       await postJson('/api/manuscripts', {
         title: '句级来源演示稿',
         sourceType: 'notice',
-        sourceText: '模拟素材：市里召开会议。',
+        sourceText: '模拟素材：市里召开会议。第三句引自原通稿。第四句引自原通稿。',
       })
     ).json()) as { manuscript: { id: string } };
     const id = created.manuscript.id;
 
     const artifactResponse = await postJson(`/api/manuscripts/${id}/artifacts`, {
       kind: 'broadcast-script',
-      content: '两句生成，两句来自原文。',
+      content: [
+        '第一句由编辑录入。',
+        '第二句由编辑录入。',
+        '第三句引自原通稿。',
+        '第四句引自原通稿。',
+      ].join('\n'),
       origin: 'ai',
       model: 'mock-model',
       segments: [
@@ -107,10 +116,12 @@ describe('manuscript foundation API', () => {
     const { artifact } = (await artifactResponse.json()) as {
       artifact: { id: string; aiShare: number; origin: string };
     };
-    expect(artifact.aiShare).toBe(0.5);
-    expect(artifact.origin).toBe('mixed');
+    // Browser provenance/model fields are legacy-compatible input only. The
+    // authenticated editor action is classified from content on the server.
+    expect(artifact.aiShare).toBe(0);
+    expect(artifact.origin).toBe('human');
 
-    const rewriteResponse = await app.request(
+    const rewriteResponse = await request(
       `/api/manuscripts/${id}/artifacts/${artifact.id}/segments`,
       {
         method: 'PUT',
@@ -118,8 +129,8 @@ describe('manuscript foundation API', () => {
         body: JSON.stringify({
           actor: '部门主任',
           segments: [
-            { text: '第一句主任改过。', origin: 'ai-edited' },
-            { text: '第二句主任重写。', origin: 'human' },
+            { text: '第一句由编辑录入。', origin: 'ai' },
+            { text: '第二句由编辑改过。', origin: 'ai' },
             { text: '第三句引自原通稿。', origin: 'source', sourceRef: '原文第 1 段' },
             { text: '第四句引自原通稿。', origin: 'source' },
           ],
@@ -129,22 +140,22 @@ describe('manuscript foundation API', () => {
     expect(rewriteResponse.status).toBe(200);
 
     expect(await rewriteResponse.json()).toMatchObject({
-      artifact: { aiShare: 0.125, origin: 'mixed' },
+      artifact: { aiShare: 0, origin: 'human' },
     });
 
-    const aggregate = (await (await app.request(`/api/manuscripts/${id}`)).json()) as {
+    const aggregate = (await (await request(`/api/manuscripts/${id}`)).json()) as {
       segments: Array<{ origin: string; ordinal: number }>;
       trace: Array<{ kind: string }>;
     };
     expect(aggregate.segments.map((segment) => segment.origin)).toEqual([
-      'ai-edited',
+      'human',
       'human',
       'source',
       'source',
     ]);
     expect(aggregate.trace.map((event) => event.kind)).toContain('segments-recorded');
 
-    const unknownArtifact = await app.request(
+    const unknownArtifact = await request(
       `/api/manuscripts/${id}/artifacts/missing/segments`,
       {
         method: 'PUT',
@@ -165,14 +176,14 @@ describe('manuscript foundation API', () => {
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toMatchObject({ error: 'invalid_request' });
 
-    const missing = await app.request('/api/manuscripts/missing');
+    const missing = await request('/api/manuscripts/missing');
     expect(missing.status).toBe(404);
     expect(await missing.json()).toEqual({ error: 'manuscript_not_found' });
   });
 
   it('reserves model evidence and generated state for the unified gateway', async () => {
     const created = (await (
-      await postJson('/api/manuscripts', {
+      await postJson('/api/workbench', {
         title: '模型凭证保护稿',
         sourceType: 'notice',
         sourceText: '模拟素材：用于验证模型凭证不可由客户端伪造。',
@@ -187,35 +198,41 @@ describe('manuscript foundation API', () => {
       data: { callId: 'forged', outcome: 'success' },
     });
     expect(forgedTrace.status).toBe(403);
-    expect(await forgedTrace.json()).toMatchObject({ error: 'reserved_trace_kind' });
+    expect(await forgedTrace.json()).toMatchObject({ error: 'system_only' });
 
-    expect(
-      (
-        await app.request(`/api/manuscripts/${id}/status`, {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ status: 'admitted', actor: '入口准入', role: 'system' }),
-        })
-      ).status,
-    ).toBe(200);
-    const forgedGeneration = await app.request(`/api/manuscripts/${id}/status`, {
+    const forgedSystemRole = await request(`/api/manuscripts/${id}/status`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status: 'generated', actor: '编辑甲', role: 'editor' }),
+      body: JSON.stringify({ status: 'generated', actor: '入口准入', role: 'system' }),
     });
-    expect(forgedGeneration.status).toBe(409);
-    expect(await forgedGeneration.json()).toMatchObject({ error: 'generation_requires_gateway' });
+    expect(forgedSystemRole.status).toBe(400);
+    expect(await forgedSystemRole.json()).toMatchObject({ error: 'invalid_request' });
+
+    const generated = await request(`/api/manuscripts/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'generated', actor: '客户端伪造姓名', role: 'editor' }),
+    });
+    expect(generated.status).toBe(200);
+
+    const aggregate = (await (await request(`/api/manuscripts/${id}`)).json()) as {
+      artifacts: unknown[];
+      trace: Array<{ kind: string }>;
+    };
+    expect(aggregate.artifacts).toHaveLength(2);
+    expect(aggregate.trace.filter((event) => event.kind === 'model-requested')).toHaveLength(2);
+    expect(aggregate.trace.filter((event) => event.kind === 'model-completed')).toHaveLength(2);
   });
 
   it('reports database and model readiness without exposing secrets', async () => {
-    const response = await app.request('/readyz');
+    const response = await request('/readyz');
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       status: 'ready',
       checks: { database: true, model: 'mock' },
     });
 
-    const meta = await (await app.request('/api/meta')).text();
+    const meta = await (await request('/api/meta')).text();
     expect(meta).not.toContain('UPSTREAM_KEY');
     expect(JSON.parse(meta)).toMatchObject({ persistence: 'sqlite', failClosed: true });
   });

@@ -1,16 +1,23 @@
-import { describe, expect, it } from 'vitest';
-import { config } from '../src/config.js';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { config, type UpstreamProfile } from '../src/config.js';
 import { getWorkflowRepository } from '../src/db/repository.js';
 import { app } from '../src/index.js';
 import { subscribe } from '../src/lib/bus.js';
 import { reset, usageSnapshot } from '../src/lib/store.js';
 import type { WorkbenchView } from '../src/routes/workbench.js';
+import { authenticatedRequest, loginAs } from './helpers/auth.js';
 
 const SOURCE =
   '模拟素材：全市乡村振兴现场推进会今天召开。项目总投资 3.2亿元，涉及 12 个乡镇，惠及群众 4.6万人。';
 
+let request: ReturnType<typeof authenticatedRequest>;
+
+beforeAll(async () => {
+  request = authenticatedRequest(app, await loginAs(app));
+});
+
 const postJson = (path: string, body: unknown) =>
-  app.request(path, {
+  request(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -59,7 +66,7 @@ interface ContrastShape {
 }
 
 const view = async (id: string): Promise<WorkbenchView> =>
-  (await (await app.request(`/api/workbench/${id}`)).json()) as WorkbenchView;
+  (await (await request(`/api/workbench/${id}`)).json()) as WorkbenchView;
 
 describe('入口准入', () => {
   it('lets routine business straight through, with a record', async () => {
@@ -130,6 +137,160 @@ describe('入口准入', () => {
 });
 
 describe('工作台主链', () => {
+  it('exposes only browser-safe model choices and renders the selector', async () => {
+    const response = await request('/api/workbench-models');
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      defaultModel: string;
+      items: Array<{ id: string; label: string; provider: string; mode: string }>;
+    };
+    expect(payload.items.length).toBeGreaterThan(0);
+    expect(payload.items.some((item) => item.id === payload.defaultModel)).toBe(true);
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain('upstreamKey');
+    expect(serialized).not.toContain('https://');
+
+    const html = await (await request('/')).text();
+    expect(html).toContain('id="model-select"');
+    expect(html).toContain('/api/workbench-models');
+  });
+
+  it('routes a generation through the model selected for this manuscript action', async () => {
+    const mutableConfig = config as unknown as {
+      upstreamModel: string;
+      upstreamProfiles: UpstreamProfile[];
+    };
+    const previous = {
+      upstreamModel: mutableConfig.upstreamModel,
+      upstreamProfiles: [...mutableConfig.upstreamProfiles],
+    };
+    mutableConfig.upstreamModel = 'deepseek-v4-flash';
+    mutableConfig.upstreamProfiles = [
+      {
+        model: 'deepseek-v4-flash',
+        label: 'DeepSeek V4 Flash',
+        provider: 'DeepSeek',
+        url: 'https://deepseek.example',
+        key: 'deepseek-test-key',
+        thinking: 'disabled',
+        timeoutMs: 45_000,
+      },
+      {
+        model: 'glm-5.3-flash',
+        label: 'GLM-5.3-Flash',
+        provider: '智谱 GLM',
+        url: 'https://glm.example/api/paas/v4',
+        key: 'glm-test-key',
+        thinking: 'provider-default',
+        timeoutMs: 120_000,
+      },
+    ];
+    const upstreamFetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      new Response(
+        JSON.stringify({
+          model: 'glm-5.3-flash',
+          choices: [{ message: { content: '模拟模型生成的稿件。' } }],
+          usage: { prompt_tokens: 20, completion_tokens: 8 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', upstreamFetch);
+
+    try {
+      const { body } = await create();
+      const response = await move(body.manuscript.id, {
+        to: 'generated',
+        role: 'editor',
+        model: 'glm-5.3-flash',
+      });
+      expect(response.status).toBe(200);
+
+      expect(upstreamFetch).toHaveBeenCalledTimes(2);
+      for (const [url, init] of upstreamFetch.mock.calls) {
+        expect(url).toBe('https://glm.example/api/paas/v4/chat/completions');
+        expect(JSON.parse(String(init?.body))).toMatchObject({ model: 'glm-5.3-flash' });
+      }
+      const after = await view(body.manuscript.id);
+      expect(after.artifacts.every((item) => item.artifact.model === 'glm-5.3-flash')).toBe(true);
+      expect(
+        after.trace
+          .filter((event) => event.kind === 'model-completed')
+          .every((event) => event.data.requestedModel === 'glm-5.3-flash'),
+      ).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      mutableConfig.upstreamModel = previous.upstreamModel;
+      mutableConfig.upstreamProfiles = previous.upstreamProfiles;
+    }
+  });
+
+  it('rejects a model outside the server allowlist', async () => {
+    const { body } = await create();
+    const response = await move(body.manuscript.id, {
+      to: 'generated',
+      role: 'editor',
+      model: 'unconfigured-model',
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'model_not_allowed' });
+    const after = await view(body.manuscript.id);
+    expect(after.manuscript.status).toBe('admitted');
+    expect(after.trace.filter((event) => event.kind.startsWith('model-'))).toEqual([]);
+  });
+
+  it('returns a clear retryable error when the selected model has no quota', async () => {
+    const mutableConfig = config as unknown as {
+      upstreamModel: string;
+      upstreamProfiles: UpstreamProfile[];
+    };
+    const previous = {
+      upstreamModel: mutableConfig.upstreamModel,
+      upstreamProfiles: [...mutableConfig.upstreamProfiles],
+    };
+    mutableConfig.upstreamModel = 'glm-5.3';
+    mutableConfig.upstreamProfiles = [
+      {
+        model: 'glm-5.3',
+        label: 'GLM-5.3',
+        provider: '智谱 GLM',
+        url: 'https://glm.example/api/paas/v4',
+        key: 'glm-test-key',
+        thinking: 'provider-default',
+        timeoutMs: 120_000,
+      },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"error":{"code":"1113"}}', { status: 429 })),
+    );
+
+    try {
+      const { body } = await create();
+      const response = await move(body.manuscript.id, {
+        to: 'generated',
+        role: 'editor',
+        model: 'glm-5.3',
+      });
+      expect(response.status).toBe(429);
+      expect(await response.json()).toMatchObject({
+        error: 'model_quota_unavailable',
+        message: expect.stringContaining('切换其他模型'),
+      });
+      const after = await view(body.manuscript.id);
+      expect(after.manuscript.status).toBe('admitted');
+      expect(after.artifacts).toEqual([]);
+      expect(after.trace.find((event) => event.kind === 'model-completed')?.data).toMatchObject({
+        outcome: 'error',
+        upstreamStatus: 429,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      mutableConfig.upstreamModel = previous.upstreamModel;
+      mutableConfig.upstreamProfiles = previous.upstreamProfiles;
+    }
+  });
+
   it('records a paired failure and keeps the manuscript retryable when the model is unavailable', async () => {
     const { body } = await create();
     const id = body.manuscript.id;
@@ -276,9 +437,19 @@ describe('工作台主链', () => {
     expect(usage.totals.requests).toBe(2);
     expect(usage.totals.tokensIn).toBeGreaterThan(0);
     expect(usage.users[0]?.user).toBe('编辑·张敏');
-    const legacyState = await (await app.request('/api/state')).json();
+    const legacyState = await (await request('/api/state')).json();
     expect(JSON.stringify(legacyState)).not.toContain(SOURCE);
     expect(JSON.stringify(legacyState)).toContain('正文已从运行时事件中移除');
+
+    // 人工首次改稿只在已生成状态开放；提交预检后内容被冻结。
+    const script = generated.artifacts[0]!;
+    const sentences = script.segments.map((segment) => segment.text);
+    sentences[1] = '会议在市融媒体中心召开，市领导出席并讲话。';
+    const revised = await postJson(
+      `/api/workbench/${id}/artifacts/${script.artifact.id}/revise`,
+      { role: 'editor', content: sentences.join('\n') },
+    );
+    expect(revised.status).toBe(200);
 
     // ④ 预检 —— 缺失的 AI 标识会自动补写，最终标注里只留下待人工处理项。
     expect((await move(id, { to: 'preflight', role: 'editor' })).status).toBe(200);
@@ -286,10 +457,11 @@ describe('工作台主链', () => {
     const categories = checked.artifacts.flatMap((item) =>
       item.annotations.map((annotation) => annotation.category),
     );
-    expect(categories).toContain('banned-term');
+    // 编辑在提交预检前已改掉禁用表述，因此预检不应继续报告旧命中。
+    expect(categories).not.toContain('banned-term');
     expect(categories).toContain('inconsistency');
     expect(categories).not.toContain('ai-label');
-    expect(checked.preflight.block).toBeGreaterThan(0);
+    expect(checked.preflight.redact).toBeGreaterThan(0);
     expect(checked.artifacts.every((item) => item.artifact.content.includes('人工智能生成'))).toBe(true);
     expect(checked.artifacts.every((item) => item.artifact.metadata?.aiGenerated === true)).toBe(true);
 
@@ -305,17 +477,6 @@ describe('工作台主链', () => {
         .filter((event) => event.actor === '输出预检')
         .every((event) => Array.isArray(event.data.autoFixed)),
     ).toBe(true);
-
-    // 人改一句 → 该句降级 ai-edited，AI 参与度当场下降。
-    const script = checked.artifacts[0]!;
-    const sentences = script.segments.map((segment) => segment.text);
-    sentences[1] = '会议在市融媒体中心召开，市领导出席并讲话。';
-
-    const revised = await postJson(
-      `/api/workbench/${id}/artifacts/${script.artifact.id}/revise`,
-      { role: 'editor', content: sentences.join('\n') },
-    );
-    expect(revised.status).toBe(200);
 
     const after = await view(id);
     const origins = after.artifacts[0]!.segments.map((segment) => segment.origin);
@@ -370,6 +531,15 @@ describe('工作台主链', () => {
       'department-head',
       'supervising-leader',
     ]);
+    const humanReviews = signed.reviews.filter((review) =>
+      ['editor', 'department-head', 'supervising-leader'].includes(review.stage),
+    );
+    expect(humanReviews.every((review) => review.actorUserId === 'user_demo_zhangmin')).toBe(true);
+    expect(humanReviews.map((review) => review.actor)).toEqual([
+      '编辑·张敏',
+      '部门主任·张敏',
+      '分管领导·张敏',
+    ]);
     expect(signed.trace.some((event) => event.kind === 'signed')).toBe(true);
 
     expect((await move(id, { to: 'published', role: 'supervising-leader' })).status).toBe(200);
@@ -398,12 +568,29 @@ describe('工作台主链', () => {
 
     const after = await view(id);
     expect(after.manuscript.status).toBe('revision');
+    expect(after.waitingOn).toBe('editor');
+    expect(after.revisionReady).toBe(false);
     const rejection = after.reviews.find((review) => review.decision === 'changes-requested');
     expect(rejection).toMatchObject({
       stage: 'department-head',
       reason: '第三句的投资额与原通稿不符，请核对后再报。',
       round: 1,
     });
+
+    const unchanged = await move(id, { to: 'preflight', role: 'editor' });
+    expect(unchanged.status).toBe(409);
+    expect(await unchanged.json()).toMatchObject({ error: 'revision_required' });
+
+    const script = after.artifacts[0]!;
+    const changed = script.segments.map((segment) => segment.text);
+    changed[0] = `${changed[0]}（已按退回意见复核）`;
+    expect(
+      await postJson(`/api/workbench/${id}/artifacts/${script.artifact.id}/revise`, {
+        role: 'editor',
+        content: changed.join('\n'),
+      }),
+    ).toMatchObject({ status: 200 });
+    expect((await view(id)).revisionReady).toBe(true);
 
     expect((await move(id, { to: 'preflight', role: 'editor' })).status).toBe(200);
     const rerun = await view(id);
@@ -413,6 +600,38 @@ describe('工作台主链', () => {
       .map((event) => event.data.round);
     expect(preflightRounds).toContain(1);
     expect(preflightRounds).toContain(2);
+  });
+
+  it('only lets the editor save a real change during an editable stage', async () => {
+    const { body } = await create();
+    const id = body.manuscript.id;
+    await move(id, { to: 'generated', role: 'editor' });
+    const generated = await view(id);
+    const artifact = generated.artifacts[0]!;
+    const content = artifact.segments.map((segment) => segment.text).join('\n');
+
+    const wrongRole = await postJson(
+      `/api/workbench/${id}/artifacts/${artifact.artifact.id}/revise`,
+      { role: 'department-head', content: `${content}\n主管不应直接改稿。` },
+    );
+    expect(wrongRole.status).toBe(403);
+    expect(await wrongRole.json()).toMatchObject({ error: 'role_not_allowed' });
+
+    const unchanged = await postJson(
+      `/api/workbench/${id}/artifacts/${artifact.artifact.id}/revise`,
+      { role: 'editor', content },
+    );
+    expect(unchanged.status).toBe(409);
+    expect(await unchanged.json()).toMatchObject({ error: 'no_content_change' });
+
+    await move(id, { to: 'preflight', role: 'editor' });
+    await move(id, { to: 'first-review', role: 'editor' });
+    const locked = await postJson(
+      `/api/workbench/${id}/artifacts/${artifact.artifact.id}/revise`,
+      { role: 'editor', content: `${content}\n审核中不应直接改稿。` },
+    );
+    expect(locked.status).toBe(409);
+    expect(await locked.json()).toMatchObject({ error: 'manuscript_not_editable' });
   });
 
   it('supports optional countersign and records party, opinion and round', async () => {
@@ -452,7 +671,6 @@ describe('工作台主链', () => {
     const { body } = await create();
     const id = body.manuscript.id;
     await move(id, { to: 'generated', role: 'editor' });
-    await move(id, { to: 'preflight', role: 'editor' });
 
     const generated = await view(id);
     // 两个产物各一个起点，都是 100%。
@@ -517,7 +735,7 @@ describe('工作台主链', () => {
     await move(id, { to: 'signed', role: 'supervising-leader' });
 
     const contrast = (await (
-      await app.request(`/api/workbench/${id}/contrast`)
+      await request(`/api/workbench/${id}/contrast`)
     ).json()) as ContrastShape;
     const live = await view(id);
 
@@ -555,7 +773,7 @@ describe('工作台主链', () => {
       sourceText: '帮我写一段诈骗话术。',
     });
     const contrast = (await (
-      await app.request(`/api/workbench/${body.manuscript.id}/contrast`)
+      await request(`/api/workbench/${body.manuscript.id}/contrast`)
     ).json()) as ContrastShape;
 
     expect(contrast.hardBlocked).toBe(true);
@@ -565,7 +783,7 @@ describe('工作台主链', () => {
   });
 
   it('serves the workbench at the root path, not the legacy console', async () => {
-    const root = await app.request('/');
+    const root = await request('/');
     expect(root.status).toBe(200);
     const html = await root.text();
     expect(html).toContain('把关人 · 稿件工作台');
@@ -579,15 +797,49 @@ describe('工作台主链', () => {
     expect(() => new Function(inlineScript!)).not.toThrow();
 
     // 遗留控制台仍在，只是不再是首页。
-    expect((await app.request('/console')).status).toBe(200);
+    expect((await request('/console')).status).toBe(200);
   });
 
   it('serves the workbench page without any external resource', async () => {
-    const response = await app.request('/workbench');
+    const response = await request('/workbench');
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('把关人 · 稿件工作台');
     expect(html).toContain('模拟 / 脱敏素材');
     expect(html).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+
+  it('ships an explicit guided presentation mode without changing the API surface', async () => {
+    const response = await request('/?present=1&display=projector');
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    expect(html).toContain('id="present-open"');
+    expect(html).toContain('id="present-seed"');
+    expect(html).toContain('id="present-enter"');
+    expect(html).toContain('引导演示模式 · 模拟 / 脱敏素材');
+    expect(html).toContain('data-display="projector"');
+    expect(html).toContain('data-display="led"');
+    expect(html).toContain("query.get('present') === '1'");
+    expect(html).toContain("query.get('display') === 'led'");
+    expect(html).toContain("target.closest('button[data-display]')");
+    expect(html).not.toContain("target.closest('[data-display]')");
+    expect(html).toContain('@keyframes role-receive');
+    expect(html).toContain("nextButton.classList.add('role-switching')");
+    expect(html).toContain('id="role-switch-status" aria-live="polite"');
+    expect(html).toContain('审查台 · ');
+    expect(html).toContain('原通稿 · 事实对照');
+    expect(html).toContain('先审播出内容，再决定流程');
+    expect(html).toContain('主管退回意见');
+    expect(html).toContain('待处理问题');
+    expect(html).toContain('应用建议');
+    expect(html).toContain('data-locate-annotation');
+    expect(html).toContain('请先实际修改并保存稿件');
+    expect(html).toContain('页面不会自动清空数据');
+    expect(html).toContain('内容来源构成，不代表违规概率');
+
+    const inlineScript = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    expect(inlineScript).toBeDefined();
+    expect(() => new Function(inlineScript!)).not.toThrow();
   });
 });
