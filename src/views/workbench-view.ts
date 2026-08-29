@@ -2691,10 +2691,20 @@ export function renderWorkbench(): string {
     events.addEventListener('manuscript', function () { loadList(); });
   } catch (error) { /* SSE is a nicety; the page works without it */ }
 
+  // 监控看板按 /workbench#<id> 下钻到具体稿件（6.16）。
+  function openFromHash() {
+    var id = (window.location.hash || '').replace(/^#/, '');
+    if (!id) return false;
+    openManuscript(id).catch(function () { render(); });
+    return true;
+  }
+  window.addEventListener('hashchange', openFromHash);
+
   api('/api/auth/me').then(function (data) {
     applyUser(data.user);
     return Promise.all([loadDemoFixtures(), loadList(), loadModels()]);
   }).then(function () {
+    if (openFromHash()) return undefined;
     if (state.present && state.presentationMainId) return openManuscript(state.presentationMainId);
     render();
   }).catch(function () { render(); });

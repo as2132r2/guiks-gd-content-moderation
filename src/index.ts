@@ -12,6 +12,7 @@ import { eventsRoutes, requireAuditRead } from './routes/events.js';
 import { gatewayRoutes } from './routes/gateway.js';
 import { monitorRoutes } from './routes/monitor.js';
 import { manuscriptRoutes } from './routes/manuscripts.js';
+import { oversightRoutes } from './routes/oversight.js';
 import { policyRoutes } from './routes/policy.js';
 import { redteamRoutes } from './routes/redteam.js';
 import { reportRoutes } from './routes/report.js';
@@ -87,6 +88,7 @@ app.route('/', gatewayRoutes);
 app.route('/', manuscriptRoutes);
 app.route('/', authRoutes);
 app.route('/', workbenchRoutes);
+app.route('/', oversightRoutes);
 // 清空整库的端点不该存在于生产构建里。
 if (config.appMode === 'demo') {
   app.route('/', demoRoutes);
