@@ -214,4 +214,71 @@ describe('production authentication boundary', () => {
       rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
+  it('promotes the persisted demo accounts on the next seed, keeping the 责任链 attributable', async () => {
+    // 上一条证明 demo 账号在生产下登不进去。**播种怎么收拾它们**是另一件事：
+    // 删掉重建会换掉 users.id，留痕的 actor_user_id 是 ON DELETE SET NULL，
+    // 监控看板「内容生产者」那一栏当场把这个人做过的事全塌成「（无署名）」。
+    // 换个部署模式不该让历史归并掉一块，所以走的是就地转正。
+    const directory = mkdtempSync(join(tmpdir(), 'gatekeeper-promote-'));
+    const databasePath = join(directory, 'app.db');
+    let demoUserId: string;
+    try {
+      vi.resetModules();
+      vi.stubEnv('APP_MODE', 'demo');
+      vi.stubEnv('DATABASE_PATH', databasePath);
+      vi.stubEnv('SEED_DEMO_USERS', 'true');
+      vi.stubEnv('SESSION_SECRET', strongSecret());
+      const demoRepositoryModule = await import('../src/db/repository.js');
+      const demoRepository = demoRepositoryModule.getWorkflowRepository();
+      const author = demoRepository.findStoredUserByUsername('zhangmin')!;
+      demoUserId = author.id;
+      const manuscript = demoRepository.createManuscript(
+        {
+          title: '全市乡村振兴现场推进会召开',
+          sourceType: 'public-relations',
+          sourceText: '模拟 / 脱敏素材。',
+        },
+        { label: '张敏 · 编辑', userId: author.id },
+      );
+      demoRepository.appendTrace(manuscript.id, {
+        kind: 'review-recorded',
+        actorType: 'human',
+        actor: '张敏 · 编辑',
+        actorUserId: author.id,
+      });
+      demoRepositoryModule.closeWorkflowRepository();
+
+      vi.resetModules();
+      vi.stubEnv('APP_MODE', 'production');
+      vi.stubEnv('ALLOW_MOCK_UPSTREAM', 'true');
+      vi.stubEnv('DATABASE_PATH', databasePath);
+      vi.stubEnv('SEED_DEMO_USERS', 'false');
+      vi.stubEnv('SESSION_SECRET', strongSecret());
+      vi.stubEnv('GATEWAY_TOKEN', strongSecret());
+      const [repositoryModule, { ensureAccounts }] = await Promise.all([
+        import('../src/db/repository.js'),
+        import('../src/seed-demo.js'),
+      ]);
+      const repository = repositoryModule.getWorkflowRepository();
+      try {
+        const outcome = ensureAccounts('gatekeeper-demo');
+        expect(outcome.promoted).toBe(4);
+
+        const promoted = repository.findStoredUserByUsername('zhangmin')!;
+        expect(promoted.id, '转正换掉了 user id，历史就断了').toBe(demoUserId);
+        expect(promoted.isDemo).toBe(false);
+        expect(repository.hasEnabledProductionUser()).toBe(true);
+
+        // 稿件还在，而且看板仍然认得出是谁干的。
+        expect(repository.listManuscriptTitles()).toContain('全市乡村振兴现场推进会召开');
+        const attributed = repository.oversight().producers.map((row) => row.displayName);
+        expect(attributed).toContain('张敏');
+        expect(attributed).not.toContain('（无署名）');
+      } finally {
+        repositoryModule.closeWorkflowRepository();
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
 });

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createDatabase, type DatabaseHandle } from '../src/db/client.js';
 import { migrations, migrateDatabase } from '../src/db/migrations.js';
+import { buildOversight } from '../src/db/oversight.js';
 import { WorkflowRepository } from '../src/db/repository.js';
 import { verifyPassword } from '../src/domain/auth.js';
 
@@ -117,5 +118,90 @@ describe('track C migration and account repository', () => {
         roles: ['unknown' as never],
       }),
     ).toThrow('roles');
+  });
+});
+
+describe('demo 账号转正', () => {
+  let database: DatabaseHandle | undefined;
+  afterEach(() => database?.close());
+
+  const promotable = () => {
+    database = createDatabase(':memory:');
+    const repository = new WorkflowRepository(database);
+    repository.ensureDemoUsers();
+    return repository;
+  };
+
+  const input = {
+    username: 'zhangmin',
+    displayName: '张敏',
+    password: 'gatekeeper-demo',
+    roles: ['editor' as const, 'department-head' as const, 'supervising-leader' as const],
+  };
+
+  it('keeps the user id, so nothing that points at it goes dangling', async () => {
+    const repository = promotable();
+    const before = repository.findStoredUserByUsername('zhangmin')!;
+    const after = repository.promoteDemoUserToProduction(input);
+
+    expect(after.id).toBe(before.id);
+    expect(after.isDemo).toBe(false);
+    expect(repository.hasEnabledProductionUser()).toBe(true);
+    // 会话版本加一：demo 模式下签发的 cookie 不该跨到生产继续用。
+    expect(after.sessionVersion).toBe(before.sessionVersion + 1);
+    const stored = repository.findStoredUserByUsername('zhangmin')!;
+    expect(stored.passwordHash).not.toBe(before.passwordHash);
+    expect(await verifyPassword('gatekeeper-demo', stored.passwordHash)).toBe(true);
+  });
+
+  it('carries the whole 责任链 across the switch, which deleting the account would not', () => {
+    // 这条是这次改动存在的全部理由。删账号重建会把 actor_user_id 置空
+    //（ON DELETE SET NULL），监控看板「内容生产者」那一栏就把这个人做过的
+    // 事全塌进「（无署名）」——换个部署模式不该让历史归并掉一块。
+    const repository = promotable();
+    const author = repository.findStoredUserByUsername('zhangmin')!;
+    const manuscript = repository.createManuscript(
+      { title: '全市乡村振兴现场推进会召开', sourceType: 'public-relations', sourceText: '模拟素材。' },
+      { label: '张敏 · 编辑', userId: author.id },
+    );
+    repository.appendTrace(manuscript.id, {
+      kind: 'review-recorded',
+      actorType: 'human',
+      actor: '张敏 · 编辑',
+      actorUserId: author.id,
+    });
+
+    const attributed = () =>
+      buildOversight(database!.sqlite).producers.map((row) => row.displayName);
+    expect(attributed()).toContain('张敏');
+
+    repository.promoteDemoUserToProduction(input);
+    expect(attributed()).toContain('张敏');
+    expect(attributed()).not.toContain('（无署名）');
+
+    // 对照：删掉账号就是旧做法的结果，那一栏当场塌掉。
+    repository.deleteUserByUsername('zhangmin');
+    expect(attributed()).toEqual(['（无署名）']);
+  });
+
+  it('refuses anything that is not a demo account waiting to be promoted', () => {
+    const repository = promotable();
+    expect(() =>
+      repository.promoteDemoUserToProduction({ ...input, username: 'nobody' }),
+    ).toThrow('not found');
+    repository.promoteDemoUserToProduction(input);
+    expect(() => repository.promoteDemoUserToProduction(input)).toThrow('already a production');
+  });
+
+  it('validates its input exactly like provisioning does', () => {
+    const repository = promotable();
+    expect(() => repository.promoteDemoUserToProduction({ ...input, password: 'short' })).toThrow(
+      'password',
+    );
+    expect(() =>
+      repository.promoteDemoUserToProduction({ ...input, roles: ['unknown' as never] }),
+    ).toThrow('roles');
+    // 校验失败不能留下半个改动。
+    expect(repository.findStoredUserByUsername('zhangmin')!.isDemo).toBe(true);
   });
 });

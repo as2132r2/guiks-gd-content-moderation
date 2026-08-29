@@ -338,6 +338,35 @@ export type CommitCanonicalTransitionResult =
   | { outcome: 'status-conflict'; manuscript: Manuscript }
   | { outcome: 'review-conflict'; review: ReviewRecord };
 
+interface AccountInput {
+  username: string;
+  displayName: string;
+  password: string;
+  roles: SystemRole[];
+}
+
+/** 建号与转正共用一套入参校验——两条路进同一张表，规矩不能有两套。 */
+function validateAccountInput(input: AccountInput): {
+  username: string;
+  displayName: string;
+  roles: SystemRole[];
+} {
+  const username = input.username.trim().toLowerCase();
+  const displayName = input.displayName.trim();
+  if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) {
+    throw new Error('username must be 3-64 lowercase letters, digits, dot, underscore or hyphen');
+  }
+  if (displayName.length === 0 || displayName.length > 100) {
+    throw new Error('display name must be 1-100 characters');
+  }
+  if (input.password.length < 12) throw new Error('password must be at least 12 characters');
+  const roles = parseRolesJson(JSON.stringify(input.roles));
+  if (!roles || roles.length !== input.roles.length) {
+    throw new Error('roles must be a non-empty, duplicate-free list of system roles');
+  }
+  return { username, displayName, roles };
+}
+
 export class WorkflowRepository {
   constructor(private readonly database: DatabaseHandle) {
     this.reconcileInterruptedModelCalls();
@@ -467,25 +496,8 @@ export class WorkflowRepository {
     }
   }
 
-  provisionProductionUser(input: {
-    username: string;
-    displayName: string;
-    password: string;
-    roles: SystemRole[];
-  }): UserAccount {
-    const username = input.username.trim().toLowerCase();
-    const displayName = input.displayName.trim();
-    if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) {
-      throw new Error('username must be 3-64 lowercase letters, digits, dot, underscore or hyphen');
-    }
-    if (displayName.length === 0 || displayName.length > 100) {
-      throw new Error('display name must be 1-100 characters');
-    }
-    if (input.password.length < 12) throw new Error('password must be at least 12 characters');
-    const roles = parseRolesJson(JSON.stringify(input.roles));
-    if (!roles || roles.length !== input.roles.length) {
-      throw new Error('roles must be a non-empty, duplicate-free list of system roles');
-    }
+  provisionProductionUser(input: AccountInput): UserAccount {
+    const { username, displayName, roles } = validateAccountInput(input);
     if (this.findStoredUserByUsername(username)) throw new Error('username already exists');
 
     const now = Date.now();
@@ -506,6 +518,39 @@ export class WorkflowRepository {
       })
       .run();
     return this.findUserById(id)!;
+  }
+
+  /**
+   * 把一个 demo 账号原地转成生产账号。**保留 `users.id`。**
+   *
+   * 为什么不是「删掉重建」：留痕与审核记录的 `actor_user_id` 是
+   * `ON DELETE SET NULL`（[schema.ts](schema.ts)）。账号一删，监控看板
+   * 「内容生产者」那一栏就把这个人做过的全部工作塌进「（无署名）」一行
+   * （[oversight.ts](oversight.ts)）。**换个部署模式不该让历史归并掉一块**——
+   * 这套系统卖的就是出了事说得清，切一次模式就说不清了，说不过去。
+   *
+   * `sessionVersion` 加一：demo 模式下签发的会话不该跨到生产继续用。
+   * `disabled` 原样保留——管理员停用过的账号，不该因为转正就悄悄启用。
+   */
+  promoteDemoUserToProduction(input: AccountInput): UserAccount {
+    const { username, displayName, roles } = validateAccountInput(input);
+    const existing = this.findStoredUserByUsername(username);
+    if (!existing) throw new Error('username not found');
+    if (!existing.isDemo) throw new Error('user is already a production account');
+
+    this.database.orm
+      .update(users)
+      .set({
+        displayName,
+        passwordHash: hashPassword(input.password),
+        rolesJson: JSON.stringify(roles),
+        isDemo: false,
+        sessionVersion: existing.sessionVersion + 1,
+        updatedAt: Date.now(),
+      })
+      .where(eq(users.id, existing.id))
+      .run();
+    return this.findUserById(existing.id)!;
   }
 
   hasEnabledProductionUser(): boolean {
@@ -1430,8 +1475,13 @@ export class WorkflowRepository {
   /**
    * 删除一个账号，返回是否真的删掉了。只给清理脚本用。
    *
-   * 留痕里的 `actor_user_id` 是 `ON DELETE SET NULL`，所以删人不会带走历史——
-   * 那条记录会显示「（无署名）」而不是消失。**责任链不能因为账号注销就断掉。**
+   * 留痕里的 `actor_user_id` 是 `ON DELETE SET NULL`，所以删人不会带走历史。
+   * 单篇稿件的责任链读的是留痕里的人名文本（`actor`，`NOT NULL`），**账号注销
+   * 也照样显示是谁放行的**；掉的是监控看板「内容生产者」那一栏的按人归并，
+   * 它按 `actor_user_id` 分组，置空后塌进「（无署名）」一行。
+   *
+   * 换句话说：注销一个账号，说得清「这篇稿子谁签的」，说不清「这个人一共干了
+   * 多少」。切部署模式不该付这个代价——那条路走 `promoteDemoUserToProduction`。
    */
   deleteUserByUsername(username: string): boolean {
     const result = this.database.orm

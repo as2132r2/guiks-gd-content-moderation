@@ -75,8 +75,8 @@ type Caller = ReturnType<typeof callerFor>;
 export interface AccountOutcome {
   created: number;
   existing: number;
-  /** 被 demo 账号占了名字、已重建的。 */
-  replaced: number;
+  /** 原本是 demo 账号、已就地转正的。 */
+  promoted: number;
 }
 
 /**
@@ -86,32 +86,37 @@ export interface AccountOutcome {
  * `ensureDemoUsers()` 就会用同样的用户名建出 `is_demo=1` 的账号；而生产登录
  * 明确拒绝 demo 账号（[auth.ts](routes/auth.ts)）。跳过它们的话，播种会在
  * 后面登录时挂掉，还报「用户名或密码不正确」——错得让人查不到方向。
- * 所以在生产模式下直接重建：一个登不进去的账号留着没有意义。
+ *
+ * 所以生产模式下把它们**就地转正**，而不是删掉重建。删了重建会换掉
+ * `users.id`，留痕的 `actor_user_id` 是 `ON DELETE SET NULL`——库里已有的
+ * 稿件会在监控看板「内容生产者」那一栏集体塌成「（无署名）」。
+ * **切一次部署模式不该让历史归并掉一块。**
  */
-function ensureAccounts(password: string): AccountOutcome {
+export function ensureAccounts(password: string): AccountOutcome {
   const repository = getWorkflowRepository();
-  const outcome: AccountOutcome = { created: 0, existing: 0, replaced: 0 };
+  const outcome: AccountOutcome = { created: 0, existing: 0, promoted: 0 };
 
   for (const account of SEED_ACCOUNTS) {
     const stored = repository.findStoredUserByUsername(account.username);
     const unusableHere = stored && config.appMode === 'production' && stored.isDemo;
+    const input = {
+      username: account.username,
+      displayName: account.displayName,
+      password,
+      roles: account.roles,
+    };
 
     if (stored && !unusableHere) {
       outcome.existing += 1;
       continue;
     }
     if (unusableHere) {
-      repository.deleteUserByUsername(account.username);
-      outcome.replaced += 1;
-    } else {
-      outcome.created += 1;
+      repository.promoteDemoUserToProduction(input);
+      outcome.promoted += 1;
+      continue;
     }
-    repository.provisionProductionUser({
-      username: account.username,
-      displayName: account.displayName,
-      password,
-      roles: account.roles,
-    });
+    repository.provisionProductionUser(input);
+    outcome.created += 1;
   }
   return outcome;
 }
@@ -224,7 +229,9 @@ export async function seedDemoData(password: string): Promise<void> {
   const accounts = ensureAccounts(password);
   log(
     `账号：新建 ${accounts.created}，已存在 ${accounts.existing}` +
-      (accounts.replaced > 0 ? `，重建 ${accounts.replaced}（原为 demo 账号，生产下登不进去）` : ''),
+      (accounts.promoted > 0
+        ? `，转正 ${accounts.promoted}（原为 demo 账号，保留 user id 与历史归并）`
+        : ''),
   );
 
   const repository = getWorkflowRepository();
