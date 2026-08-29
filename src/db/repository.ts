@@ -37,6 +37,7 @@ import {
 } from '../domain/review-decision.js';
 import { config } from '../config.js';
 import { createDatabase, type DatabaseHandle } from './client.js';
+import { buildOversight, type OversightSnapshot } from './oversight.js';
 import {
   admissionResults,
   contentArtifacts,
@@ -1395,6 +1396,11 @@ export class WorkflowRepository {
     });
 
     return before.n;
+  }
+
+  /** 跨稿件聚合（6.14）。SQL 在 [oversight.ts](oversight.ts)，这里只开一个口子。 */
+  oversight(): OversightSnapshot {
+    return buildOversight(this.database.sqlite);
   }
 
   close(): void {
