@@ -238,23 +238,23 @@ ${themeBootstrap}<style>${themeStyles}
     <h2 class="hd">为什么是因果，不是并列</h2>
     <div class="because">
       <div class="step">
-        <span class="k">01 · 提速</span>
-        <h3>一天五篇变成一天五十篇</h3>
-        <p>AI 让稿件生产提速十倍。台里原来一天五篇，三审审得过来。</p>
+        <span class="k">01 · 责任</span>
+        <h3>模型不签字，人签字</h3>
+        <p>稿子署的是编辑的名，终审栏签的是分管领导的名。出了差错，追的是这两个人。</p>
       </div>
       <div class="step">
-        <span class="k">02 · 瓶颈</span>
-        <h3>审核当场成瓶颈</h3>
-        <p>三审三校还是那几个人。要么卡死，AI 白提速；要么放水，出播出差错。</p>
+        <span class="k">02 · 所以</span>
+        <h3>不能让 AI 信马由缰</h3>
+        <p>责任在人身上，就不能由着 AI 乱写。说不清哪句是谁的，签字的人只能不签——AI 白装了。</p>
       </div>
       <div class="step">
-        <span class="k">03 · 所以</span>
-        <h3>机械校对自动化，判断留给人</h3>
-        <p>每一步留痕。审核跟得上生产的速度，提速出来的产能才真的能发出去。</p>
+        <span class="k">03 · 于是</span>
+        <h3>准入防滥用，预检与三审保合规，留痕定责任</h3>
+        <p>入口先判这次调用该不该发生；出口逐项核事实、过三审；每一句记下是 AI 写的还是人改的。</p>
       </div>
     </div>
     <p class="claim">
-      监控不是额外加的一层成本，是<strong>产能释放的前提</strong>——拆掉它，AI 提速这件事不成立。
+      监管和审核不是给 AI 上的枷锁，是<strong>把责任落回人头上</strong>——责任说得清，AI 才敢放开用。
     </p>
   </section>
 
