@@ -16,6 +16,7 @@
 | `UPSTREAM_KEY` | | 真实模型凭据 |
 | `UPSTREAM_MODEL` | | 默认 `GLM-5.2` |
 | `SEED_PASSWORD` | | 播种账号的口令，默认 `gatekeeper-demo`。**对外试用建议保持默认**，手册里写的就是它 |
+| `ALLOW_INSECURE_COOKIE` | | **纯 HTTP 部署必须设 `true`**，否则浏览器登不进去，见第七节。上了 HTTPS 就去掉 |
 
 生成合规密钥：
 
@@ -209,14 +210,23 @@ node -e "console.log('base64:'+require('crypto').randomBytes(32).toString('base6
 sudoedit /etc/guiks-gd-content-moderation/app.env
 ```
 
-改这四项，其余（模型档、DATABASE_PATH、PORT）不动：
+改这几项，其余（模型档、DATABASE_PATH、PORT）不动：
 
 ```
 APP_MODE=production
 ALLOW_MOCK_UPSTREAM=false
 SESSION_SECRET=base64:...        # 第 1 步生成的第一个
 GATEWAY_TOKEN=base64:...         # 第 1 步生成的第二个，必须与上一行不同
+ALLOW_INSECURE_COOKIE=true       # 仅当站点还是纯 HTTP；上了 HTTPS 就去掉
 ```
+
+> ⚠️ **纯 HTTP 部署一定要加最后一行。** `production` 默认给会话 cookie 打 `Secure`，
+> 而浏览器会丢弃 http:// 下收到的 `Secure` cookie——登录接口返 200、`Set-Cookie`
+> 也发了，人就是进不去，还会被转回登录页。**`curl` 不理会这个标志**，所以命令行
+> 验收全绿也说明不了问题，这一条只能在浏览器里验。
+>
+> 关掉它不比原来更弱：站点本来就是明文，会话在传输中已经暴露，`Secure` 在这种
+> 部署下提供不了任何保护。**真正要做的是上 HTTPS**，之后把这一行删掉。
 
 ```bash
 # 3. 重启
@@ -322,7 +332,8 @@ for p in /policy /runtime /report /target/info /api/usage; do
 done
 ```
 
-然后用 `zhangmin` / `gatekeeper-demo` 登一次，看三件事：
+**然后必须用浏览器真的登一次**，不能只看 curl——上面那条 `Secure` cookie 的坑
+只在浏览器里出现。登进去看三件事：
 
 1. **左栏稿件数和切换前一样**——切换不删数据，少一篇就是出事了
 2. **`/monitor` 的「内容生产者」还是原来那几个人**，没有多出「（无署名）」一行；
@@ -410,6 +421,7 @@ sudo -u guiks node "$(readlink -f /opt/guiks-gd-content-moderation/current)/dist
 | 症状 | 原因 | 处置 |
 | --- | --- | --- |
 | 登录返 503 `authentication_unavailable` | `SESSION_SECRET` 不合规 | 按第一节重新生成，必须带 `base64:` 前缀 |
+| **接口返 200、`Set-Cookie` 也发了，浏览器就是登不进去**（转回登录页） | 站点是纯 HTTP，而 `production` 默认给会话 cookie 打 `Secure`，**浏览器直接丢弃** | `app.env` 加 `ALLOW_INSECURE_COOKIE=true` 重启。**curl 不理会 `Secure`**，所以命令行怎么试都是通的——只能在浏览器里复现 |
 | `/readyz` 返 503，`checks.model` 是 `missing` | 未配模型且未允许 mock | 配 `UPSTREAM_URL`，或设 `ALLOW_MOCK_UPSTREAM=true` |
 | `/readyz` 返 503，`checks.account` 是 `missing` | 生产库里还没有启用的非 demo 账号 | 跑一次播种，或 `provision:user` 建一个。**在 demo 下播种过的库不会出现这条**（`chenxue` 本就是生产账号）；从没播过的库在切模式到播种之间会有这个窗口，是正常中间态，别回滚，见第五节 |
 | 播种报 `requires a persistent DATABASE_PATH` | 落到了 `:memory:` | 显式设 `DATABASE_PATH` |

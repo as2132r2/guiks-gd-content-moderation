@@ -128,6 +128,13 @@ if (isMain) {
       `guiks-gd-content-moderation → http://localhost:${info.port}  ` +
         `[上游模型: ${listUpstreamModels().map((item) => item.id).join(', ')}]`,
     );
+    if (config.appMode === 'production' && !config.cookieSecure) {
+      // 明确说一次。这是为纯 HTTP 部署开的口子，上了 HTTPS 就该关掉。
+      // eslint-disable-next-line no-console
+      console.warn(
+        '  ⚠ ALLOW_INSECURE_COOKIE=true：会话 cookie 不带 Secure，仅适用于纯 HTTP 部署。上 HTTPS 后请去掉这一项。',
+      );
+    }
     },
   );
 

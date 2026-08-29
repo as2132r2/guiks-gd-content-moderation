@@ -282,3 +282,54 @@ describe('production authentication boundary', () => {
     }
   });
 });
+
+describe('会话 cookie 在纯 HTTP 部署下', () => {
+  // 线上真出过这个故障：切到 production 后 cookie 带 Secure，站点是纯 HTTP，
+  // 浏览器直接丢弃——接口返 200、Set-Cookie 也发了，人就是登不进去。
+  // **curl 不理会 Secure**，所以命令行验收全绿，故障只在浏览器里出现。
+  // 这一条断言的是接线（config → session.ts），不是那个纯函数。
+  const loginCookieHeader = async (allowInsecure: boolean): Promise<string> => {
+    vi.resetModules();
+    vi.stubEnv('APP_MODE', 'production');
+    vi.stubEnv('ALLOW_MOCK_UPSTREAM', 'true');
+    vi.stubEnv('DATABASE_PATH', ':memory:');
+    vi.stubEnv('SEED_DEMO_USERS', 'false');
+    vi.stubEnv('SESSION_SECRET', strongSecret());
+    vi.stubEnv('GATEWAY_TOKEN', strongSecret());
+    if (allowInsecure) vi.stubEnv('ALLOW_INSECURE_COOKIE', 'true');
+
+    const [{ app }, repositoryModule] = await Promise.all([
+      import('../src/index.js'),
+      import('../src/db/repository.js'),
+    ]);
+    try {
+      repositoryModule.getWorkflowRepository().provisionProductionUser({
+        username: 'cookie-probe',
+        displayName: '登录探测',
+        password: 'production-password',
+        roles: ['editor'],
+      });
+      const login = await app.request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'cookie-probe', password: 'production-password' }),
+      });
+      expect(login.status).toBe(200);
+      return login.headers.get('set-cookie') ?? '';
+    } finally {
+      repositoryModule.closeWorkflowRepository();
+    }
+  };
+
+  it('marks the cookie Secure by default, for a deployment behind HTTPS', async () => {
+    expect(await loginCookieHeader(false)).toContain('Secure');
+  });
+
+  it('drops Secure when the deployment is HTTP-only, or nobody can log in at all', async () => {
+    const header = await loginCookieHeader(true);
+    expect(header).not.toContain('Secure');
+    // 其余保护不受影响——放弃的只有 Secure 这一条。
+    expect(header).toContain('HttpOnly');
+    expect(header).toContain('SameSite=Lax');
+  });
+});
