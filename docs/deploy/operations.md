@@ -15,6 +15,7 @@
 | `UPSTREAM_URL` | | 留空 = 走内置确定性 mock（零 Key 可跑）。填真实 base_url 才代理真模型 |
 | `UPSTREAM_KEY` | | 真实模型凭据 |
 | `UPSTREAM_MODEL` | | 默认 `GLM-5.2` |
+| `UPSTREAM_REASONING_EFFORT` | | 单模型配置下的思考强度 `low`/`medium`/`high`/`max`；多模型用配置档里的 `reasoningEffort`。**GLM-5.3 系列强烈建议 `low`**，见下 |
 | `SEED_PASSWORD` | | 播种账号的口令，默认 `gatekeeper-demo`。**对外试用建议保持默认**，手册里写的就是它 |
 | `ALLOW_INSECURE_COOKIE` | | **纯 HTTP 部署必须设 `true`**，否则浏览器登不进去，见第七节。上了 HTTPS 就去掉 |
 
@@ -28,6 +29,29 @@ node -e "console.log('base64:' + require('crypto').randomBytes(32).toString('bas
 
 > **为什么这么严**：`production` 下弱密钥会被 `config.ts` 判定为未就绪并拒绝登录。
 > 这是有意的——会话密钥弱等于没有鉴权。
+
+### GLM-5.3 系列必须配 `reasoningEffort: "low"`
+
+GLM-5.3 与 GLM-5.3-Flash **拒绝关闭思考**（返回 `1210: 该模型始终思考，不支持关闭
+思考`），`thinking:{type:"disabled"}` 和 `thinking:{type:"low"}` 都被拒。能压住它的
+是平级的 `reasoning_effort`。线上实测，同一份通稿改写任务：
+
+| 设置 | 单次耗时 | 正文 | 思考链 |
+| --- | --- | --- | --- |
+| 不配（provider-default） | **16–62 秒** | ~200 字 | 4千–1.6万字 |
+| `reasoningEffort: "low"` | **2.1 秒** | 192 字 | 33 字 |
+
+正文长度和质量没有下降，省下的全是思考链——**那部分既拖垮响应，也照样计费**。
+
+不配的后果不只是慢：思考链长度不可预测（同一个模型 4千字 → 1.6万字，耗时差 3 倍），
+所以任何超时值都会时不时被撞穿，表现为编辑点下生成后随机收到
+「模型暂时不可用」。**这不是调大超时能解决的问题，要调的是这个参数。**
+
+配置档写法（`UPSTREAM_PROFILES_JSON` 里对应那一档加一个字段）：
+
+```
+{"model":"glm-5.3","url":"...","key":"...","thinking":"provider-default","reasoningEffort":"low","timeoutMs":30000}
+```
 
 ## 二、部署
 
@@ -421,6 +445,7 @@ sudo -u guiks node "$(readlink -f /opt/guiks-gd-content-moderation/current)/dist
 | 症状 | 原因 | 处置 |
 | --- | --- | --- |
 | 登录返 503 `authentication_unavailable` | `SESSION_SECRET` 不合规 | 按第一节重新生成，必须带 `base64:` 前缀 |
+| 生成时随机报「模型暂时不可用，稿件状态未推进」，换个模型就好 | GLM-5.3 系列没配 `reasoningEffort`，思考链长度不可预测，撞穿了超时 | 给该配置档加 `"reasoningEffort":"low"`，见第一节。调大超时只是把失败换成干等 |
 | **接口返 200、`Set-Cookie` 也发了，浏览器就是登不进去**（转回登录页） | 站点是纯 HTTP，而 `production` 默认给会话 cookie 打 `Secure`，**浏览器直接丢弃** | `app.env` 加 `ALLOW_INSECURE_COOKIE=true` 重启。**curl 不理会 `Secure`**，所以命令行怎么试都是通的——只能在浏览器里复现 |
 | `/readyz` 返 503，`checks.model` 是 `missing` | 未配模型且未允许 mock | 配 `UPSTREAM_URL`，或设 `ALLOW_MOCK_UPSTREAM=true` |
 | `/readyz` 返 503，`checks.account` 是 `missing` | 生产库里还没有启用的非 demo 账号 | 跑一次播种，或 `provision:user` 建一个。**在 demo 下播种过的库不会出现这条**（`chenxue` 本就是生产账号）；从没播过的库在切模式到播种之间会有这个窗口，是正常中间态，别回滚，见第五节 |

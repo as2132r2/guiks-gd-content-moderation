@@ -116,7 +116,33 @@ function upstreamThinkingEnv(): 'provider-default' | 'enabled' | 'disabled' {
   throw new Error('UPSTREAM_THINKING must be provider-default, enabled or disabled');
 }
 
+function upstreamReasoningEffortEnv(): ReasoningEffort | undefined {
+  const value = process.env.UPSTREAM_REASONING_EFFORT?.trim().toLowerCase();
+  if (!value) return undefined;
+  if (REASONING_EFFORTS.includes(value)) return value as ReasoningEffort;
+  throw new Error(`UPSTREAM_REASONING_EFFORT must be ${REASONING_EFFORTS.join(', ')}`);
+}
+
 export type UpstreamThinking = 'provider-default' | 'enabled' | 'disabled';
+
+/**
+ * 思考强度（OpenAI 兼容的 `reasoning_effort`）。
+ *
+ * **和 `thinking` 不是一回事，也不能互相替代。** GLM-5.3 系列拒绝关闭思考
+ * （返回 `1210: 该模型始终思考，不支持关闭思考`），`thinking:{type:"low"}`
+ * 同样被拒；能压住它的是平级的 `reasoning_effort`。线上实测（glm-5.3，
+ * 同一份通稿改写任务）：
+ *
+ * | 设置 | 耗时 | 正文 | 思考链 |
+ * | --- | --- | --- | --- |
+ * | 不带（provider-default） | 16–62 秒 | ~200 字 | 4千–1.6万字 |
+ * | `reasoning_effort=low` | **2.1 秒** | 192 字 | 33 字 |
+ *
+ * 正文长度与质量没有下降，省下的全是思考链——那部分既拖垮响应，也照样计费。
+ */
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'max';
+
+const REASONING_EFFORTS: readonly string[] = ['low', 'medium', 'high', 'max'];
 
 export interface UpstreamProfile {
   /** Exact model identifier sent to the provider. */
@@ -130,6 +156,8 @@ export interface UpstreamProfile {
   /** Provider credential. Never return this object from an HTTP route. */
   key: string;
   thinking: UpstreamThinking;
+  /** 可选。省略就不发这个参数，完全保持供应商默认行为。 */
+  reasoningEffort?: ReasoningEffort;
   timeoutMs: number;
 }
 
@@ -175,6 +203,10 @@ export function parseUpstreamProfiles(raw: string | undefined): UpstreamProfile[
     const thinking =
       typeof item.thinking === 'string' ? item.thinking.trim().toLowerCase() : 'provider-default';
     const timeoutMs = item.timeoutMs === undefined ? 30_000 : Number(item.timeoutMs);
+    const reasoningEffort =
+      item.reasoningEffort === undefined || item.reasoningEffort === null
+        ? undefined
+        : String(item.reasoningEffort).trim().toLowerCase();
 
     if (!model || model.length > 100) {
       throw new Error(`UPSTREAM_PROFILES_JSON[${index}].model must be 1-100 characters`);
@@ -194,6 +226,11 @@ export function parseUpstreamProfiles(raw: string | undefined): UpstreamProfile[
         `UPSTREAM_PROFILES_JSON[${index}].thinking must be provider-default, enabled or disabled`,
       );
     }
+    if (reasoningEffort !== undefined && !REASONING_EFFORTS.includes(reasoningEffort)) {
+      throw new Error(
+        `UPSTREAM_PROFILES_JSON[${index}].reasoningEffort must be ${REASONING_EFFORTS.join(', ')}`,
+      );
+    }
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 300_000) {
       throw new Error(
         `UPSTREAM_PROFILES_JSON[${index}].timeoutMs must be an integer between 1000 and 300000`,
@@ -207,6 +244,7 @@ export function parseUpstreamProfiles(raw: string | undefined): UpstreamProfile[
       url,
       key,
       thinking: thinking as UpstreamThinking,
+      ...(reasoningEffort ? { reasoningEffort: reasoningEffort as ReasoningEffort } : {}),
       timeoutMs,
     };
   });
@@ -264,6 +302,8 @@ export const config = {
   upstreamTimeoutMs: integerEnv('UPSTREAM_TIMEOUT_MS', 30_000, 1_000, 300_000),
   /** Optional OpenAI-compatible extension, used by providers such as DeepSeek V4. */
   upstreamThinking: upstreamThinkingEnv(),
+  /** 单模型兼容配置下的思考强度；多模型走配置档里的 `reasoningEffort`。 */
+  upstreamReasoningEffort: upstreamReasoningEffortEnv(),
   /** Optional multi-provider profiles; credentials remain server-side only. */
   upstreamProfiles,
   /** Optional only for a mock demo; required by the HTTP gateway with a real upstream. */
@@ -305,6 +345,9 @@ export function resolveUpstreamProfile(model = config.upstreamModel): UpstreamPr
     url: config.upstreamUrl.trim().replace(/\/$/, ''),
     key: config.upstreamKey,
     thinking: config.upstreamThinking,
+    ...(config.upstreamReasoningEffort
+      ? { reasoningEffort: config.upstreamReasoningEffort }
+      : {}),
     timeoutMs: config.upstreamTimeoutMs,
   };
 }
