@@ -94,6 +94,20 @@ describe('试用数据集', () => {
   });
 });
 
+describe('demo 账号在生产下是死账号', () => {
+  it('is rejected by the production login rule', () => {
+    // auth.ts 的判据：production 下 isDemo 账号一律拒登。
+    // 播种脚本若「已存在就跳过」，就会留着一个登不进去的账号，
+    // 然后在后面登录时挂掉，还报「用户名或密码不正确」——查不到方向。
+    const loginAllowed = (appMode: string, isDemo: boolean) =>
+      appMode !== 'production' || !isDemo;
+
+    expect(loginAllowed('production', true)).toBe(false);
+    expect(loginAllowed('production', false)).toBe(true);
+    expect(loginAllowed('demo', true)).toBe(true);
+  });
+});
+
 describe('播种脚本走的路必须是状态机允许的', () => {
   const legal = (from: string, to: string) =>
     transitions.some((move) => move.from === from && move.to === to);
