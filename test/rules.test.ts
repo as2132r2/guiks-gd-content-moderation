@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { runAdmission, runPreflight } from '../src/rules/index.js';
+import { NUMBER_PATTERN } from '../src/rules/terms.js';
 
 const preflight = (sentences: string[], sourceText: string) =>
   runPreflight({ artifactId: 'artifact-1', sentences, sourceText });
@@ -347,6 +348,42 @@ describe('公器私用是标记，不是闸门', () => {
   it('falls through to 只标不拦 when nothing sensitive is present', () => {
     const result = runAdmission({ title: '写小说', sourceText: '帮我写篇小说。' });
     expect(result).toMatchObject({ decision: 'admitted-logged', reasonCode: 'off-duty-use' });
+  });
+});
+
+describe('带单位的数字怎么抽出来', () => {
+  const grab = (text: string) => {
+    NUMBER_PATTERN.lastIndex = 0;
+    return [...text.matchAll(NUMBER_PATTERN)].map((match) => match[0]);
+  };
+
+  it('keeps the unit that follows a magnitude', () => {
+    // 回归：早前量级后面的量词会被吃掉，「3.2 亿人」只抽出「3.2 亿」——于是原通稿
+    // 的「3.2 亿元」和生成稿的「3.2 亿人」在比对里长得一样，把金额说成人数的
+    // 幻觉会被静静放过。
+    expect(grab('受灾3.2亿人')).toEqual(['3.2亿人']);
+    expect(grab('志愿者8.6万人')).toEqual(['8.6万人']);
+    expect(grab('面积12万平方米')).toEqual(['12万平方米']);
+  });
+
+  it('keeps the longer unit when one is a prefix of another', () => {
+    // 「米」排到「平方米」前面的话，12 万平方米会被截成「12 万平」。
+    expect(grab('5千米')).toEqual(['5千米']);
+    expect(grab('1200人次')).toEqual(['1200人次']);
+  });
+
+  it('still reads a plain unit, a year and a date', () => {
+    expect(grab('票价100元')).toEqual(['100元']);
+    expect(grab('建成18个')).toEqual(['18个']);
+    expect(grab('2026年')).toEqual(['2026年']);
+    expect(grab('8月28日')).toEqual(['8月28日']);
+  });
+
+  it('is a working regex at all', () => {
+    // 这条看着多余，但它值一条用例：模板串里的 `\d` 会被 JS 吞掉反斜杠，
+    // 正则退化成 `d+(?:.d+)?s*…`——编译通过、类型正确、一个数字也匹配不到。
+    expect(NUMBER_PATTERN.source).toContain(String.raw`\d`);
+    expect(grab('投资3.2亿元')).toEqual(['3.2亿元']);
   });
 });
 

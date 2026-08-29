@@ -58,9 +58,8 @@ describe('生成前后的问题增减', () => {
     ];
     const delta = diffGeneration(scan(NOTICE), [scan(hallucinated)]);
 
-    // 命中的是原文那一段的字面，带不带空格取决于稿子怎么写；数字模式里「万」排在
-    // 「人」前面，所以 9.9 万人 切出来是「9.9 万」。这是既有引擎行为，不在这里改。
-    expect(texts(delta.introduced)).toEqual(expect.arrayContaining(['18 个', '9.9 万']));
+    // 命中的是原文那一段的字面，带不带空格取决于稿子怎么写。
+    expect(texts(delta.introduced)).toEqual(expect.arrayContaining(['18 个', '9.9 万人']));
     expect(delta.introduced.some((issue) => issue.text.includes('李国强'))).toBe(true);
     for (const issue of delta.introduced) expect(issue.category).toBe('inconsistency');
   });
