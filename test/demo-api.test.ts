@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { app } from '../src/index.js';
 import { DEMO_FIXTURES, MAIN_NOTICE } from '../src/routes/demo-fixtures.js';
-import { runAdmission } from '../src/rules/index.js';
+import { BROADCAST_TASK, SOURCE_MARKER, broadcastMockReply } from '../src/model/broadcast-mock.js';
+import { runAdmission, runPreflight } from '../src/rules/index.js';
 import { authenticatedRequest, loginAs } from './helpers/auth.js';
 
 let request: ReturnType<typeof authenticatedRequest>;
@@ -95,5 +96,60 @@ describe('主通稿的四条硬要求', () => {
   it('keeps every 准入样例 in the lane the demo script promises', () => {
     const lanes = DEMO_FIXTURES.map((fixture) => runAdmission(fixture).decision);
     expect(lanes).toEqual(['reason-required', 'blocked', 'admitted-logged']);
+  });
+});
+
+describe('1:20 预检那一镜的四处命中', () => {
+  const generate = (task: string) =>
+    broadcastMockReply([
+      { role: 'user', content: `${task}\n${SOURCE_MARKER}${MAIN_NOTICE.sourceText}` },
+    ])!
+      .split('\n')
+      .filter(Boolean);
+
+  const shippedAnnotations = () =>
+    [
+      runPreflight({
+        artifactId: 'script',
+        sentences: generate(BROADCAST_TASK.script),
+        sourceText: MAIN_NOTICE.sourceText,
+      }),
+      runPreflight({
+        artifactId: 'short',
+        sentences: generate(BROADCAST_TASK.shortVideo),
+        sourceText: MAIN_NOTICE.sourceText,
+      }),
+    ]
+      .flatMap((result) => result.annotations)
+      // AI 标识会被自动补写，不进演示屏那三个数。
+      .filter((annotation) => annotation.category !== 'ai-label');
+
+  it('copies the real leader through without flagging it', () => {
+    // 原通稿里真有「市委书记周立」。把它标出来，1:20 那句
+    //「系统比的是原稿里有没有」就说不成立了。
+    const script = generate(BROADCAST_TASK.script).join('\n');
+    expect(script).toContain('市委书记周立');
+    expect(
+      shippedAnnotations().some((annotation) => annotation.title.includes('周立')),
+    ).toBe(false);
+  });
+
+  it('invents one leader the 原通稿 never had, and catches it', () => {
+    expect(generate(BROADCAST_TASK.script).join('\n')).toContain('副市长李国强');
+    expect(MAIN_NOTICE.sourceText).not.toContain('李国强');
+    expect(
+      shippedAnnotations().some((annotation) => annotation.title === '与原通稿不一致：副市长李国强'),
+    ).toBe(true);
+  });
+
+  it('holds the counts the 口播稿 reads out loud', () => {
+    const shipped = shippedAnnotations();
+    const count = (action: string) => shipped.filter((item) => item.action === action).length;
+    // 改这三个数，docs/demo/script.md、source-notice.md、runbook.md 要一起改。
+    expect({ block: count('block'), redact: count('redact'), flag: count('flag') }).toEqual({
+      block: 1,
+      redact: 3,
+      flag: 1,
+    });
   });
 });
