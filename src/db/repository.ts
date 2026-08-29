@@ -1429,6 +1429,37 @@ export class WorkflowRepository {
     return result.changes > 0;
   }
 
+  /**
+   * 把一篇稿件的整条时间线整体前移 `days` 天。**只给播种脚本用。**
+   *
+   * 为什么需要它：播种是一口气跑完的，七篇稿件的时间戳全落在同一秒，监控看板
+   * 的「按日趋势」就只有一个点——一个点画不出趋势，看板等于是空的。
+   *
+   * **整体平移，不是逐条改。** 六张表一起减同一个常量，篇内的相对间隔分毫不动，
+   * 所以「环节平均停留」算出来的还是原样（它量的是相邻两次流转的差值）。
+   * 换句话说：这里造的是「这篇稿子是前天走的」，不是「这篇稿子走得比较慢」——
+   * **能编的只有哪一天，不能编的是走了多久。**
+   */
+  shiftManuscriptHistory(manuscriptId: string, days: number): void {
+    if (days <= 0) return;
+    const delta = days * 24 * 60 * 60 * 1000;
+    const shift = (sql: string, ...params: unknown[]) =>
+      this.database.sqlite.prepare(sql).run(...params);
+    this.database.orm.transaction(() => {
+      shift(
+        'UPDATE manuscripts SET created_at = created_at - ?, updated_at = updated_at - ? WHERE id = ?',
+        delta,
+        delta,
+        manuscriptId,
+      );
+      shift('UPDATE content_artifacts SET created_at = created_at - ? WHERE manuscript_id = ?', delta, manuscriptId);
+      shift('UPDATE sentence_segments SET created_at = created_at - ? WHERE manuscript_id = ?', delta, manuscriptId);
+      shift('UPDATE review_records SET created_at = created_at - ? WHERE manuscript_id = ?', delta, manuscriptId);
+      shift('UPDATE admission_results SET created_at = created_at - ? WHERE manuscript_id = ?', delta, manuscriptId);
+      shift('UPDATE trace_events SET created_at = created_at - ? WHERE manuscript_id = ?', delta, manuscriptId);
+    });
+  }
+
   /** 跨稿件聚合（6.14）。SQL 在 [oversight.ts](oversight.ts)，这里只开一个口子。 */
   oversight(): OversightSnapshot {
     return buildOversight(this.database.sqlite);

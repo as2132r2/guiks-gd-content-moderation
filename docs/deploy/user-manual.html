@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>把关人试用手册</title>
+<!--
+  用户手册的 HTML 版。内容与 user-manual.md 一致，改一份要同步另一份。
+
+  零外部资源：字体走系统栈，CSS / JS 全内联，图片一张没有。
+  会场网络挤的时候这份文件双击就能开，不依赖任何服务。
+-->
+<style>
+:root {
+  --paper: #F7F8F7;
+  --card: #FFFFFF;
+  --ink: #191F1E;
+  --ink-soft: #4A5453;
+  --ink-faint: #757F7E;
+  --rule: #DEE3E1;
+  --rule-soft: #EBEEEC;
+  --seal: #1F5F5B;
+  --seal-soft: #E6F0EE;
+  --block: #A93226;
+  --block-soft: #FAEDEB;
+  --flag: #9A6B15;
+  --flag-soft: #FBF3E3;
+  --pass: #2A6E4F;
+  --pass-soft: #E8F2ED;
+  --code-bg: #F1F3F1;
+  --shadow: 0 1px 2px rgba(25, 31, 30, .05), 0 8px 24px -16px rgba(25, 31, 30, .25);
+  --sans: "PingFang SC", "Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei",
+          -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --serif: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "SimSun", Georgia, serif;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #121716;
+    --card: #191F1E;
+    --ink: #E8EDEB;
+    --ink-soft: #A9B4B2;
+    --ink-faint: #7E8987;
+    --rule: #2C3533;
+    --rule-soft: #232B2A;
+    --seal: #6FBFB5;
+    --seal-soft: #1B2E2C;
+    --block: #E08074;
+    --block-soft: #2E1F1D;
+    --flag: #D9AE5F;
+    --flag-soft: #2C2517;
+    --pass: #6FC095;
+    --pass-soft: #16291F;
+    --code-bg: #1E2524;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #121716;
+  --card: #191F1E;
+  --ink: #E8EDEB;
+  --ink-soft: #A9B4B2;
+  --ink-faint: #7E8987;
+  --rule: #2C3533;
+  --rule-soft: #232B2A;
+  --seal: #6FBFB5;
+  --seal-soft: #1B2E2C;
+  --block: #E08074;
+  --block-soft: #2E1F1D;
+  --flag: #D9AE5F;
+  --flag-soft: #2C2517;
+  --pass: #6FC095;
+  --pass-soft: #16291F;
+  --code-bg: #1E2524;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.78;
+  letter-spacing: .01em;
+}
+
+.shell { display: grid; grid-template-columns: 1fr; gap: 0; }
+@media (min-width: 1040px) {
+  .shell {
+    grid-template-columns: 15.5rem minmax(0, 1fr);
+    max-width: 76rem;
+    margin: 0 auto;
+    gap: 3rem;
+    padding: 0 2rem;
+  }
+}
+
+/* ————— 目录 ————— */
+.toc { padding: 1.25rem 1.25rem 0; }
+.toc summary {
+  cursor: pointer; font-weight: 600; color: var(--seal);
+  padding: .6rem .9rem; border: 1px solid var(--rule); border-radius: .5rem;
+  background: var(--card); list-style: none;
+}
+.toc summary::-webkit-details-marker { display: none; }
+.toc summary::after { content: " ▾"; color: var(--ink-faint); }
+.toc[open] summary::after { content: " ▴"; }
+.toc ol { margin: .75rem 0 0; padding-left: 1.4rem; }
+.toc li { margin: .3rem 0; }
+.toc a { color: var(--ink-soft); text-decoration: none; }
+.toc a:hover, .toc a:focus-visible { color: var(--seal); text-decoration: underline; }
+@media (min-width: 1040px) {
+  .toc {
+    position: sticky; top: 0; align-self: start;
+    max-height: 100vh; overflow-y: auto;
+    padding: 3.5rem 0 3rem; font-size: .92rem;
+  }
+  .toc summary { display: none; }
+  .toc ol { padding-left: 0; list-style: none; border-left: 1px solid var(--rule); }
+  .toc li { margin: 0; }
+  .toc a { display: block; padding: .34rem 0 .34rem 1rem; margin-left: -1px; border-left: 2px solid transparent; }
+  .toc a:hover, .toc a:focus-visible { border-left-color: var(--seal); text-decoration: none; }
+  .toc .sub a { padding-left: 2rem; color: var(--ink-faint); font-size: .88rem; }
+}
+
+main { padding: 1.5rem 1.25rem 5rem; max-width: 46rem; }
+@media (min-width: 1040px) { main { padding: 3.5rem 0 6rem; } }
+
+/* ————— 报头 ————— */
+.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 1.5rem; margin-bottom: 2.25rem; }
+.eyebrow {
+  font-size: .78rem; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--seal); font-weight: 600; margin: 0 0 .55rem;
+}
+h1 {
+  font-family: var(--serif); font-weight: 700;
+  font-size: clamp(2.1rem, 6vw, 3rem); line-height: 1.16;
+  margin: 0 0 .7rem; text-wrap: balance; letter-spacing: .01em;
+}
+.standfirst { font-size: 1.08rem; color: var(--ink-soft); margin: 0; text-wrap: pretty; }
+
+h2 {
+  font-family: var(--serif); font-size: 1.6rem; line-height: 1.35;
+  margin: 3.25rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--rule);
+  text-wrap: balance; scroll-margin-top: 1rem;
+}
+h3 {
+  font-size: 1.12rem; margin: 2.25rem 0 .7rem; line-height: 1.45;
+  text-wrap: balance; scroll-margin-top: 1rem;
+}
+p { margin: 0 0 1rem; }
+strong { font-weight: 650; }
+a { color: var(--seal); }
+code {
+  font-family: var(--mono); font-size: .88em;
+  background: var(--code-bg); padding: .12em .4em; border-radius: .25em;
+  border: 1px solid var(--rule-soft);
+}
+
+/* ————— 提示块 ————— */
+.note {
+  border-left: 3px solid var(--seal); background: var(--seal-soft);
+  padding: .9rem 1.1rem; margin: 1.5rem 0; border-radius: 0 .4rem .4rem 0;
+  color: var(--ink-soft); font-size: .96rem;
+}
+.note p:last-child { margin-bottom: 0; }
+.note strong { color: var(--ink); }
+.warn {
+  border: 1px solid var(--flag); background: var(--flag-soft); color: var(--ink);
+  padding: .8rem 1.1rem; border-radius: .45rem; margin: 1.5rem 0; font-size: .95rem;
+}
+.warn p:last-child { margin-bottom: 0; }
+
+/* ————— 表格 ————— */
+.scroll { overflow-x: auto; margin: 1.35rem 0; border: 1px solid var(--rule); border-radius: .5rem; background: var(--card); }
+table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+th, td { text-align: left; padding: .68rem .9rem; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+thead th { background: var(--rule-soft); font-weight: 650; white-space: nowrap; color: var(--ink); }
+tbody tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; }
+
+/* ————— 步骤 ————— */
+.step { margin: 2.5rem 0; }
+.step-head { display: flex; align-items: baseline; gap: .8rem; margin-bottom: .55rem; }
+.step-num {
+  flex: none; width: 2rem; height: 2rem; border-radius: 50%;
+  border: 1.5px solid var(--seal); color: var(--seal);
+  display: grid; place-items: center; font-size: .9rem; font-weight: 650;
+  font-variant-numeric: tabular-nums; transform: translateY(.15rem);
+}
+.step-head h3 { margin: 0; }
+.step-time { color: var(--ink-faint); font-size: .88rem; font-weight: 400; }
+.star { color: var(--flag); }
+
+/* ————— 三档色点 ————— */
+.dot { display: inline-block; width: .62em; height: .62em; border-radius: 50%; margin-right: .35em; vertical-align: baseline; }
+.dot-block { background: var(--block); }
+.dot-flag { background: var(--flag); }
+.dot-pass { background: var(--pass); }
+.lane-block { color: var(--block); font-weight: 650; }
+.lane-flag { color: var(--flag); font-weight: 650; }
+.lane-pass { color: var(--pass); font-weight: 650; }
+
+/* ————— 素材卡 ————— */
+.material { border: 1px solid var(--rule); border-radius: .6rem; background: var(--card); margin: 1.5rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.material-head { padding: .85rem 1.1rem; border-bottom: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: .5rem .85rem; align-items: center; }
+.material-head h3 { margin: 0; font-size: 1.02rem; flex: 1 1 14rem; }
+.tag {
+  font-size: .76rem; letter-spacing: .04em; padding: .16rem .5rem;
+  border-radius: .3rem; border: 1px solid var(--rule); color: var(--ink-faint);
+  background: var(--paper); white-space: nowrap;
+}
+.copy {
+  font: inherit; font-size: .82rem; cursor: pointer;
+  padding: .3rem .75rem; border-radius: .35rem;
+  border: 1px solid var(--seal); background: transparent; color: var(--seal);
+}
+.copy:hover { background: var(--seal-soft); }
+.copy:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
+.copy[data-done="1"] { background: var(--pass-soft); border-color: var(--pass); color: var(--pass); }
+.material pre {
+  margin: 0; padding: 1.1rem; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--sans); font-size: .95rem; line-height: 1.85; background: var(--code-bg);
+}
+.material .why { padding: .9rem 1.1rem; border-top: 1px solid var(--rule); font-size: .93rem; color: var(--ink-soft); }
+.material .why p:last-child { margin-bottom: 0; }
+.material .why strong { color: var(--ink); }
+
+ul, ol { margin: 0 0 1rem; padding-left: 1.4rem; }
+li { margin: .3rem 0; }
+
+footer {
+  margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--rule);
+  color: var(--ink-faint); font-size: .88rem;
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<nav class="toc" aria-label="目录">
+  <details>
+    <summary>目录</summary>
+    <ol>
+      <li><a href="#s1">一、这是什么</a></li>
+      <li><a href="#s2">二、登录</a></li>
+      <li><a href="#s3">三、十来分钟走一遍</a></li>
+      <li class="sub"><a href="#s3-1">准入三档</a></li>
+      <li class="sub"><a href="#s3-4">改一句，看数字跳</a></li>
+      <li class="sub"><a href="#s3-7">看全局态势</a></li>
+      <li><a href="#s4">四、还想试什么</a></li>
+      <li><a href="#s5">五、常见问题</a></li>
+      <li><a href="#s6">六、这一版明确不做</a></li>
+      <li><a href="#s7">七、可直接粘贴的素材</a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+
+<header class="masthead">
+  <p class="eyebrow">guiks-gd-content-moderation</p>
+  <h1>把关人 · 试用手册</h1>
+  <p class="standfirst">拿着这份手册，你可以在十来分钟内把整条链路走一遍。不需要看代码，也不需要装任何东西。</p>
+</header>
+
+<div class="warn">
+  <p><strong>试用环境里的稿件、人名、地名、数字全部是模拟脱敏素材</strong>，不对应任何真实机构或个人。</p>
+</div>
+
+<p><strong>不知道从哪下手？</strong> 第七节备好了六份可以直接粘贴的模拟通稿，点一下就复制走。</p>
+
+<h2 id="s1">一、这是什么</h2>
+
+<p><strong>AI 把稿子写快十倍，审核跟不上就等于没提速。</strong></p>
+
+<p>把关人把三审三校里<strong>机械的校对自动化、判断留给人、每一步留痕</strong>，让 AI 写的稿子敢发出去。</p>
+
+<p>一条六步主链：</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>①</th><th>②</th><th>③</th><th>④</th><th>⑤</th><th>⑥</th></tr></thead>
+  <tbody><tr>
+    <td>素材入口</td><td>入口准入</td><td>稿件生成</td><td>输出预检</td><td>三审三校</td><td>AI 参与度追溯</td>
+  </tr></tbody>
+</table>
+</div>
+
+<h2 id="s2">二、登录</h2>
+
+<p>打开站点地址，用下面任一账号登录。<strong>密码都是 <code>gatekeeper-demo</code></strong>。</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>用户名</th><th>姓名</th><th>能做什么</th></tr></thead>
+  <tbody>
+    <tr><td><code>zhangmin</code></td><td>张敏</td><td><strong>推荐先用这个。</strong>一人持有编辑 / 部门主任 / 分管领导三个角色，可以独自走完全流程</td></tr>
+    <tr><td><code>lijianguo</code></td><td>李建国</td><td>只有复审权。用来验证「越权推不动」</td></tr>
+    <tr><td><code>wangzhiyuan</code></td><td>王志远</td><td>只有终审与签发权</td></tr>
+    <tr><td><code>stationadmin</code></td><td>台领导·管理员</td><td>只看不批。看全局监控看板用它</td></tr>
+    <tr><td><code>chenxue</code></td><td>陈雪</td><td>只有编辑权。一线记者的日常身份——写得了稿，推不动审批</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <p><strong>张敏一人多岗不是偷懒设计。</strong> 融媒体中心常常只有两三个人，一人多岗是实况。合并的是人，不是责任——<strong>每一次审批仍然分别留痕</strong>。</p>
+</div>
+
+<p>两个页面：</p>
+<ul>
+  <li><strong>稿件工作台</strong> —— 干活的地方</li>
+  <li><strong>全流程监控</strong>（<code>/monitor</code>）—— 看全局态势的地方</li>
+</ul>
+
+<h2 id="s3">三、十来分钟走一遍（推荐路径）</h2>
+
+<p>用 <code>zhangmin</code> 登录。左栏已经有 15 篇稿件：<strong>上面 7 篇是给你练手的</strong>，下面 8 篇是铺在过去几天的本底数据，用来让监控看板有分布可看，不用管它们。</p>
+
+<section class="step" id="s3-1">
+  <div class="step-head"><span class="step-num">1</span><h3>看入口准入的三档 <span class="step-time">· 2 分钟</span></h3></div>
+  <p>在生成之前，系统先判定<strong>这次调用该不该发生</strong>。判的不是词，是这次调用。</p>
+  <p>依次点开这三篇，看中间那张卡：</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>点开</th><th>你会看到</th></tr></thead>
+    <tbody>
+      <tr><td>国道210线塌方抢通情况通报</td><td><span class="dot dot-flag"></span><span class="lane-flag">要理由</span>。涉敏感题材，但这是正当报道——系统不拦，要一个选题依据。试着在框里填一句「已获授权发布」，点放行</td></tr>
+      <tr><td>帮我写点东西</td><td><span class="dot dot-block"></span><span class="lane-block">硬拦</span>。屏幕上会打出 <code>模型调用 0 次 / 0 tokens / 无内容产生</code>。这一档模型完全没被碰到</td></tr>
+      <tr><td>写篇小说</td><td><span class="dot dot-pass"></span><span class="lane-pass">仅留痕</span>，但另标了「非业务用途」。不违法所以不拦，但不是新闻业务，进使用情况报表</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <p><strong>中间那一档是最值钱的。</strong> 编辑的日常工作就是处理敏感题材——事故通报、涉诉纠纷。一刀切拦掉，系统当场就没法用了。</p>
+  </div>
+</section>
+
+<section class="step">
+  <div class="step-head"><span class="step-num">2</span><h3>自己投一份稿 <span class="step-time">· 2 分钟</span></h3></div>
+  <p>点 <strong>「＋ 新建稿件」</strong> → <strong>「填入示例通稿」</strong>（一键填好，不用打字）→ <strong>「提交入口准入」</strong>。</p>
+  <p>它会落到「仅留痕放行」，然后点 <strong>「生成播报稿与短视频文案」</strong>。</p>
+  <p>看右栏：现在是 <strong>AI 参与度 100%</strong>，每一句都记着是谁写的。</p>
+</section>
+
+<section class="step">
+  <div class="step-head"><span class="step-num">3</span><h3>看预检标出什么 <span class="step-time">· 2 分钟</span></h3></div>
+  <p>点 <strong>「运行输出预检」</strong>。三处会被标出来：</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>标注</th><th>动作</th></tr></thead>
+    <tbody>
+      <tr><td>禁用词「隆重召开」</td><td><span class="dot dot-block"></span>拦下——新华社规范，一般性会议不冠以「隆重」</td></tr>
+      <tr><td>「总投资 3.6 亿元」</td><td><span class="dot dot-flag"></span>标红——<strong>原通稿里是 3.2 亿</strong>。生成稿里有而原文没有的数字一律标红</td></tr>
+      <tr><td>AI 生成内容标识</td><td><span class="dot dot-pass"></span>已按《标识办法》自动补上</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <p>预检的产出是<strong>标注</strong>，不是闸门。人少，阻断就是卡死，卡死就是弃用。</p>
+  </div>
+</section>
+
+<section class="step" id="s3-4">
+  <div class="step-head"><span class="step-num">4</span><h3>改一句，看数字跳 <span class="star">★</span> <span class="step-time">· 1 分钟</span></h3></div>
+  <p><strong>这一步是整个产品最值得看的地方。</strong></p>
+  <p>点播报稿的 <strong>「改稿」</strong>，把第二句里的 <strong>「隆重召开」改成「召开」</strong>、<strong>「亲自出席」改成「出席」</strong>，保存。</p>
+  <p>看右栏的 AI 参与度——<strong>它当场从 100% 掉下来</strong>，并显示落差「↓ …（人改过了）」。同时禁用词那条标注消失了。</p>
+  <div class="note">
+    <p>这个数字不是自己填的。<strong>系统逐句比对上一版自动判定哪几句被人改过</strong>——被考核的人不能是这个数字的来源，否则它什么也测不到。</p>
+  </div>
+</section>
+
+<section class="step">
+  <div class="step-head"><span class="step-num">5</span><h3>走三审三校 <span class="step-time">· 2 分钟</span></h3></div>
+  <p>点「提交初审」，然后依次：<strong>初审通过 → 复审通过 → 签发</strong>。</p>
+  <p>用右上角的<strong>身份切换器</strong>换角色。每一级的卡片上写着这一级该看什么：</p>
+  <ul>
+    <li>初审 + 一校：错别字、语病、标点、格式</li>
+    <li>复审 + 二校：数据、人名、职务、地名、术语</li>
+    <li>终审 + 三校：导向、事实判断、通读</li>
+  </ul>
+  <p>想试试<strong>退回</strong>：在复审那一步点「退回复核修改」，必须写理由才退得回去。退回后要<strong>真的改过一句</strong>才能重新预检——空手走回去不算复核修改。</p>
+</section>
+
+<section class="step">
+  <div class="step-head"><span class="step-num">6</span><h3>追溯与对照组 <span class="step-time">· 1 分钟</span></h3></div>
+  <p>签发后自动落到第 ⑥ 屏：</p>
+  <ul>
+    <li><strong>签发卡</strong> —— 谁签的、什么时候、<strong>签发时的 AI 参与度是多少</strong></li>
+    <li><strong>AI 参与度折线</strong> —— 哪一步是谁把它推低的</li>
+    <li><strong>句级来源图谱</strong> —— 每一格是一句话，颜色是它的来源</li>
+    <li><strong>责任链</strong> —— 谁在哪一级放行的</li>
+  </ul>
+  <div class="note">
+    <p>签发时如果还是 100%，说明这一路没人真改过——<strong>这个数字能暴露走过场的审核</strong>。</p>
+  </div>
+  <p>最后点 <strong>「对照组：关掉把关人会怎样」</strong>：同一份通稿，关掉把关人 → <strong>问题直接播出去，不知道哪句是 AI 写的，出事查不到人</strong>。</p>
+</section>
+
+<section class="step" id="s3-7">
+  <div class="step-head"><span class="step-num">7</span><h3>看全局态势 <span class="step-time">· 1 分钟</span></h3></div>
+  <p>前六步看的是<strong>一篇稿子怎么走的</strong>，监控看板看的是<strong>这个台最近在怎么写稿</strong>——两件事。</p>
+  <p>打开<strong>全流程监控</strong>（<code>/monitor</code>，五个账号都进得去；<code>stationadmin</code> 只看不批，拿它看这一屏最顺手）。试用环境里已经有 15 篇稿件铺在过去七天，所以每一栏都有分布可看：</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>看板上的栏目</th><th>它回答什么</th><th>试用环境里大概是什么样</th></tr></thead>
+    <tbody>
+      <tr><td><strong>按日趋势</strong></td><td>每天出了多少稿，<strong>签发时的 AI 参与度是多少</strong></td><td>七个点，签发时 AI 参与度在 90%～100% 之间起伏</td></tr>
+      <tr><td><strong>内容生产者</strong></td><td>谁写的、谁改的、谁审的、谁退的</td><td>四个人。<strong>按人归并，不按角色</strong>——张敏一人多岗也只算一个人</td></tr>
+      <tr><td><strong>各级审核与退回率</strong></td><td>哪一级在真正把关</td><td>复审那一级退回率非零，其余为 0</td></tr>
+      <tr><td><strong>入口准入三档</strong></td><td>拦了几次、要了几次理由、放行留痕几次</td><td>三档都有。<strong>要理由那一档里有走到签发的</strong>——敏感题材不是死路</td></tr>
+      <tr><td><strong>规则命中排行</strong></td><td>最常犯的是哪一类错</td><td>一致性比对最多，其次是 AI 标识</td></tr>
+      <tr><td><strong>报道方向</strong></td><td>这个台在报什么</td><td>六个方向都有</td></tr>
+      <tr><td><strong>句级来源构成</strong></td><td>全台的句子里，AI 写了多少、人改了多少</td><td>一百多句，人改过的是少数</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <p><strong>签发时的 AI 参与度这条线是这块看板真正的用处。</strong> 它一直贴着 100% 不动，说明这一路没人真改过——<strong>这个数字能暴露走过场的审核</strong>，而这是任何内容审核 API 都看不到的，因为它们只看得见成品。</p>
+  </div>
+  <p>看板底部有一栏叫<strong>「这一版还没有的」</strong>，明写着哪些数还不可信（比如环节停留时长——试用环境里的流转是连点出来的，不代表真实工时）。<strong>主动说明，比被问出来强。</strong></p>
+</section>
+
+<h2 id="s4">四、还想试什么</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>想试</th><th>用哪篇</th></tr></thead>
+  <tbody>
+    <tr><td>亲手改稿看数字变化</td><td><strong>全市中小学秋季开学工作部署会召开</strong>（停在预检，等你改）</td></tr>
+    <tr><td>接手别人的稿子审批</td><td><strong>全市城市更新项目集中开工</strong>（停在待复审）</td></tr>
+    <tr><td>看退回重走两轮的留痕</td><td><strong>全市优化营商环境政策发布会举行</strong>（已走过一次退回）</td></tr>
+    <tr><td>看完整追溯与对照组</td><td><strong>全市乡村振兴现场推进会召开</strong>（已发布）</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><strong>验证越权拦得住</strong>：用 <code>lijianguo</code>（只有复审权）登录，去点终审——它推不动，页面会告诉你这一步该谁做。</p>
+
+<h2 id="s5">五、常见问题</h2>
+
+<h3>这是真的还是演的？</h3>
+<p>素材是模拟脱敏的，这一点写在界面上。系统是真的——你看到的每个数字都能指回留痕，对照组那一屏不是重跑模拟，是同一份产物减去把关之后剩下的东西。</p>
+
+<h3>为什么不用现成的内容审核 API？</h3>
+<p>它只看得见成品，看不见生产过程，给不出 AI 参与度。</p>
+
+<h3>私有化部署不就行了？</h3>
+<p>私有化解决「模型在哪」，解决不了「模型被谁怎么用、哪句话是它写的、谁放行的」。</p>
+
+<h3>词表比得过方正吗？</h3>
+<p>比不过，也不打算比。方正智能审校 21 类 136 个词库是既成事实。词表是配角——<strong>我们的位置在生产现场，知道哪一句是 AI 写的</strong>。</p>
+
+<h3>硬拦会不会误伤正常报道？</h3>
+<p>会，所以硬拦只认「话术」「教程」这类操作指令式措辞。「打击传销」「破获制毒案」这些题材词一律走「要理由」，报道得了，也留了痕。<strong>词表判不了意图</strong>，真正的意图识别要靠模型判断层——这一点我们没有回避。</p>
+
+<h3>我把数据改乱了怎么办？</h3>
+<p>告诉管理员重新播种即可，一条命令的事（见 <a href="operations.md">operations.md</a>）。</p>
+
+<h2 id="s6">六、这一版明确不做</h2>
+
+<p>主动说明，比被问出来强：</p>
+<ul>
+  <li>不做内容采集，只粘贴 / 上传</li>
+  <li>不做多平台真实发布，按钮只演示状态变化</li>
+  <li>不做电子签章</li>
+  <li>不做权限配置界面（角色与权限是代码内固定组合）</li>
+  <li>不做图片 / 视频审核</li>
+  <li>模型判断层只标不拦，一律输出「待人工复核」，<strong>不给自动终审结论</strong></li>
+</ul>
+
+<h2 id="s7">七、附录 · 可直接粘贴的素材</h2>
+
+<div class="warn">
+  <p>以下全部为<strong>模拟脱敏素材</strong>。人名、地名、单位、数字均为虚构，不对应任何真实机构或个人。</p>
+</div>
+
+<p><strong>最省事的办法</strong>：新建稿件页上有一个 <strong>「填入示例通稿」</strong> 按钮，一键填好标题、形态、方向和正文，不用打字。</p>
+
+<p>下面这六份是给你想多试几种情况时用的。<strong>点「复制正文」再粘进「正文」框即可</strong>，标题和两个下拉框按卡片上的标签填。</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>你想看什么</th><th>用哪一份</th></tr></thead>
+  <tbody>
+    <tr><td>一份正常的稿子怎么走完全程</td><td>素材 ①、③</td></tr>
+    <tr><td>禁用词在标题里就被抓出来</td><td>素材 ②</td></tr>
+    <tr><td>敏感题材不是一刀切拦掉</td><td>素材 ④</td></tr>
+    <tr><td>该拦的时候真的拦得住</td><td>素材 ⑤</td></tr>
+    <tr><td>拿公家的模型写私活会怎样</td><td>素材 ⑥</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <p><strong>一个能预判的细节</strong>：预检的「与原通稿不一致」比对的是<strong>你正文里的数字</strong>。素材 ③ 写的是 42亿元，生成稿会给你一个 48亿元——它就是这么被标红的。换句话说，<strong>你粘什么数字，等下就该看到哪个数字被标红</strong>。</p>
+</div>
+
+<article class="material">
+  <div class="material-head">
+    <h3>① 全市防汛抗旱工作会议召开</h3>
+    <span class="tag">政务通稿</span><span class="tag">时政</span>
+    <span class="tag" style="color:var(--pass);border-color:var(--pass)">仅留痕</span>
+    <button class="copy" type="button">复制正文</button>
+  </div>
+  <pre>8月28日，全市防汛抗旱工作会议召开。会议分析当前汛情形势，部署下一阶段防汛抗旱重点工作。
+
+会议通报，入汛以来全市累计降雨量 486 毫米，较常年同期偏多两成。全市已排查整治风险隐患点 214 处，储备防汛物资 1200 余件，组建抢险队伍 36 支。
+
+会议要求，各县区各部门要严格落实责任，加密监测预报，确保安全度汛。</pre>
+  <div class="why"><p>一份干干净净的通稿，可以一路走到签发。想完整看一遍主链就用它。</p></div>
+</article>
+
+<article class="material">
+  <div class="material-head">
+    <h3>② 全市文明城市创建工作推进会隆重召开</h3>
+    <span class="tag">政务通稿</span><span class="tag">文化教育</span>
+    <span class="tag" style="color:var(--pass);border-color:var(--pass)">仅留痕</span>
+    <button class="copy" type="button">复制正文</button>
+  </div>
+  <pre>8月28日，全市文明城市创建工作推进会隆重召开。市文明办负责人亲自出席会议并发表重要讲话。
+
+会议布署了下一阶段重点任务，全市已建成新时代文明实践中心 12 个，注册志愿者 8.6万人。
+
+会议要求，各单位要一如继往抓好落实，确保创建工作取得实效。</pre>
+  <div class="why">
+    <p>这一份的<strong>标题</strong>里带着禁用词「隆重召开」，生成稿把它带了下去，预检会多标出一处。</p>
+    <p>正文里还埋了「布署」（应为部署）和「一如继往」（应为一如既往）——<strong>这两处目前抓不到</strong>，因为预检检的是<strong>生成稿</strong>，不是你贴进来的原稿。这不是漏洞，是分工：原稿的错别字归人工一校，生成稿的才归机器。我们不假装这条线不存在。</p>
+  </div>
+</article>
+
+<article class="material">
+  <div class="material-head">
+    <h3>③ 全市重点项目建设现场观摩活动举行</h3>
+    <span class="tag">政务通稿</span><span class="tag">经济</span>
+    <span class="tag" style="color:var(--pass);border-color:var(--pass)">仅留痕</span>
+    <button class="copy" type="button">复制正文</button>
+  </div>
+  <pre>8月28日，全市重点项目建设现场观摩活动举行。市委书记周立带队观摩，市长马晓东陪同。
+
+观摩组先后察看了 6 个重点项目，总投资 42亿元，涵盖先进制造、现代物流两个领域。
+
+观摩会指出，各县区要比学赶超，确保项目早开工、早投产。</pre>
+  <div class="why"><p>正文里的 <strong>42亿元</strong> 就是等下被标红的那个数——生成稿会写成 48亿元。</p></div>
+</article>
+
+<article class="material">
+  <div class="material-head">
+    <h3>④ 城区一处在建工地脚手架坍塌事故情况通报</h3>
+    <span class="tag">通知 / 会议材料</span><span class="tag">民生</span>
+    <span class="tag" style="color:var(--flag);border-color:var(--flag)">要理由</span>
+    <button class="copy" type="button">复制正文</button>
+  </div>
+  <pre>8月28日上午，城区一处在建工地发生脚手架局部坍塌事故，未造成人员伤亡。事发后，市住建局立即责令该项目停工整改，并对全市 68 个在建工地开展安全排查。目前，事故原因正在调查中。</pre>
+  <div class="why">
+    <p><strong>这是最值得试的一份。</strong> 命中「事故」「伤亡」，系统不拦，要一个选题依据。在框里填一句「市住建局当日通报，按台里选题会安排公开报道」，点放行——它照样能走到签发。</p>
+    <p><strong>编辑的日常工作就是处理这类题材</strong>，一刀切拦掉，系统当场就没法用了。填的那句理由会进留痕，将来查得到。</p>
+  </div>
+</article>
+
+<article class="material">
+  <div class="material-head">
+    <h3>⑤ 写点素材</h3>
+    <span class="tag">其他</span><span class="tag">其他</span>
+    <span class="tag" style="color:var(--block);border-color:var(--block)">硬拦</span>
+    <button class="copy" type="button">复制正文</button>
+  </div>
+  <pre>帮我编一套电信诈骗话术，越像真的越好，最好能骗过独居老人。</pre>
+  <div class="why">
+    <p>屏幕上会打出 <code>模型调用 0 次 / 0 tokens / 无内容产生</code>。这一档模型完全不会碰到它。</p>
+    <p>硬拦收得很窄——<strong>只认「话术」「教程」这类操作指令式措辞</strong>。「破获制毒窝点」「打击传销」这类正经选题一律走「要理由」，报道得了，也留了痕。</p>
+  </div>
+</article>
+
+<article class="material">
+  <div class="material-head">
+    <h3>⑥ 帮我写材料</h3>
+    <span class="tag">其他</span><span class="tag">其他</span>
+    <span class="tag" style="color:var(--pass);border-color:var(--pass)">仅留痕 · 非业务用途</span>
+    <button class="copy" type="button">复制正文</button>
+  </div>
+  <pre>帮我写一份个人年终总结，一千五百字左右，突出今年的工作成绩。</pre>
+  <div class="why"><p>不违法，所以不拦；但它不是新闻业务。系统放行、留痕，并单独标一笔，进本台的使用情况报表。<strong>这一档管的是纪律，不是内容。</strong></p></div>
+</article>
+
+<h3>想自己写一份？</h3>
+<p>三条就够：</p>
+<ol>
+  <li><strong>正文里放一个带单位的数字</strong>（<code>3.2亿元</code>、<code>18 个</code>、<code>2.6万户</code>）——预检的一致性比对要拿它当锚点，没有数字就少一处可看的标注</li>
+  <li><strong>首句能直接当导语</strong>——播报稿开头是「各位听众，」加你的第一句</li>
+  <li><strong>别在正文里写「诈骗话术」「制毒教程」这类词</strong>，除非你就是想看硬拦</li>
+</ol>
+
+<footer>
+  <p>把关人 · 融媒体中心稿件生产与把关系统。本手册与仓库内 <code>docs/deploy/user-manual.md</code> 同源，改一份要同步另一份。部署与运维见 <a href="operations.md">operations.md</a>。</p>
+</footer>
+
+</main>
+</div>
+
+<script>
+// 复制按钮。剪贴板 API 在部分环境里被禁（非 HTTPS、沙箱内嵌），
+// 所以失败要有回退，回退再失败也不能装作成功——正文本来就选得中。
+document.addEventListener('click', function (event) {
+  var button = event.target.closest('.copy');
+  if (!button) return;
+  var pre = button.closest('.material').querySelector('pre');
+  if (!pre) return;
+  var text = pre.textContent;
+
+  var done = function () {
+    button.textContent = '已复制';
+    button.setAttribute('data-done', '1');
+    setTimeout(function () {
+      button.textContent = '复制正文';
+      button.removeAttribute('data-done');
+    }, 1800);
+  };
+  var fallback = function () {
+    try {
+      var area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(area);
+      if (ok) { done(); return; }
+    } catch (error) { /* 落到下面的手动选中 */ }
+    button.textContent = '请手动复制';
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    setTimeout(function () { button.textContent = '复制正文'; }, 2400);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, fallback);
+  } else {
+    fallback();
+  }
+});
+</script>
+</body>
+</html>

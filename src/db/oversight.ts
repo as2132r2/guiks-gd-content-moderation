@@ -220,12 +220,17 @@ export function buildOversight(db: BetterSqlite3.Database): OversightSnapshot {
   );
 
   // JSON1 展开 rules[]：留痕本来就记着，不另存一份表。
+  //
+  // ⚠️ 必须写 `GROUP BY j.value`，不能写 `GROUP BY key`。`json_each` 自带一个
+  // `key` 列（数组下标），SQLite 解析 GROUP BY 时列名优先于输出别名，于是
+  // `GROUP BY key` 会按**下标**分组——同一条规则出现在 rules[1] 和 rules[3]
+  // 就被拆成两行，排行榜的名次也跟着错。
   const ruleHits = rows<{ key: string; count: number }>(
     db,
     `SELECT j.value AS key, COUNT(*) AS count
        FROM trace_events t, json_each(json_extract(t.data_json, '$.rules')) j
       WHERE t.kind = 'rule-hit'
-      GROUP BY key ORDER BY count DESC`,
+      GROUP BY j.value ORDER BY count DESC`,
   );
 
   const topics = rows<{ key: string; count: number }>(
@@ -234,6 +239,12 @@ export function buildOversight(db: BetterSqlite3.Database): OversightSnapshot {
   );
 
   // 生产者：建稿 / 改稿来自留痕，审批与退回来自审核记录，都按 actor_user_id 归并。
+  //
+  // `actor_type = 'human'` 这一条是必须的：自动补 AI 标识时系统也会重写句级来源，
+  // 也记 `segments-recorded`。不滤掉的话，这张表会多出一行「（无署名）」，
+  // 把机器写的几十条算成人的改稿量——**这张表的标题是「内容生产者」，机器不是。**
+  // 滤的是 actor_type，不是 actor_user_id 为空：账号被注销的人 actor_type 仍是
+  // human，那一行要留着显示「（无署名）」，责任链不能因为账号注销就断掉。
   const producerRows = rows<{
     userId: string | null;
     displayName: string | null;
@@ -247,6 +258,7 @@ export function buildOversight(db: BetterSqlite3.Database): OversightSnapshot {
        FROM trace_events t
        LEFT JOIN users u ON u.id = t.actor_user_id
       WHERE t.kind IN ('manuscript-created', 'segments-recorded')
+        AND t.actor_type = 'human'
       GROUP BY t.actor_user_id`,
   );
   const reviewerRows = rows<{
