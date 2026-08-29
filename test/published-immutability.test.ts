@@ -59,7 +59,7 @@ describe('稿件内容写入策略', () => {
     const created = await jsonRequest('/api/workbench', 'POST', {
       title: '发布后不可改写回归稿',
       sourceType: 'notice',
-      sourceText: '模拟素材：县里召开项目推进会，各责任单位汇报阶段进展。',
+      sourceText: '模拟素材：市里召开项目推进会，各责任单位汇报阶段进展。',
     });
     expect(created.status).toBe(201);
     const id = ((await created.json()) as { manuscript: { id: string } }).manuscript.id;

@@ -8,7 +8,7 @@ import type { WorkbenchView } from '../src/routes/workbench.js';
 import { authenticatedRequest, loginAs } from './helpers/auth.js';
 
 const SOURCE =
-  '模拟素材：全县乡村振兴现场推进会今天召开。项目总投资 3.2亿元，涉及 12 个乡镇，惠及群众 4.6万人。';
+  '模拟素材：全市乡村振兴现场推进会今天召开。项目总投资 3.2亿元，涉及 12 个乡镇，惠及群众 4.6万人。';
 
 let request: ReturnType<typeof authenticatedRequest>;
 
@@ -25,7 +25,7 @@ const postJson = (path: string, body: unknown) =>
 
 async function create(body: Partial<{ title: string; sourceType: string; sourceText: string }> = {}) {
   const response = await postJson('/api/workbench', {
-    title: '全县乡村振兴现场推进会',
+    title: '全市乡村振兴现场推进会',
     sourceType: 'public-relations',
     sourceText: SOURCE,
     ...body,
@@ -110,7 +110,7 @@ describe('入口准入', () => {
     const withReason = await move(id, {
       to: 'admitted',
       role: 'editor',
-      reason: '县应急管理局已授权发布，见 8 月 27 日通报。',
+      reason: '市应急管理局已授权发布，见 8 月 27 日通报。',
     });
     expect(withReason.status).toBe(200);
 
@@ -118,14 +118,14 @@ describe('入口准入', () => {
     expect(after.manuscript.status).toBe('admitted');
     expect(after.reviews[0]).toMatchObject({
       stage: 'admission',
-      reason: '县应急管理局已授权发布，见 8 月 27 日通报。',
+      reason: '市应急管理局已授权发布，见 8 月 27 日通报。',
     });
   });
 
   it('flags 公器私用 without blocking it', async () => {
     const { body } = await create({
       title: '帮我写篇小说',
-      sourceText: '帮我写篇小说，主角是个县城青年。',
+      sourceText: '帮我写篇小说，主角是个返乡青年。',
     });
     expect(body.admission).toMatchObject({
       decision: 'admitted-logged',
@@ -444,7 +444,7 @@ describe('工作台主链', () => {
     // 人工首次改稿只在已生成状态开放；提交预检后内容被冻结。
     const script = generated.artifacts[0]!;
     const sentences = script.segments.map((segment) => segment.text);
-    sentences[1] = '会议在县融媒体中心召开，县领导出席并讲话。';
+    sentences[1] = '会议在市融媒体中心召开，市领导出席并讲话。';
     const revised = await postJson(
       `/api/workbench/${id}/artifacts/${script.artifact.id}/revise`,
       { role: 'editor', content: sentences.join('\n') },
@@ -652,7 +652,7 @@ describe('工作台主链', () => {
         await move(id, {
           to: 'final-review',
           role: 'department-head',
-          countersignParty: '县应急管理局',
+          countersignParty: '市应急管理局',
           opinion: '事实数据已核验，同意报送终审。',
         })
       ).status,
@@ -661,7 +661,7 @@ describe('工作台主链', () => {
     const after = await view(id);
     expect(after.manuscript.status).toBe('final-review');
     expect(after.reviews.find((review) => review.stage === 'countersign')).toMatchObject({
-      countersignParty: '县应急管理局',
+      countersignParty: '市应急管理局',
       opinion: '事实数据已核验，同意报送终审。',
       round: 1,
     });
@@ -680,7 +680,7 @@ describe('工作台主链', () => {
 
     const script = generated.artifacts[0]!;
     const sentences = script.segments.map((segment) => segment.text);
-    sentences[1] = '会议在县融媒体中心召开，县领导出席并讲话。';
+    sentences[1] = '会议在市融媒体中心召开，市领导出席并讲话。';
     await postJson(`/api/workbench/${id}/artifacts/${script.artifact.id}/revise`, {
       role: 'editor',
       content: sentences.join('\n'),

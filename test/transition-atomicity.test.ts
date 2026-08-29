@@ -47,7 +47,7 @@ describe('canonical SQLite transition transaction', () => {
     const manuscript = repository.createManuscript({
       title: '原子迁移故障注入稿',
       sourceType: 'notice',
-      sourceText: '模拟素材：县里召开项目推进会。',
+      sourceText: '模拟素材：市里召开项目推进会。',
     });
     repository.updateStatus(manuscript.id, status, '测试准备');
     return manuscript.id;
@@ -240,7 +240,7 @@ describe('generation preparation before the transaction', () => {
       body: JSON.stringify({
         title: '第二次模型调用失败稿',
         sourceType: 'notice',
-        sourceText: '模拟素材：县里召开项目推进会。',
+        sourceText: '模拟素材：市里召开项目推进会。',
       }),
     });
     expect(created.status).toBe(201);

@@ -109,7 +109,7 @@ describe('route authorization uses the requested role', () => {
       body: JSON.stringify({
         title: '推进会',
         sourceType: 'notice',
-        sourceText: '全县推进会今天召开。',
+        sourceText: '全市推进会今天召开。',
       }),
     });
     expect(created.status).toBe(201);
@@ -137,7 +137,7 @@ describe('route authorization uses the requested role', () => {
         body: JSON.stringify({
           title: '台领导越权稿',
           sourceType: 'notice',
-          sourceText: '模拟素材：县里召开会议。',
+          sourceText: '模拟素材：市里召开会议。',
         }),
       });
       expect(response.status, path).toBe(403);

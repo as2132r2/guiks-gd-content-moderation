@@ -67,7 +67,7 @@ x-api-key: base64:<random-secret>
 
 ```json
 {
-  "title": "县级融媒演示稿",
+  "title": "融媒演示稿",
   "sourceType": "notice",
   "sourceText": "模拟/脱敏素材正文"
 }

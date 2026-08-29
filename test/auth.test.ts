@@ -144,7 +144,7 @@ describe('fixed role authorization', () => {
       body: JSON.stringify({
         title: '角色校验稿',
         sourceType: 'notice',
-        sourceText: '模拟素材：县里召开工作会议。',
+        sourceText: '模拟素材：市里召开工作会议。',
       }),
     });
     const id = ((await created.json()) as { manuscript: { id: string } }).manuscript.id;
@@ -196,7 +196,7 @@ describe('fixed role authorization', () => {
       body: JSON.stringify({
         title: '稳定身份稿',
         sourceType: 'notice',
-        sourceText: '模拟素材：县里召开会议。',
+        sourceText: '模拟素材：市里召开会议。',
       }),
     });
     const id = ((await created.json()) as { manuscript: { id: string } }).manuscript.id;

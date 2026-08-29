@@ -28,7 +28,7 @@ describe('入口准入三档', () => {
   });
 
   it('lets routine business through with an empty hit list', () => {
-    expect(runAdmission({ title: '推进会', sourceText: '全县推进会今天召开。' })).toMatchObject({
+    expect(runAdmission({ title: '推进会', sourceText: '全市推进会今天召开。' })).toMatchObject({
       decision: 'admitted-logged',
       reasonCode: 'routine',
       hits: [],
@@ -37,10 +37,10 @@ describe('入口准入三档', () => {
 });
 
 describe('输出预检', () => {
-  const SOURCE = '全县推进会今天召开。项目总投资 3.2亿元，预计带动就业 1200 人。';
+  const SOURCE = '全市推进会今天召开。项目总投资 3.2亿元，预计带动就业 1200 人。';
 
   it('catches a 禁用词 and a 慎用词 with the right severity', () => {
-    const result = preflight(['会议隆重召开，县领导亲自出席。', '本内容由人工智能生成。'], SOURCE);
+    const result = preflight(['会议隆重召开，市领导亲自出席。', '本内容由人工智能生成。'], SOURCE);
     const banned = result.annotations.find((a) => a.category === 'banned-term');
     const caution = result.annotations.find((a) => a.category === 'caution-term');
     expect(banned).toMatchObject({ action: 'block', suggestion: '召开' });
@@ -77,7 +77,7 @@ describe('输出预检', () => {
   it('leaves clean copy completely alone', () => {
     // 一校的产出编辑要逐条看，误报一多就没人看了。这条是「宁可少抓」的守门用例。
     const clean = [
-      '全县乡村振兴现场推进会今天召开。',
+      '全市乡村振兴现场推进会今天召开。',
       '会议指出，要压实责任、狠抓落实（含各乡镇）。',
       '项目总投资 3.2亿元，预计带动就业 1200 人。',
       '本内容由人工智能生成，已经人工审核。',
@@ -119,7 +119,7 @@ describe('输出预检', () => {
 });
 
 describe('一校规则（错别字 / 标点 / 格式）', () => {
-  const SRC = '全县推进会今天召开。';
+  const SRC = '全市推进会今天召开。';
   const only = (sentence: string) =>
     preflight([sentence, '本内容由人工智能生成。'], SRC).annotations.filter(
       (a) => a.segmentOrdinal === 0,
@@ -152,7 +152,7 @@ describe('一校规则（错别字 / 标点 / 格式）', () => {
 
   it('catches known typos and suggests the fix', () => {
     expect(only('设备已按装完毕。')[0]).toMatchObject({ category: 'typo', suggestion: '安装' });
-    expect(only('全县上下渡过难关。')[0]).toMatchObject({ category: 'typo', suggestion: '度过' });
+    expect(only('全市上下渡过难关。')[0]).toMatchObject({ category: 'typo', suggestion: '度过' });
   });
 
   it('catches a character repeated three times or more', () => {
@@ -225,10 +225,10 @@ describe('硬拦的边界', () => {
 
   it('never hard-blocks a legitimate news topic', () => {
     // 「那我要报道这个事件怎么办」—— 这一条守的就是这个问题。
-    // 破获制毒窝点、打击传销、取缔邪教都是县级台每天在写的稿子。
+    // 破获制毒窝点、打击传销、取缔邪教都是台里每天在写的稿子。
     for (const text of [
-      '我县公安局破获一起制毒案件。',
-      '全县开展打击传销专项行动。',
+      '本市公安局破获一起制毒案件。',
+      '全市开展打击传销专项行动。',
       '公安机关依法取缔一处邪教活动窝点。',
       '警方查处一起洗钱案件。',
       '市场监管部门查获一批偷拍设备案件线索。',
@@ -242,7 +242,7 @@ describe('硬拦的边界', () => {
   });
 
   it('routes those topics to 要理由 instead, so they can still be reported', () => {
-    expect(admit('我县公安局破获一起制毒案件。')).toMatchObject({
+    expect(admit('本市公安局破获一起制毒案件。')).toMatchObject({
       decision: 'reason-required',
       reasonCode: 'sensitive-topic',
     });
@@ -276,8 +276,8 @@ describe('准入词表覆盖', () => {
 
 describe('审片动作计数', () => {
   it('counts the three 审片动作 separately', () => {
-    const source = '全县推进会今天召开。项目总投资 3.2亿元，预计带动就业 1200 人。';
-    const { summary } = preflight(['会议隆重召开，县领导亲自出席。', '总投资 3.6亿元。'], source);
+    const source = '全市推进会今天召开。项目总投资 3.2亿元，预计带动就业 1200 人。';
+    const { summary } = preflight(['会议隆重召开，市领导亲自出席。', '总投资 3.6亿元。'], source);
     // 隆重召开 block / 3.6亿元 redact / 亲自 flag + 缺 AI 标识 flag
     expect(summary).toEqual({ block: 1, redact: 1, flag: 2 });
   });

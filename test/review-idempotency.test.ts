@@ -49,7 +49,7 @@ async function createAtFirstReview(): Promise<string> {
     body: JSON.stringify({
       title: '审核决定幂等测试稿',
       sourceType: 'notice',
-      sourceText: '模拟素材：县里召开项目推进会，各部门汇报阶段进展。',
+      sourceText: '模拟素材：市里召开项目推进会，各部门汇报阶段进展。',
     }),
   });
   expect(created.status).toBe(201);

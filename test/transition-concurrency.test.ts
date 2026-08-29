@@ -38,7 +38,7 @@ async function createAdmitted(title: string): Promise<string> {
     body: JSON.stringify({
       title,
       sourceType: 'notice',
-      sourceText: '模拟素材：全县召开项目推进会，各部门汇报阶段进展。',
+      sourceText: '模拟素材：全市召开项目推进会，各部门汇报阶段进展。',
     }),
   });
   expect(response.status).toBe(201);

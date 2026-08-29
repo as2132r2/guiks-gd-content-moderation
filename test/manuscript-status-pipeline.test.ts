@@ -18,7 +18,7 @@ describe('foundation status API uses the canonical workflow pipeline', () => {
       body: JSON.stringify({
         title: '底层状态防绕过稿',
         sourceType: 'notice',
-        sourceText: '模拟素材：县里召开工作推进会，各部门汇报阶段进展。',
+        sourceText: '模拟素材：市里召开工作推进会，各部门汇报阶段进展。',
       }),
     });
     expect(created.status).toBe(201);
@@ -67,7 +67,7 @@ describe('foundation status API uses the canonical workflow pipeline', () => {
       body: JSON.stringify({
         title: '底层审核阶段约束稿',
         sourceType: 'notice',
-        sourceText: '模拟素材：县里召开项目调度会。',
+        sourceText: '模拟素材：市里召开项目调度会。',
       }),
     });
     const id = ((await created.json()) as { manuscript: { id: string } }).manuscript.id;

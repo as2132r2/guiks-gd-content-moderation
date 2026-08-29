@@ -13,6 +13,7 @@
 | [admission-cases.md](admission-cases.md) | D.2 ✅ | 三组准入样例：要理由 / 硬拦 / 公器私用 |
 | [script.md](script.md) | D.8 / D.9 ✅ | 三分钟口播稿 + 操作清单（口播与操作写在一起）+ 常见追问答法 |
 | [runbook.md](runbook.md) | D.7 / D.10 ✅ | 演示前检查单、数字核对表、五种应急处置 |
+| [rollup-banner.md](rollup-banner.md) | 展台物料 | 80×200cm 易拉宝：规格、出图命令、文案依据与待填占位；印刷源为同目录 [rollup-banner.html](rollup-banner.html) |
 | [demo-fixtures.ts](../../src/routes/demo-fixtures.ts) | D.4–D.6 ✅ | 素材的唯一事实来源；播种 / 重置 / 填入示例三个端点 |
 | *(待建)* | D.11 | 作品说明一页 |
 
@@ -31,7 +32,7 @@ curl -X POST http://localhost:3300/api/demo/seed
 
 这些端点**只在 `APP_MODE=demo` 下存在**，production 构建里没有。
 
-> **主通稿不预先播种**，要在台上现场投料——0:00 那一镜就是「县级台编辑每天上午的活」。
+> **主通稿不预先播种**，要在台上现场投料——0:00 那一镜就是「台里编辑每天上午的活」。
 > 已签发样例也不播种，原因见 requirements.md 第十三节 D2 的说明。
 
 ## 素材改动纪律

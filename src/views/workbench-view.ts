@@ -1207,7 +1207,7 @@ export function renderWorkbench(): string {
     if (!view) {
       return {
         gate:'① 素材入口', scope:'现场投料',
-        goal:'录入一份模拟通稿', goalNote:'让观众先看到县级台每天真实处理的素材。',
+        goal:'录入一份模拟通稿', goalNote:'让观众先看到台里每天真实处理的素材。',
         judgement:'尚未进入准入判断', judgementNote:'系统还没有调用模型，也没有产生内容。',
         next:'填入示例通稿并提交', nextNote:'提交后先判断这次模型调用该不该发生。'
       };
@@ -1373,8 +1373,8 @@ export function renderWorkbench(): string {
   function newForm() {
     return '<div class="card">' +
       '<h3>① 素材入口</h3>' +
-      '<p>粘贴上级通稿或会议材料。不做爬虫、不接外部采集系统——县级台编辑每天上午的活就是从一份通稿开始。</p>' +
-      '<label class="f"><span>标题</span><input class="f" id="nf-title" placeholder="例：全县乡村振兴现场推进会召开" /></label>' +
+      '<p>粘贴上级通稿或会议材料。不做爬虫、不接外部采集系统——台里编辑每天上午的活就是从一份通稿开始。</p>' +
+      '<label class="f"><span>标题</span><input class="f" id="nf-title" placeholder="例：全市乡村振兴现场推进会召开" /></label>' +
       '<label class="f"><span>素材类型</span><select class="f" id="nf-type">' +
         '<option value="notice">通知 / 会议材料</option>' +
         '<option value="public-relations">政务通稿</option>' +
@@ -1666,7 +1666,7 @@ export function renderWorkbench(): string {
       '<div class="card"><h3>⑤ 三审三校流转</h3>' +
       '<p>我们没有发明新流程。把三审三校里<strong>机械的那部分</strong>自动化了，' +
       '<strong>判断的那部分</strong>留给人，并且让全程可追溯、责任到人。</p>' +
-      '<p class="hint" style="margin:0">一个人可以同时持有多个角色（县级台常常只有两个人），' +
+      '<p class="hint" style="margin:0">一个人可以同时持有多个角色（小编辑部常常只有两个人），' +
       '但每一次审批仍然分别留痕——<strong>合并的是人，不是责任</strong>。退回必须写明理由，理由进审计。</p>' +
       '</div>';
 
@@ -2112,14 +2112,14 @@ export function renderWorkbench(): string {
 
     var reasonBox = function () {
       return '<label class="f" style="margin-top:12px"><span>选题依据 / 退回理由（进审计）</span>' +
-        '<textarea class="f" id="reason" style="min-height:76px" placeholder="例：县应急管理局已授权发布，见 8 月 27 日通报"></textarea></label>';
+        '<textarea class="f" id="reason" style="min-height:76px" placeholder="例：市应急管理局已授权发布，见 8 月 27 日通报"></textarea></label>';
     };
     var primaryReasonBox = primary.requiresReason ? reasonBox() : '';
     var otherReasonBox = !primary.requiresReason && others.some(function (t) { return t.requiresReason; })
       ? reasonBox() : '';
     var legacyReasonBox = mine.some(function (t) { return t.requiresReason; })
       ? '<label class="f" style="margin-top:12px"><span>选题依据 / 退回理由（进审计）</span>' +
-        '<textarea class="f" id="reason" style="min-height:76px" placeholder="例：县应急管理局已授权发布，见 8 月 27 日通报"></textarea></label>'
+        '<textarea class="f" id="reason" style="min-height:76px" placeholder="例：市应急管理局已授权发布，见 8 月 27 日通报"></textarea></label>'
       : '';
 
     var modelBox = view.manuscript.status === 'admitted' && mine.some(function (t) { return t.to === 'generated'; })
@@ -2137,7 +2137,7 @@ export function renderWorkbench(): string {
 
     var countersignBox = view.manuscript.status === 'countersign'
       ? '<div class="cs-fields">' +
-          '<label class="f"><span>会签方</span><input class="f" id="countersign-party" maxlength="100" placeholder="例：县应急管理局"></label>' +
+          '<label class="f"><span>会签方</span><input class="f" id="countersign-party" maxlength="100" placeholder="例：市应急管理局"></label>' +
           '<label class="f"><span>会签意见</span><textarea class="f" id="countersign-opinion" style="min-height:76px" maxlength="2000" placeholder="填写会签意见，内容将进入审核留痕"></textarea></label>' +
         '</div>'
       : '';

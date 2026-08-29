@@ -20,7 +20,7 @@ describe('server-owned artifact provenance', () => {
     const createdResponse = await jsonRequest('/api/workbench', 'POST', {
       title: '来源真源回归稿',
       sourceType: 'notice',
-      sourceText: '模拟素材：县里召开工作推进会，项目总投资 3.2亿元。',
+      sourceText: '模拟素材：市里召开工作推进会，项目总投资 3.2亿元。',
     });
     expect(createdResponse.status).toBe(201);
     const created = (await createdResponse.json()) as { manuscript: { id: string } };

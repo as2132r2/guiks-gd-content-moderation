@@ -18,7 +18,7 @@ const postJson = (path: string, body: unknown) =>
 describe('manuscript foundation API', () => {
   it('runs the persistent workflow from manuscript to trace', async () => {
     const createdResponse = await postJson('/api/manuscripts', {
-      title: '县级融媒演示稿',
+      title: '融媒演示稿',
       sourceType: 'public-relations',
       sourceText: '模拟素材：某地举行山地文旅活动。',
     });
@@ -89,7 +89,7 @@ describe('manuscript foundation API', () => {
       await postJson('/api/manuscripts', {
         title: '句级来源演示稿',
         sourceType: 'notice',
-        sourceText: '模拟素材：县里召开会议。第三句引自原通稿。第四句引自原通稿。',
+        sourceText: '模拟素材：市里召开会议。第三句引自原通稿。第四句引自原通稿。',
       })
     ).json()) as { manuscript: { id: string } };
     const id = created.manuscript.id;
