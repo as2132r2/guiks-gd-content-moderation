@@ -431,7 +431,7 @@ footer {
 <section class="step" id="s3-8">
   <div class="step-head"><span class="step-num">8</span><h3>看这套系统凭什么这么判 <span class="step-time">· 1 分钟</span></h3></div>
   <p>前七步看的是判定的<strong>结果</strong>，这一屏看的是判定的<strong>依据本身</strong>。</p>
-  <p>点顶栏的<strong>「判定依据」</strong>（<code>/rules</code>，五个账号都进得去，但<strong>只有 <code>stationadmin</code> 能改</strong>，其余是只读）。四个页签：</p>
+  <p>点顶栏的<strong>「判定依据」</strong>（<code>/rules</code>，五个账号都进得去，但<strong>只有 <code>stationadmin</code> 能改</strong>，其余是只读）。五个页签：</p>
   <div class="scroll">
   <table>
     <thead><tr><th>页签</th><th>里面是什么</th></tr></thead>
@@ -440,6 +440,7 @@ footer {
       <tr><td><strong>输出预检</strong></td><td>62 条禁用词、慎用词、领导表述规范与错别字</td></tr>
       <tr><td><strong>内置判定逻辑</strong></td><td>不落库、只能改代码的那部分（标点、格式、当事人姓名保护、一致性比对、L2 判断）。<strong>列在这里是为了不让人以为词表就是判定的全部</strong></td></tr>
       <tr><td><strong>改动史</strong></td><td>谁在什么时候改了哪一条、从什么改成什么、为什么</td></tr>
+      <tr><td><strong>使用限制</strong></td><td>每个账号每天能调多少次、烧多少 token；今日用量；最近的超限</td></tr>
     </tbody>
   </table>
   </div>
@@ -453,6 +454,22 @@ footer {
   <div class="note">
     <p><strong>为什么改动史这么较真。</strong> 词表是判定的依据。依据一旦可以改，「这一篇当时按什么判的」就不能只靠规则编号回答了——那条规则可能已经被改过。所以每一次判定的留痕都带着词表版本号，而每一版是什么，由改动史逐条重建。<strong>判定依据自己也得是被追溯的对象</strong>，否则留痕就开始说谎。</p>
   </div>
+  <p>最后看<strong>「使用限制」</strong>页签。它和词表判的<strong>不是一回事</strong>：</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th></th><th>入口准入</th><th>使用限制</th></tr></thead>
+    <tbody>
+      <tr><td>判什么</td><td>这次调用<strong>该不该发生</strong>（看内容）</td><td>这个账号<strong>今天还能不能调</strong>（看用量）</td></tr>
+      <tr><td>拦下来会怎样</td><td>稿件进「已拒绝」或「待填选题依据」</td><td>稿件<strong>一步不动</strong>，还停在原地</td></tr>
+      <tr><td>怎么解除</td><td>填一句选题依据就放行</td><td>填理由没用，只能台领导调额度或等明天</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>试一下：把「调用次数」设成 1，换 <code>zhangmin</code> 登录去生成一篇稿子——第二次调用会被挡下，提示写的是<strong>「今日调用次数已用完⋯⋯这不是内容判定，这篇稿子本身没有问题」</strong>。</p>
+  <div class="note">
+    <p><strong>为什么这句话必须写在提示里。</strong> 编辑看到被拒的第一反应一定是「我写的东西有问题？」然后跑去改一篇本来没问题的稿子。<strong>超限是额度问题，不是内容问题</strong>，两件事在留痕里、在文案里、在稿件状态上都得分得干干净净——否则查起来会变成「因为超限所以被判违规」，那就什么也说不清了。</p>
+  </div>
+  <p>试完记得把上限清空（留空 = 不限，也是出厂默认）。</p>
 </section>
 
 <h2 id="s4">四、还想试什么</h2>

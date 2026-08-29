@@ -132,6 +132,9 @@ export const traceKinds = [
   'artifact-created',
 
   'rule-hit',
+  // 超限。**刻意不复用 `rule-hit`**：那一条讲的是内容判定，这一条讲的是资源
+  // 配额。共用一个 kind，追溯图谱上就会出现「因为超限所以被判违规」的假因果。
+  'quota-blocked',
   'segments-recorded',
   'review-recorded',
   'signed',

@@ -25,6 +25,7 @@ import {
   type ManagedRule,
   type RuleScope,
 } from '../domain/ruleset.js';
+import { localDay } from '../db/usage.js';
 import { readSessionUser } from '../lib/session.js';
 import { requireAuth, type AuthEnv } from '../middleware/auth.js';
 import { assessBlockBucket, builtinEngineRules } from '../rules/ruleset.js';
@@ -76,6 +77,17 @@ const updateSchema = z.object({
 });
 
 const deleteSchema = z.object({ reason });
+
+/**
+ * 上限。`null` 是显式「不限」，缺省是「这一项不动」。
+ *
+ * 下限设 1 而不是 0：0 的含义是「一次都不许调」，那不是配额是停用账号，
+ * 该走账号禁用，不该从这里绕。
+ */
+const limitsSchema = z.object({
+  dailyCalls: z.number().int().min(1).max(100_000).nullable().optional(),
+  dailyTokens: z.number().int().min(1_000).max(100_000_000).nullable().optional(),
+});
 
 const badRequest = (issues: z.core.$ZodIssue[]) => ({
   error: 'invalid_request',
@@ -260,6 +272,43 @@ rulesRoutes.delete('/api/rules/:ruleId', async (c) => {
     reason: parsed.data.reason,
   });
   return c.json(result);
+});
+
+// ————————————————————————— 使用限制 —————————————————————————
+//
+// ⚠️ **这一组和上面的词表不是一回事，接口上也刻意不长得像。**
+// 词表判「这次调用该不该发生」（内容），配额判「这个账号今天还能不能调」（资源）。
+// 两套结论共用任何一个字段，留痕里迟早长出「因为超限所以被判违规」。
+
+rulesRoutes.use('/api/usage-limits', requireAuth);
+rulesRoutes.use('/api/usage-limits/*', requireAuth);
+
+rulesRoutes.get('/api/usage-limits', (c) => {
+  const user = c.get('currentUser');
+  if (!hasPermission(user, 'usage-limit:read')) return c.json({ error: 'role_not_allowed' }, 403);
+  const store = getWorkflowRepository().usage;
+  return c.json({
+    limits: store.limits(),
+    day: localDay(),
+    today: store.today(),
+    blocked: store.listBlocked(50),
+    canWrite: hasPermission(user, 'usage-limit:write'),
+  });
+});
+
+rulesRoutes.put('/api/usage-limits', async (c) => {
+  const user = c.get('currentUser');
+  if (!hasPermission(user, 'usage-limit:write')) {
+    return c.json(
+      { error: 'role_not_allowed', message: '只有台领导可以改使用限制，其余角色为只读。' },
+      403,
+    );
+  }
+  const parsed = limitsSchema.safeParse(await readJson(c.req));
+  if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
+
+  const limits = getWorkflowRepository().usage.setLimits(parsed.data, user.displayName);
+  return c.json({ limits });
 });
 
 /** 界面分组用。词条的 scope 决定它归哪一屏。 */

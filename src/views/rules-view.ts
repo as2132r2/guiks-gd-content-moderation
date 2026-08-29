@@ -167,7 +167,7 @@ ${themeBootstrap}<style>${themeStyles}
   var TERM_CATEGORIES = ['banned-term','caution-term','leader-title','typo'];
   var CHANGE = { 'created':'新增','updated':'修改','enabled':'启用','disabled':'停用','deleted':'删除' };
 
-  var state = { data:null, tab:'admission', q:'', bucket:'', changes:[] };
+  var state = { data:null, tab:'admission', q:'', bucket:'', changes:[], usage:null, saved:'' };
 
   function $(id) { return document.getElementById(id); }
   function esc(v) {
@@ -219,7 +219,8 @@ ${themeBootstrap}<style>${themeStyles}
       ['admission','入口准入'],
       ['preflight','输出预检'],
       ['engine','内置判定逻辑'],
-      ['changes','改动史']
+      ['changes','改动史'],
+      ['usage','使用限制']
     ];
     return '<div class="tabs">' + items.map(function (it) {
       return '<button class="tab" data-tab="' + it[0] + '" aria-selected="' +
@@ -343,12 +344,108 @@ ${themeBootstrap}<style>${themeStyles}
     '凭据被谁改过必须查得到——这和整个产品「说得清」是同一件事。</p>';
   }
 
+  // ————————————————————————— 使用限制 —————————————————————————
+
+  function num(v) { return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+  function usagePanel() {
+    var u = state.usage;
+    if (!u) return '<div class="empty">正在取数…</div>';
+    var write = u.canWrite;
+
+    var out = '<p class="note" style="margin:0 0 14px">' +
+      '<strong>这一屏和词表判的不是一回事。</strong>' +
+      '入口准入判的是<strong>这次调用该不该发生</strong>（看内容），' +
+      '使用限制判的是<strong>这个账号今天还能不能调</strong>（看用量）。' +
+      '超限时稿件状态<strong>一步不动</strong>，编辑收到的话也写明「这不是内容判定」——' +
+      '两套结论混在一起，留痕里就会长出「因为超限所以被判违规」这种说不清的东西。</p>';
+
+    out += '<div class="card" style="margin-bottom:16px"><h2 class="hd">每个账号每天的上限</h2>' +
+      '<div class="row2">' +
+      '<div class="field"><label>调用次数</label>' +
+      '<input id="u-calls" type="number" min="1" max="100000" placeholder="留空 = 不限" value="' +
+      (u.limits.dailyCalls == null ? '' : u.limits.dailyCalls) + '"' + (write ? '' : ' disabled') + ' />' +
+      '<span class="hint">一次生成产两份产物，算<strong>两次</strong>调用。</span></div>' +
+      '<div class="field"><label>token 用量</label>' +
+      '<input id="u-tokens" type="number" min="1000" max="100000000" placeholder="留空 = 不限" value="' +
+      (u.limits.dailyTokens == null ? '' : u.limits.dailyTokens) + '"' + (write ? '' : ' disabled') + ' />' +
+      '<span class="hint">输入 + 输出之和。</span></div>' +
+      '</div>' +
+      (write
+        ? '<div class="dialog-actions" style="justify-content:flex-start"><button class="primary" id="u-save">保存上限</button>' +
+          '<span class="hint" id="u-status" style="align-self:center;color:var(--faint);font-size:12.5px">' +
+          esc(state.saved) + '</span></div>'
+        : '<div class="readonly-hint">当前账号为只读。改使用限制归台领导。</div>') +
+      '<p class="note">' +
+      (u.limits.updatedAt ? '上次改动：' + stamp(u.limits.updatedAt) +
+        (u.limits.updatedBy ? '　' + esc(u.limits.updatedBy) : '') + '。' : '还没有设过上限，当前两项都不限。') +
+      '<strong>次日按本地时间零点重置。</strong>上游失败（余额不足、超时）不吃额度——' +
+      '因为供应商出问题而惩罚编辑说不过去。</p></div>';
+
+    out += '<div class="card" style="margin-bottom:16px"><h2 class="hd">今日用量 · ' + esc(u.day) + '</h2>';
+    out += u.today.length === 0 ? '<div class="empty">今天还没有人调过模型。</div>' :
+      '<div class="scroll"><table><thead><tr><th>人</th>' +
+      '<th style="text-align:right">调用次数</th><th style="text-align:right">输入 tokens</th>' +
+      '<th style="text-align:right">输出 tokens</th><th style="text-align:right">合计 tokens</th>' +
+      '</tr></thead><tbody>' + u.today.map(function (r) {
+        var total = r.tokensIn + r.tokensOut;
+        var hotCalls = u.limits.dailyCalls != null && r.calls >= u.limits.dailyCalls;
+        var hotTokens = u.limits.dailyTokens != null && total >= u.limits.dailyTokens;
+        return '<tr><td class="term">' + esc(r.displayName || r.userId) +
+          (r.username ? '<span class="rid" style="font-weight:400"> @' + esc(r.username) + '</span>' : '') + '</td>' +
+          '<td class="act">' + (hotCalls ? pill(num(r.calls), 'block') : num(r.calls)) + '</td>' +
+          '<td class="act">' + num(r.tokensIn) + '</td>' +
+          '<td class="act">' + num(r.tokensOut) + '</td>' +
+          '<td class="act">' + (hotTokens ? pill(num(total), 'block') : num(total)) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    out += '<p class="note">这份数<strong>落库</strong>，进程重启不清零——' +
+      '重启就能续杯的计数不叫配额。它和遗留控制台的 <code>/api/usage</code> 不是同一份数据。</p></div>';
+
+    out += '<div class="card"><h2 class="hd">最近的超限</h2>';
+    out += u.blocked.length === 0 ? '<div class="empty">还没有人被额度挡下过。</div>' :
+      '<div class="scroll"><table><thead><tr><th>人</th><th>挡在哪一项</th>' +
+      '<th style="text-align:right">当时用量 / 上限</th><th>时间</th></tr></thead><tbody>' +
+      u.blocked.map(function (r) {
+        return '<tr><td class="term">' + esc(r.actor) + '</td>' +
+          '<td>' + pill(r.kind === 'tokens' ? 'token 用量' : '调用次数', 'warn') + '</td>' +
+          '<td class="act">' + num(r.used) + ' / ' + num(r.limit) + '</td>' +
+          '<td class="rid">' + stamp(r.createdAt) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    out += '<p class="note">超限单独留痕，<strong>不写进入口准入的结论</strong>；' +
+      '有稿件上下文时追溯图谱上也是单独一条 <code>quota-blocked</code>，' +
+      'actor 写「使用限制」而不是「入口准入」。</p></div>';
+
+    return out;
+  }
+
+  function saveLimits() {
+    var calls = document.getElementById('u-calls').value.trim();
+    var tokens = document.getElementById('u-tokens').value.trim();
+    var status = document.getElementById('u-status');
+    status.textContent = '保存中…';
+    api('/api/usage-limits', {
+      method:'PUT',
+      body: JSON.stringify({
+        dailyCalls: calls === '' ? null : Number(calls),
+        dailyTokens: tokens === '' ? null : Number(tokens)
+      })
+    }).then(function () {
+      // 提示存进 state：loadUsage() 会重建整块 DOM，直接写 textContent 当场被冲掉。
+      state.saved = '已保存。上限即刻生效，明天零点按本地时间重置。';
+      loadUsage();
+    }).catch(function (e) {
+      state.saved = '';
+      status.textContent = '保存失败：' + e.message;
+    });
+  }
+
   function render() {
     var d = state.data;
     $('version').textContent = '判定依据 v' + d.version;
     var out = banner(d) + tabs();
     if (state.tab === 'engine') out += engineTable();
     else if (state.tab === 'changes') out += changeList();
+    else if (state.tab === 'usage') out += usagePanel();
     else out += ruleTable();
     $('root').innerHTML = out;
     bind();
@@ -519,7 +616,10 @@ ${themeBootstrap}<style>${themeStyles}
       b.addEventListener('click', function () {
         state.tab = b.getAttribute('data-tab');
         state.bucket = '';
-        if (state.tab === 'changes') loadChanges(); else render();
+        state.saved = '';
+        if (state.tab === 'changes') loadChanges();
+        else if (state.tab === 'usage') loadUsage();
+        else render();
       });
     });
     var q = $('q');
@@ -528,6 +628,8 @@ ${themeBootstrap}<style>${themeStyles}
     if (bucket) bucket.addEventListener('change', function () { state.bucket = bucket.value; render(); });
     var add = $('add');
     if (add) add.addEventListener('click', function () { openEditor(null); });
+    var save = $('u-save');
+    if (save) save.addEventListener('click', saveLimits);
 
     Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function (b) {
       b.addEventListener('click', function () { openEditor(ruleById(b.getAttribute('data-edit'))); });
@@ -566,6 +668,15 @@ ${themeBootstrap}<style>${themeStyles}
     });
   }
 
+  function loadUsage() {
+    api('/api/usage-limits').then(function (d) {
+      state.usage = d;
+      render();
+    }).catch(function (e) {
+      $('root').innerHTML = '<div class="empty">取数失败：' + esc(e.message) + '</div>';
+    });
+  }
+
   function loadChanges() {
     api('/api/rules/changes').then(function (d) {
       state.changes = d.changes;
@@ -578,7 +689,9 @@ ${themeBootstrap}<style>${themeStyles}
   function load() {
     api('/api/rules').then(function (d) {
       state.data = d;
-      if (state.tab === 'changes') loadChanges(); else render();
+      if (state.tab === 'changes') loadChanges();
+      else if (state.tab === 'usage') loadUsage();
+      else render();
     }).catch(function (e) {
       $('root').innerHTML = '<div class="empty">取数失败：' + esc(e.message) + '</div>';
     });

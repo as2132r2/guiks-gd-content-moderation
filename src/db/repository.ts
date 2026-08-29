@@ -39,6 +39,7 @@ import { config } from '../config.js';
 import { createDatabase, type DatabaseHandle } from './client.js';
 import { buildOversight, type OversightSnapshot } from './oversight.js';
 import { RulesetStore } from './ruleset.js';
+import { UsageLimitStore } from './usage.js';
 import { builtinManagedRules } from '../rules/ruleset.js';
 import {
   admissionResults,
@@ -372,9 +373,12 @@ function validateAccountInput(input: AccountInput): {
 export class WorkflowRepository {
   /** 判定依据（词表）。SQL 在 [ruleset.ts](ruleset.ts)，这里只持有它。 */
   readonly ruleset: RulesetStore;
+  /** 使用限制与逐日用量。SQL 在 [usage.ts](usage.ts)。 */
+  readonly usage: UsageLimitStore;
 
   constructor(private readonly database: DatabaseHandle) {
     this.ruleset = new RulesetStore(database);
+    this.usage = new UsageLimitStore(database);
     this.reconcileInterruptedModelCalls();
   }
 

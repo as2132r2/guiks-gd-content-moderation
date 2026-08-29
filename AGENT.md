@@ -59,6 +59,7 @@ npm run provision:user           # 建账号（production 部署用）
 5. **`main` 必须随时能演示。** 短分支小 PR，`npm run check` 通过再提。
 6. **真实模型不裸奔。** `GATEWAY_TOKEN` 只保护原始网关接口；工作台、靶场、红队和 runtime 要等轨道 C 登录鉴权或部署层统一保护后，才能带真实上游公开部署。Mock 演示不受此限制。
 7. **判定依据自己也要被追溯。** 词表可改，所以每一次准入/预检留痕都带 `rulesetVersion`，每一次词表改动都写不可变的 `rule_change_log`（谁、何时、哪条、从什么改成什么、为什么）。**出处与理由都是服务端必填**，内置基线删不掉、词面与出处改不了——「基线是什么」必须永远查得回去。
+8. **超限不是内容判定。** 使用限制判「这个账号今天还能不能调」（资源），入口准入判「这次调用该不该发生」（内容）。两套结论**一个字段都不共用**：超限走 429 `usage_quota_exceeded`、留痕 kind 是 `quota-blocked`（actor「使用限制」）、**稿件状态一步不动**，文案里明写「这不是内容判定」。混在一起，留痕里就会长出「因为超限所以被判违规」的假因果。
 
 ### 双向治理的两个钩子
 
@@ -91,6 +92,10 @@ npm run provision:user           # 建账号（production 部署用）
   引擎 `runAdmission()` / `runPreflight()` 多一个 `ruleset` 参数，**默认仍是内置基线**——测试与准入案例拿到的是确定性的基线结果；工作台传 [src/rules/active.ts](src/rules/active.ts) 的 `activeRuleset()`。
   **只有词条落库**：正则（标点/格式/叠字）、共现规则（当事人姓名保护）、一致性比对与 L2 判断留在代码里，界面只读展示——让人从浏览器塞任意正则等于开一个远程拒绝服务的口子。
   权限：`rules:read` 给全部系统角色，`rules:write` 只给 `station-leader`。
+- **使用限制已落地**：单账号每日调用次数与 token 上限，表在 `usage_limits` / `usage_counters` / `usage_limit_events`（migration `0007`），持久层 [src/db/usage.ts](src/db/usage.ts)，界面是 `/rules` 的「使用限制」页签，端点 `GET|PUT /api/usage-limits`。
+  **执行点在 `throughGateway()`**，和准入同一个论证：绕不过网关就绕不过配额。挡在模型之前，token 一个没烧。
+  **计数落库**——`/api/usage`（`src/lib/store.ts`）是内存环形缓冲，进程重启即清零，配额建在它上面等于重启就能续杯。按（本地日期，账号）计数，按账号不按显示名。
+  上游 429/502 不吃额度；**出厂两项都不限**，所以装上这一版开箱行为不变。权限 `usage-limit:read` 给全部角色，`usage-limit:write` 只给 `station-leader`。
 - **真实模型协议与切换已落地**：OpenAI 兼容 `/chat/completions` 可接 GLM / DeepSeek；模型配置档把供应商 URL、Key、思考模式与超时绑定到模型，工作台可按次切换并写入模型留痕。DeepSeek V4 已用真实 Key 完成双产物、服务商计量与失败恢复验收；GLM-5.3 / GLM-5.3-Flash 的真实请求均已到达服务端并识别模型，但当前账户因余额或资源包不足返回 429，待充值后补成功响应验收。仓库不保存真实 URL/Key。
 - **红队与评分已转为广电口径**：12 发探针覆盖导向、事实、标识、可追溯、版权，评分使用同名五维。
 

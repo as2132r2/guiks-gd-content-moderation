@@ -12,6 +12,7 @@ import {
 } from '../config.js';
 import { getWorkflowRepository } from '../db/repository.js';
 import type { TraceEvent, WorkflowDomainEvent } from '../domain/contracts.js';
+import { quotaMessage, type UsageQuotaVerdict } from '../domain/usage-limit.js';
 import { publish } from '../lib/bus.js';
 import { scanRequest, scanResponse } from '../lib/detectors.js';
 import { applyGuardrail, evaluateGuardrails } from '../lib/guardrails.js';
@@ -61,6 +62,18 @@ export interface GatewayTraceContext {
   operation: string;
 }
 
+/**
+ * 配额的记账主体。
+ *
+ * 是**账号**不是显示名——`governanceUser` 传的是「编辑·张敏」这种可变的展示
+ * 字符串，按它记账，改个显示名就能重置额度。
+ */
+export interface GatewayQuotaSubject {
+  userId: string;
+  /** 超限留痕上的人名快照。 */
+  actor: string;
+}
+
 export interface GatewayOptions {
   target?: string;
   model?: string;
@@ -68,8 +81,24 @@ export interface GatewayOptions {
   trace?: GatewayTraceContext;
   /** When present, guardrails and usage metering run inside this shared lifecycle. */
   governanceUser?: string;
+  /** When present, the daily quota is checked before the call and charged after it. */
+  quota?: GatewayQuotaSubject;
   /** Only controlled fake-data scenarios may expose bodies on the legacy console. */
   retainAuditBody?: boolean;
+}
+
+/**
+ * 超限。
+ *
+ * **和入口准入的任何一个错误都不是一回事**：那边判的是这次调用该不该发生，
+ * 这边判的是这个账号今天还能不能调。两套结论不共用字段、不共用 HTTP 码、
+ * 不共用留痕 kind——混在一起，留痕里就会长出「因为超限所以被判违规」的假因果。
+ */
+export class UsageQuotaError extends Error {
+  constructor(public readonly verdict: UsageQuotaVerdict) {
+    super(quotaMessage(verdict));
+    this.name = 'UsageQuotaError';
+  }
 }
 
 export class ModelTraceError extends Error {
@@ -143,6 +172,43 @@ export async function throughGateway(
   const requestSummary = opts.retainAuditBody
     ? oneLine(lastUser) || '(空请求)'
     : `模型请求 · ${lastUser.length} 字（正文未进入运行时事件）`;
+
+  // 配额挡在模型之前，和入口准入的硬拦同一个论证：**绕不过网关就绕不过配额**。
+  // 挡在这里，token 一个没烧、内容一个字没产生。
+  if (opts.quota) {
+    const repository = getWorkflowRepository();
+    const verdict = repository.usage.check(opts.quota.userId);
+    if (!verdict.allowed && verdict.kind && verdict.limit !== undefined) {
+      repository.usage.recordBlocked({
+        userId: opts.quota.userId,
+        actor: opts.quota.actor,
+        ...(opts.trace ? { manuscriptId: opts.trace.manuscriptId } : {}),
+        kind: verdict.kind,
+        used: verdict.used,
+        limit: verdict.limit,
+        day: verdict.day,
+      });
+      if (opts.trace) {
+        // 单独一个 kind。追溯图谱上这一条要能一眼看出「这是资源判定，不是内容判定」。
+        const event = repository.appendTrace(opts.trace.manuscriptId, {
+          kind: 'quota-blocked',
+          actorType: 'system',
+          actor: '使用限制',
+          data: {
+            quotaKind: verdict.kind,
+            used: verdict.used,
+            limit: verdict.limit,
+            day: verdict.day,
+            initiatedBy: opts.quota.actor,
+            operation: opts.trace.operation,
+            modelInvoked: false,
+          },
+        });
+        if (event) emitTrace(event);
+      }
+      throw new UsageQuotaError(verdict);
+    }
+  }
 
   const reqEvent: AuditEvent = {
     id: nextId('req'),
@@ -242,6 +308,16 @@ export async function throughGateway(
       modelSource: telemetry.modelSource,
       outcome: telemetry.outcome,
     });
+  }
+
+  // 记在上游成功之后：429 / 502 什么也没产出，让它吃掉额度等于因为供应商出问题
+  // 而惩罚编辑。
+  if (opts.quota) {
+    getWorkflowRepository().usage.record(
+      opts.quota.userId,
+      upstream.tokens.in,
+      upstream.tokens.out,
+    );
   }
 
   let governedReply = upstream.text;

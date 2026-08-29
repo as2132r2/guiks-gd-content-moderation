@@ -70,7 +70,7 @@ import { generateBroadcastArtifacts } from '../model/broadcast.js';
 import { activeRuleset } from '../rules/active.js';
 import { runAdmission, runPreflight } from '../rules/index.js';
 import { renderWorkbench } from '../views/workbench-view.js';
-import { ModelTraceError } from './gateway.js';
+import { ModelTraceError, UsageQuotaError } from './gateway.js';
 
 const createSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -648,8 +648,19 @@ export async function executeAuthenticatedTransition(
           sourceText: manuscript.sourceText,
           actor,
           model: selectedModel,
+          userId: user.id,
         });
       } catch (error) {
+        // 超限也是 429，但和上游余额不足**不是一回事**，更和入口准入不是一回事：
+        // 那两个一个是供应商的问题、一个是内容的问题，这个是本台自己设的额度。
+        // 三种情况共用一句文案，编辑就只能去猜自己写的东西哪里有问题。
+        if (error instanceof UsageQuotaError) {
+          return {
+            ok: false,
+            status: 429,
+            body: { error: 'usage_quota_exceeded', message: error.message },
+          };
+        }
         if (error instanceof UpstreamError) {
           if (error.status === 429) {
             return {

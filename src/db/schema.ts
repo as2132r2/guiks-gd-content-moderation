@@ -1,4 +1,12 @@
-import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 export const users = sqliteTable(
   'users',
@@ -179,6 +187,46 @@ export const rulesetMeta = sqliteTable('ruleset_meta', {
   updatedAt: integer('updated_at').notNull(),
 });
 
+/** 单行：全台统一的每日上限。两个字段都可空，空即不限。 */
+export const usageLimits = sqliteTable('usage_limits', {
+  id: integer('id').primaryKey(),
+  dailyCalls: integer('daily_calls'),
+  dailyTokens: integer('daily_tokens'),
+  updatedAt: integer('updated_at').notNull(),
+  updatedBy: text('updated_by'),
+});
+
+/** 逐账号逐日用量。落库而不是内存——重启清零的计数不是配额。 */
+export const usageCounters = sqliteTable(
+  'usage_counters',
+  {
+    day: text('day').notNull(),
+    userId: text('user_id').notNull(),
+    calls: integer('calls').notNull().default(0),
+    tokensIn: integer('tokens_in').notNull().default(0),
+    tokensOut: integer('tokens_out').notNull().default(0),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.userId] })],
+);
+
+/** 超限留痕。只 INSERT，且与准入结论分表——资源判定不是内容判定。 */
+export const usageLimitEvents = sqliteTable(
+  'usage_limit_events',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    actor: text('actor').notNull(),
+    manuscriptId: text('manuscript_id'),
+    kind: text('kind').notNull(),
+    used: integer('used').notNull(),
+    limitValue: integer('limit_value').notNull(),
+    day: text('day').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [index('usage_limit_events_time_idx').on(table.createdAt)],
+);
+
 export const schema = {
   users,
   manuscripts,
@@ -190,4 +238,7 @@ export const schema = {
   ruleTerms,
   ruleChangeLog,
   rulesetMeta,
+  usageLimits,
+  usageCounters,
+  usageLimitEvents,
 };
