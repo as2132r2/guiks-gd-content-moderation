@@ -12,6 +12,7 @@ import { createDatabase, type DatabaseHandle } from '../src/db/client.js';
 import { WorkflowRepository } from '../src/db/repository.js';
 import { runAdmission, runPreflight } from '../src/rules/index.js';
 import { builtinManagedRules, toRuleset } from '../src/rules/ruleset.js';
+import { RETIRED_RULE_IDS } from '../src/rules/terms.js';
 import { authenticatedRequest, loginAs } from './helpers/auth.js';
 
 type Request = ReturnType<typeof authenticatedRequest>;
@@ -55,6 +56,16 @@ describe('内置基线灌库', () => {
     repository.ensureDemoUsers();
   });
   afterEach(() => repository.close());
+
+  it('never reuses a retired rule id', () => {
+    // 一个编号在历史上指过什么，就永远只能指那个——改动日志和 rule_terms 都以它
+    // 为锚。PF-W-03 曾是一条正则管两个词，落库时拆成 PF-W-05 / PF-W-06，本号退休：
+    // 让它留下来只指其中一个，等于让编号的含义悄悄收窄，而这正是这套词表反对的事。
+    const live = new Set(repository.ruleset.snapshot().rules.map((rule) => rule.ruleId));
+    for (const retired of RETIRED_RULE_IDS) {
+      expect(live.has(retired), retired).toBe(false);
+    }
+  });
 
   it('lands every baseline entry with a source it can point at', () => {
     const snapshot = repository.ruleset.snapshot();
