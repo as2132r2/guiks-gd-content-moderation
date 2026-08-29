@@ -1,8 +1,8 @@
-import { pathToFileURL } from 'node:url';
 
 import { config } from './config.js';
 import { closeWorkflowRepository, getWorkflowRepository } from './db/repository.js';
 import { isSystemRole, type SystemRole } from './domain/contracts.js';
+import { isDirectRun } from './lib/entrypoint.js';
 
 export interface ProvisionArguments {
   username: string;
@@ -112,8 +112,7 @@ async function main(): Promise<void> {
   }
 }
 
-const entryPoint = process.argv[1];
-if (entryPoint && import.meta.url === pathToFileURL(entryPoint).href) {
+if (isDirectRun(import.meta.url)) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'provisioning failed';
     process.stderr.write(`provision:user failed: ${message}\n`);

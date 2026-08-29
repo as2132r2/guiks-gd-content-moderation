@@ -1,5 +1,4 @@
 import { serve } from '@hono/node-server';
-import { pathToFileURL } from 'node:url';
 import { Hono } from 'hono';
 import { config, listUpstreamModels, requiresGatewayToken, usingMockUpstream } from './config.js';
 import { closeWorkflowRepository, getWorkflowRepository } from './db/repository.js';
@@ -22,6 +21,7 @@ import { demoRoutes } from './routes/demo.js';
 import { targetRoutes } from './routes/target.js';
 import { workbenchRoutes } from './routes/workbench.js';
 import { renderConsole } from './views/console.js';
+import { isDirectRun } from './lib/entrypoint.js';
 
 export const app = new Hono<AuthEnv>();
 
@@ -102,11 +102,10 @@ if (config.appMode === 'demo') {
   app.route('/', policyRoutes);
 }
 
-// Start only when run directly (not when imported by tests). pathToFileURL is
-// what makes this work on Windows too — a Windows path never string-concats
-// into a valid file:// URL, so `npm run dev` used to exit silently there.
-const entryPoint = process.argv[1];
-const isMain = entryPoint !== undefined && import.meta.url === pathToFileURL(entryPoint).href;
+// Start only when run directly (not when imported by tests). 判定放在
+// [lib/entrypoint.ts](lib/entrypoint.ts)：Windows 路径和生产的 `current`
+// 符号链接都能让朴素写法静默失效，两次都是「什么也不做还返回 0」。
+const isMain = isDirectRun(import.meta.url);
 if (isMain) {
   // The production process lives behind a local reverse proxy. Binding it to
   // loopback makes an accidental security-group rule unable to expose the

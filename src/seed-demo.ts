@@ -16,9 +16,9 @@
  * 判重、已播过就跳过。**要清库是另一条命令**（`npm run reset:demo -- --yes`），
  * 而且必须显式确认——播种和删数据是两件事，不能一个动作顺手把另一件也做了。
  */
-import { pathToFileURL } from 'node:url';
 
 import { config } from './config.js';
+import { isDirectRun } from './lib/entrypoint.js';
 import { closeWorkflowRepository, getWorkflowRepository } from './db/repository.js';
 import {
   ALL_SEED_MANUSCRIPTS,
@@ -275,8 +275,7 @@ async function main(): Promise<void> {
   }
 }
 
-const entryPoint = process.argv[1];
-if (entryPoint && import.meta.url === pathToFileURL(entryPoint).href) {
+if (isDirectRun(import.meta.url)) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'seeding failed';
     process.stderr.write(`seed:demo failed: ${message}\n`);

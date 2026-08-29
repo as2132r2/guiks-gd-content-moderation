@@ -168,6 +168,8 @@ npm run provision:user -- --username someone --display-name 某某 --roles edito
 | `/readyz` 返 503 | 未配模型且未允许 mock | 配 `UPSTREAM_URL`，或设 `ALLOW_MOCK_UPSTREAM=true` |
 | 播种报 `requires a persistent DATABASE_PATH` | 落到了 `:memory:` | 显式设 `DATABASE_PATH` |
 | 播种报 `login failed` | 账号口令与 `SEED_PASSWORD` 不一致 | 用 `--accounts` 清掉账号后重播，或改用正确口令 |
+| 播种报 `502 model_upstream_failed` | 未配模型且没开 mock | 这一次加 `ALLOW_MOCK_UPSTREAM=true`（只作用于该进程，`app.env` 不动） |
+| **播种毫无输出、退出码 0、库里没变** | 早期版本经 `current` 符号链接调用时入口判定失效 | 已修（`lib/entrypoint.ts` 比 realpath）。旧版本上改用 `readlink -f` 解析出的真实路径调用 |
 | 端口打不开 | 容器与本地 dev server 抢 3300 | 二选一，`docker compose down` |
 | 页面能开但没数据 | 库是空的 | 跑一次 `npm run seed:demo` |
 
