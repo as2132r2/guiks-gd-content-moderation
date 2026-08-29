@@ -10,7 +10,9 @@ import { Hono } from 'hono';
 import { config } from '../config.js';
 import { getScenario } from '../lib/scenarios.js';
 import type { ChatMessage } from '../lib/upstream.js';
+import { requireAuth, type AuthEnv } from '../middleware/auth.js';
 import { auditExchange, throughGateway, type GatewayResult } from './gateway.js';
+import { requireAuditRead } from './events.js';
 
 const SYSTEM_PROMPT = getScenario().systemPrompt;
 
@@ -79,7 +81,11 @@ export async function askTarget(message: string): Promise<GatewayResult> {
   });
 }
 
-export const targetRoutes = new Hono();
+export const targetRoutes = new Hono<AuthEnv>();
+
+// `/target/chat` 每次都会走网关打一次模型；`/target/info` 会说出当前靶子是什么。
+// 两条都不该对匿名访问开放。
+targetRoutes.use('/target/*', requireAuth, requireAuditRead);
 
 targetRoutes.get('/target/info', (c) =>
   c.json({

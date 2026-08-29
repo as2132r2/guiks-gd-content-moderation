@@ -2,9 +2,10 @@
 
 所有接口返回 JSON；时间为 Unix 毫秒。错误使用稳定的 `error` 代码，页面不要依赖错误文案。
 
-`/healthz`、`/readyz`、`/api/meta` 和登录页/登录接口公开。工作台、稿件、`/api/state`、
-`/console` 与 `/events` 要求签名会话 cookie；HTTP 模型网关使用独立机器凭据，不接受浏览器
-cookie 代替。遗留演示控制面只在 `APP_MODE=demo` 挂载。
+`/healthz`、`/readyz`、`/api/meta`、产品介绍页 `/` 和登录页/登录接口公开。**其余一律要求签名
+会话 cookie**——工作台、稿件、`/api/state`、`/console`、`/events`、`/monitor`，以及只在
+`APP_MODE=demo` 挂载的遗留演示控制面。HTTP 模型网关使用独立机器凭据，不接受浏览器
+cookie 代替。
 固定错误语义为：未登录 `401 authentication_required`，账号未持有请求角色或该角色没有动作权限
 `403 role_not_allowed`，角色持有无误但当前状态不允许迁移时保留 `409 wrong_role` / `invalid_transition`。
 
@@ -59,7 +60,14 @@ x-api-key: base64:<random-secret>
 `throughGateway()` 不受影响。
 
 `/api/monitor/start`、`/api/redteam/run`、`/api/runtime/*`、`/api/policy*`、`/api/usage`、
-`/report` 和 `/target/*` 是遗留 demo surface，production 不挂载并稳定返回 404。
+`/policy`、`/runtime`、`/report` 和 `/target/*` 是遗留 demo surface，production 不挂载并稳定
+返回 404。
+
+在 demo 下它们同样认人：接口要求签名会话并校验 `audit:read`（与 `/api/state` 取齐），匿名
+返回 `401 authentication_required`；`/policy`、`/runtime`、`/report` 三个页面匿名 `302` 到
+`/login?next=<path>`。其中 `/api/monitor/start`、`/api/redteam/run`、`/api/runtime/chat`、
+`/api/runtime/simulate` 和 `/target/chat` 每次调用都会真的打模型，匿名可触发就等于把上游
+额度敞开——这是 CLAUDE.md 硬约束 6「真实模型不裸奔」的一部分。
 
 ## 创建稿件
 

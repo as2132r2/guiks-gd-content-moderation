@@ -4,6 +4,7 @@ import { app } from '../src/index.js';
 import { PLANTED } from '../src/lib/planted.js';
 import { resetPolicy } from '../src/lib/policy.js';
 import { reset } from '../src/lib/store.js';
+import { authenticatedRequest, loginAs } from './helpers/auth.js';
 
 const postJson = (path: string, body?: unknown, headers: Record<string, string> = {}) =>
   app.request(path, {
@@ -13,14 +14,18 @@ const postJson = (path: string, body?: unknown, headers: Record<string, string> 
   });
 
 describe('runtime governance (post-deploy)', () => {
-  beforeEach(() => {
+  let request: ReturnType<typeof authenticatedRequest>;
+
+  beforeEach(async () => {
     reset();
     resetPolicy();
+    request = authenticatedRequest(app, await loginAs(app));
   });
 
   it('simulation populates per-user token usage and guardrail events', async () => {
-    await postJson('/api/runtime/simulate');
-    const snap = (await (await app.request('/api/usage')).json()) as {
+    // 运行时面会真打模型、也会说出逐用户用量，所以它认人；网关自己走令牌，不认会话。
+    await request('/api/runtime/simulate', { method: 'POST' });
+    const snap = (await (await request('/api/usage')).json()) as {
       totals: { users: number; tokensOut: number; guardrailHits: number };
       users: Array<{ user: string; guardrailHits: number; tokensOut: number }>;
       guardrailEvents: unknown[];

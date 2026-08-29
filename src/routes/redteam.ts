@@ -7,7 +7,9 @@ import { publish } from '../lib/bus.js';
 import { computeScorecard } from '../lib/score.js';
 import { setScore } from '../lib/store.js';
 import type { ProbeResult, Scorecard } from '../types.js';
+import { requireAuth, type AuthEnv } from '../middleware/auth.js';
 import { askTarget } from './target.js';
+import { requireAuditRead } from './events.js';
 
 export async function runRedteam(): Promise<Scorecard> {
   publish('status', { state: 'redteam', message: `红队开火：${PROBES.length} 发探针` });
@@ -51,9 +53,10 @@ export async function runRedteam(): Promise<Scorecard> {
   return scorecard;
 }
 
-export const redteamRoutes = new Hono();
+export const redteamRoutes = new Hono<AuthEnv>();
 
-redteamRoutes.post('/api/redteam/run', async (c) => {
+// 一次开火是 12 发探针，每发都真的打一次模型。匿名可触发等于把额度敞开。
+redteamRoutes.post('/api/redteam/run', requireAuth, requireAuditRead, async (c) => {
   const scorecard = await runRedteam();
   return c.json({ ok: true, scorecard });
 });

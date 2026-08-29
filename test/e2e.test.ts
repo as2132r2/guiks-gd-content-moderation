@@ -3,15 +3,16 @@ import { app } from '../src/index.js';
 import { reset } from '../src/lib/store.js';
 import { authenticatedRequest, loginAs } from './helpers/auth.js';
 
-const postJson = (path: string, body?: unknown) =>
-  app.request(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
 describe('AuditGate end-to-end (in-process)', () => {
   let request: ReturnType<typeof authenticatedRequest>;
+
+  // 遗留面（靶场、红队、报告）现在也认人，所以这里的 POST 一律带会话。
+  const postJson = (path: string, body?: unknown) =>
+    request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
 
   beforeEach(async () => {
     reset();
@@ -82,7 +83,7 @@ describe('AuditGate end-to-end (in-process)', () => {
 
   it('renders the printable report after a run', async () => {
     await postJson('/api/redteam/run');
-    const html = await (await app.request('/report')).text();
+    const html = await (await request('/report')).text();
     expect(html).toContain('安全就绪度报告');
   }, 20000);
 });
