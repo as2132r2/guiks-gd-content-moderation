@@ -41,7 +41,7 @@ export function renderLogin(options: { demoLoginEnabled: boolean; next?: string 
   form{margin-top:24px;padding-top:22px;border-top:1px solid var(--line)}label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font:inherit}.submit{width:100%;margin-top:14px;padding:11px;border:0;border-radius:8px;background:var(--green);color:#fff;font-weight:700;cursor:pointer}.error{min-height:20px;color:#9b2d24;font-size:13px;margin-top:12px}
   @media(max-width:720px){main{grid-template-columns:1fr}.brand{padding:26px 30px}.quick{padding:28px 30px}}
   </style></head><body><main>
-  <section class="brand"><small>COUNTY MEDIA · AUDITABLE PRODUCTION</small><h1>把关人</h1><p>账号确认“谁在操作”，角色确认“以什么职责操作”。合并的是人，不是责任。</p></section>
+  <section class="brand"><small>融媒体中心 · 稿件生产与监理</small><h1>把关人</h1><p>账号确认“谁在操作”，角色确认“以什么职责操作”。合并的是人，不是责任。</p></section>
   <section>${cards}<form id="login-form"><h2>账号登录</h2><label for="username">用户名</label><input id="username" autocomplete="username" required><label for="password">密码</label><input id="password" type="password" autocomplete="current-password" required><button class="submit">登录</button><div class="error" id="error"></div></form></section>
   </main><script>(function(){'use strict';var next=${inlineNext};var error=document.getElementById('error');
   function login(body){error.textContent='';return fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json().catch(function(){return {}}).then(function(data){if(!r.ok)throw new Error(data.message||data.error||('HTTP '+r.status));location.href=next;});}).catch(function(e){error.textContent=e.message;});}
