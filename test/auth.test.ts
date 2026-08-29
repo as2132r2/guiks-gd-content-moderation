@@ -2,11 +2,7 @@ import { generateSignedCookie } from 'hono/cookie';
 import { describe, expect, it } from 'vitest';
 
 import { app } from '../src/index.js';
-import {
-  config,
-  demoLoginEnabledFor,
-  sessionSecretReadyFor,
-} from '../src/config.js';
+import { config, cookieSecureFor, demoLoginEnabledFor, sessionSecretReadyFor } from '../src/config.js';
 import { getWorkflowRepository } from '../src/db/repository.js';
 import { parseRolesJson } from '../src/domain/auth.js';
 import { SESSION_COOKIE } from '../src/lib/session.js';
@@ -221,5 +217,21 @@ describe('fixed role authorization', () => {
     expect(await review.json()).toMatchObject({
       review: { actor: '编辑·张敏', actorUserId: 'user_demo_zhangmin' },
     });
+  });
+});
+
+describe('会话 cookie 的 Secure 标志', () => {
+  // 线上踩过：切到 production 后 cookie 带上 Secure，而站点是纯 HTTP，
+  // 浏览器直接丢弃——接口返 200、Set-Cookie 也发了，人就是登不进去。
+  // curl 不理会这个标志，所以命令行验收全绿，故障只在浏览器里出现。
+  it('is on by default in production and off in demo', () => {
+    expect(cookieSecureFor('production', false)).toBe(true);
+    expect(cookieSecureFor('demo', false)).toBe(false);
+  });
+
+  it('can be turned off for an HTTP-only deployment, but only on purpose', () => {
+    expect(cookieSecureFor('production', true)).toBe(false);
+    // demo 本来就不带，开关对它没有额外影响。
+    expect(cookieSecureFor('demo', true)).toBe(false);
   });
 });

@@ -17,7 +17,7 @@ const cookieOptions = () => ({
   httpOnly: true,
   sameSite: 'Lax' as const,
   path: '/',
-  secure: config.appMode === 'production',
+  secure: config.cookieSecure,
 });
 
 const encodePayload = (payload: SessionPayload): string =>

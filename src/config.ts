@@ -89,7 +89,24 @@ export const demoLoginEnabledFor = (mode: 'demo' | 'production'): boolean => mod
  */
 export const demoToolsEnabledFor = (mode: 'demo' | 'production'): boolean => mode === 'demo';
 
+/**
+ * 会话 cookie 的 `Secure` 标志。
+ *
+ * 默认跟着 `production` 走。但**纯 HTTP 部署下必须关掉**：浏览器会直接丢弃
+ * 带 `Secure` 的 cookie，接口返 200、`Set-Cookie` 也发了，人就是登不进去——
+ * 排查起来极其难，因为 curl 不理会这个标志，命令行怎么试都是通的。
+ *
+ * 关掉它并不比原来更弱：站点本来就是明文 HTTP，会话在传输中已经是暴露的，
+ * `Secure` 在这种部署下一点保护都提供不了，只提供了一个登不进去的登录页。
+ * **真正要做的是上 HTTPS**，那之后把这个开关去掉。
+ */
+export const cookieSecureFor = (
+  mode: 'demo' | 'production',
+  allowInsecureCookie: boolean,
+): boolean => mode === 'production' && !allowInsecureCookie;
+
 const appMode = appModeEnv();
+const allowInsecureCookie = booleanEnv('ALLOW_INSECURE_COOKIE', false);
 const configuredSessionSecret = process.env.SESSION_SECRET?.trim() ?? '';
 const configuredGatewayToken = process.env.GATEWAY_TOKEN?.trim() ?? '';
 
@@ -221,6 +238,9 @@ export const config = {
   sessionHours: 8,
   demoLoginEnabled: demoLoginEnabledFor(appMode),
   demoToolsEnabled: demoToolsEnabledFor(appMode),
+  /** 只给纯 HTTP 部署用。上了 HTTPS 就该去掉。 */
+  allowInsecureCookie,
+  cookieSecure: cookieSecureFor(appMode, allowInsecureCookie),
   seedDemoUsers:
     appMode !== 'production' && booleanEnv('SEED_DEMO_USERS', appMode === 'demo'),
   demoSeedPassword: process.env.DEMO_SEED_PASSWORD?.trim() || 'gatekeeper-demo',
