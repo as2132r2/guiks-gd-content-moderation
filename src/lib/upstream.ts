@@ -94,6 +94,12 @@ async function realReply(
     profile.thinking === 'provider-default'
       ? {}
       : { thinking: { type: profile.thinking } };
+  // `reasoning_effort` 是和 `thinking` 平级的另一个参数，不是它的子字段。
+  // GLM-5.3 系列拒绝 `thinking:{type:"disabled"}` 也拒绝 `thinking:{type:"low"}`
+  // （都返 1210），认的就是这一个。省略时一个字节都不发，供应商行为不变。
+  const reasoning = profile.reasoningEffort
+    ? { reasoning_effort: profile.reasoningEffort }
+    : {};
   let res: Response;
   try {
     res = await fetch(url, {
@@ -102,7 +108,7 @@ async function realReply(
         'content-type': 'application/json',
         ...(profile.key ? { authorization: `Bearer ${profile.key}` } : {}),
       },
-      body: JSON.stringify({ model, messages, stream: false, ...thinking }),
+      body: JSON.stringify({ model, messages, stream: false, ...thinking, ...reasoning }),
       signal: AbortSignal.timeout(profile.timeoutMs),
     });
   } catch (error) {
