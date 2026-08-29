@@ -30,6 +30,9 @@ npx vitest run test/policy.test.ts           # 跑单个测试文件
 npx vitest run -t "blocks planted secret"    # 按用例名跑
 npm run build && npm run start:prod          # tsc → dist，node 运行
 docker compose up --build
+npm run seed:demo                # 播种试用账号与稿件走位（src/demo-dataset.ts）
+npm run reset:demo               # 清掉试用数据
+npm run provision:user           # 建账号（production 部署用）
 ```
 
 无需 API Key 即可启动：`UPSTREAM_URL` 为空时走 `src/lib/scenarios.ts` 里的确定性 mock。当前真实模型适配器支持 OpenAI-compatible Chat Completions；单模型兼容配置使用 `UPSTREAM_URL` / `UPSTREAM_KEY` / `UPSTREAM_MODEL`，多模型部署使用 `UPSTREAM_PROFILES_JSON`，为每个模型独立绑定 URL / Key / thinking / timeout，并用 `UPSTREAM_MODEL` 指定默认模型。DeepSeek V4 低延迟演示建议 `thinking=disabled`；GLM-5.3 / GLM-5.3-Flash 必须使用 `provider-default`。**业务代码不得自行读取这些变量，浏览器 API 不得返回 URL / Key**。Anthropic Messages/SSE 需要另行实现适配器。测试里 `NODE_ENV=test` 自动使用 `:memory:` 数据库。
@@ -42,9 +45,8 @@ docker compose up --build
 | --- | --- | --- |
 | 状态 | `src/lib/store.ts` 内存环形缓冲（audits / findings / guardrail / usage），进程重启即失 | SQLite（`src/db/`），事务写入，启动时幂等迁移 |
 | 契约 | `src/types.ts` | `src/domain/contracts.ts` |
-| 入口 | `/gateway/v1/messages`、`/api/state`、`/api/usage`、`/redteam`、`/report` | `/api/manuscripts*` |
-
-| 页面 | `/console`、`/policy`、`/runtime`、`/report` | **`/`** 与 `/workbench`（工作台，`/api/workbench*`） |
+| 入口 | `/gateway/v1/messages`、`/api/state`、`/api/usage`、`/redteam`、`/report` | `/api/manuscripts*`、`/api/workbench*`、`/api/monitor/overview` |
+| 页面 | `/console`、`/policy`、`/runtime`、`/report`（后四个只在 `APP_MODE=demo` 下挂载） | **`/`**（产品介绍页，公开）、`/workbench`（工作台）、`/monitor`（全流程监控看板） |
 
 两套都通过 `src/lib/bus.ts` 往同一条 SSE `/events` 发事件，浏览器按 event name 区分。
 
@@ -78,7 +80,9 @@ docker compose up --build
 
 - **AI 参与度追溯图谱已落地**：`tracePanel` 在 [src/views/workbench-view.ts](src/views/workbench-view.ts)，
   五块内容——签发卡、AI 参与度折线、句级来源图谱、责任链、规则命中。折线画的是稿件级比例，从留痕重建。
-- **首页已是工作台**：`/` 直接进稿件工作台，`/workbench` 保留为别名；遗留 AuditGate 控制台移到 `/console`。
+- **首页是产品介绍页**：`/` 是公开、不含任何稿件数据的产品说明页（[src/routes/landing.ts](src/routes/landing.ts) + [src/views/landing-view.ts](src/views/landing-view.ts)），「进入试用」指向 `/workbench`；**工作台已从 `/` 收敛到 `/workbench`**，未登录由它自己转 `/login`。遗留 AuditGate 控制台在 `/console`。
+- **全流程监控看板已落地**：`/monitor` 页面在 [src/views/oversight-view.ts](src/views/oversight-view.ts)，聚合端点 `GET /api/monitor/overview` 在 [src/routes/oversight.ts](src/routes/oversight.ts)，跨稿件 SQL 在 [src/db/oversight.ts](src/db/oversight.ts)。与工作台第 ⑥ 屏的分工：**追溯图谱答「这一篇稿子怎么走的」，监控看板答「这个台最近在怎么写稿」**。页面与端点都要 `audit:read`，与 `/api/state` 取齐。⚠️ 别和遗留的 `/api/monitor/start`（[src/routes/monitor.ts](src/routes/monitor.ts)，AuditGate 时代的内存态播种）搞混。
+- **试用数据集与用户手册已落地**：数据定义在 [src/demo-dataset.ts](src/demo-dataset.ts)（**全部模拟/脱敏素材**，人名地名数字均为虚构），执行器是 [src/seed-demo.ts](src/seed-demo.ts)，手册在 [docs/deploy/user-manual.md](docs/deploy/user-manual.md)（另有同名 `.html` 一份，含监控一节与可粘贴素材）。试用账号的用户名与显示名必须与 `ensureDemoUsers`（[src/db/repository.ts](src/db/repository.ts)）一致，否则 demo 与 production 两种部署下手册说的不是一回事、历史留痕也对不上。
 - **轨道 A 审核内核已落地**：校次契约、`revision` 复核修改、可选 `countersign` 会签、审核轮次、会签表单与意见留痕、改稿后重新预检、实体一致性、L2「待人工复核」、AI 显式/隐式标识和准入结论持久化均已实现。轨道 A migration 使用 `0004`，轨道 C 用户表使用 `0003`。
 - **轨道 C 登录鉴权已落地**：SQLite 用户与角色、scrypt 密码、签名会话、固定权限矩阵、真人留痕、production 强凭据与建号边界均已接入；模型列表和稿件业务接口同样受会话保护。
 - **真实模型协议与切换已落地**：OpenAI 兼容 `/chat/completions` 可接 GLM / DeepSeek；模型配置档把供应商 URL、Key、思考模式与超时绑定到模型，工作台可按次切换并写入模型留痕。DeepSeek V4 已用真实 Key 完成双产物、服务商计量与失败恢复验收；GLM-5.3 / GLM-5.3-Flash 的真实请求均已到达服务端并识别模型，但当前账户因余额或资源包不足返回 429，待充值后补成功响应验收。仓库不保存真实 URL/Key。
@@ -88,8 +92,8 @@ docker compose up --build
 
 - [src/lib/detectors.ts](src/lib/detectors.ts) 的 `scanRequest()` / `scanResponse()` 仍是 AuditGate 旧规格（提示注入词表 / PII + 密钥），**网关那条路还没接上广电规则**——新规则目前只在 `src/rules/` 里被工作台调用，两边最终要合，否则「绕不过网关就绕不过准入」这句在代码里还不成立。
 - DeepSeek V4 已完成本地 Docker 真实联调；GLM 两个模型待账户补充余额或资源包后完成成功响应验收。其他部署环境仍需自行安全注入模型配置档与网关令牌。
-- `/console`、`/policy`、`/runtime`、`/report` 四个遗留页面未改（2238 行，讲广电时一个都不用）。
-- `test/fixtures/`、`docs/demo/` 仍不存在。
+- `/console`、`/policy`、`/runtime`、`/report` 四个遗留页面未改（2238 行，讲广电时一个都不用）；后三个连同 `/redteam`、靶场与 demo 重置端点现在只在 `APP_MODE=demo` 下挂载。
+- `test/fixtures/` 仍不存在；`docs/demo/` 已建（演示脚本、runbook、准入案例、展台易拉宝）。
 
 ## 措辞纪律（用户可见文案与文档都适用）
 
