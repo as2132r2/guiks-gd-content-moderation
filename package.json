@@ -19,6 +19,10 @@
     "check": "npm run typecheck && npm test",
     "provision:user": "tsx src/provision-user.ts",
     "provision:user:prod": "node dist/provision-user.js",
+    "seed:demo": "tsx src/seed-demo.ts",
+    "seed:demo:prod": "node dist/seed-demo.js",
+    "reset:demo": "tsx src/reset-demo.ts",
+    "reset:demo:prod": "node dist/reset-demo.js",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio"
   },

@@ -1415,6 +1415,20 @@ export class WorkflowRepository {
     return before.n;
   }
 
+  /**
+   * 删除一个账号，返回是否真的删掉了。只给清理脚本用。
+   *
+   * 留痕里的 `actor_user_id` 是 `ON DELETE SET NULL`，所以删人不会带走历史——
+   * 那条记录会显示「（无署名）」而不是消失。**责任链不能因为账号注销就断掉。**
+   */
+  deleteUserByUsername(username: string): boolean {
+    const result = this.database.orm
+      .delete(users)
+      .where(eq(users.username, username.trim().toLowerCase()))
+      .run();
+    return result.changes > 0;
+  }
+
   /** 跨稿件聚合（6.14）。SQL 在 [oversight.ts](oversight.ts)，这里只开一个口子。 */
   oversight(): OversightSnapshot {
     return buildOversight(this.database.sqlite);
