@@ -817,7 +817,7 @@ export function renderWorkbench(): string {
 <header class="topbar">
   <div class="brand">
     <div class="name"><span class="dot"></span>把关人 · 稿件工作台</div>
-    <div class="sub">county media · production &amp; gatekeeping</div>
+    <div class="sub">converged media · production &amp; gatekeeping</div>
   </div>
   <span class="demo-badge">模拟 / 脱敏素材</span>
   <button class="btn present-launch" id="present-open" type="button">演示模式</button>
