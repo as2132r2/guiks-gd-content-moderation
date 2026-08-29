@@ -107,6 +107,48 @@ describe('输出预检', () => {
     expect(preflight(['张伟任县长到青云县调研。', '本内容由人工智能生成。'], source).annotations).toEqual([]);
   });
 
+  // 时政通稿绝大多数写成「职务+姓名」（市委书记周立），不是「姓名+任+职务」。
+  // 只认后一种的话，主通稿样例一个人名都比不出来，「二校看人名职务」是空的。
+  describe('「职务+姓名」写法', () => {
+    const SOURCE_WITH_LEADERS =
+      '8月27日，全市乡村振兴现场推进会在青山镇召开。市委书记周立、市长马晓东出席会议并讲话。';
+    const inconsistencies = (sentence: string) =>
+      preflight([sentence, '本内容由人工智能生成。'], SOURCE_WITH_LEADERS)
+        .annotations.filter((item) => item.category === 'inconsistency')
+        .map((item) => item.title);
+
+    it('leaves leaders that are actually in the source alone', () => {
+      expect(inconsistencies('市委书记周立、市长马晓东出席会议并讲话。')).toEqual([]);
+    });
+
+    it('flags a leader the model invented', () => {
+      expect(inconsistencies('市长李强出席会议并讲话。')).toContain('与原通稿不一致：市长李强');
+    });
+
+    it('flags a title the model promoted, without swallowing the 副', () => {
+      // 「副市长」必须整条比对：切成「市长马晓东」就等于把改动比没了。
+      expect(inconsistencies('副市长马晓东出席会议并讲话。')).toContain(
+        '与原通稿不一致：副市长马晓东',
+      );
+    });
+
+    it('handles single-character given names', () => {
+      expect(inconsistencies('县委书记王芳到青山镇调研。')).toContain(
+        '与原通稿不一致：县委书记王芳',
+      );
+    });
+
+    it('does not mistake a date or a count for a name', () => {
+      // 周是百家姓，周五不是人；一行三人同理。
+      expect(inconsistencies('主任周五召开例会。')).toEqual([]);
+      expect(inconsistencies('局长一行三人到场。')).toEqual([]);
+    });
+
+    it('reports one finding per person, not one per writing form', () => {
+      expect(inconsistencies('市长李强出席会议并讲话。')).toHaveLength(1);
+    });
+  });
+
   it('emits L2 judgment findings only as 待人工复核', () => {
     const hits = preflight(
       ['网传该项目百分之百没有风险。', '本内容由人工智能生成。'],
