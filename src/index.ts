@@ -10,6 +10,7 @@ import { requireAuth, type AuthEnv } from './middleware/auth.js';
 import { authRoutes } from './routes/auth.js';
 import { eventsRoutes, requireAuditRead } from './routes/events.js';
 import { gatewayRoutes } from './routes/gateway.js';
+import { landingRoutes } from './routes/landing.js';
 import { monitorRoutes } from './routes/monitor.js';
 import { manuscriptRoutes } from './routes/manuscripts.js';
 import { oversightRoutes } from './routes/oversight.js';
@@ -64,7 +65,7 @@ app.get('/readyz', (c) => {
   }
 });
 // 「把关人」是这个产品的正面。遗留的 AuditGate 控制台还有用（红队、策略、
-// 逐用户计量），但它不是首页——打开根路径应当直接进稿件工作台。
+// 逐用户计量），但它不是首页——根路径是产品介绍页，干活的地方在 /workbench。
 app.get('/console', async (c) => {
   const user = await readSessionUser(c);
   if (!user) return c.redirect('/login?next=/console');
@@ -83,6 +84,7 @@ app.get('/api/meta', (c) =>
   }),
 );
 
+app.route('/', landingRoutes);
 app.route('/', eventsRoutes);
 app.route('/', gatewayRoutes);
 app.route('/', manuscriptRoutes);
