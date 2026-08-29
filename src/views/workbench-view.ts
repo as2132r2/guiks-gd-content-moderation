@@ -8,6 +8,8 @@
 // for a finished view model — including which moves each role may make — and
 // renders whatever it is told. 一条路走到黑，没有分支.
 
+import { systemRoles } from '../domain/contracts.js';
+import { rolePermissions } from '../domain/permissions.js';
 import { proofreadResponsibilities } from '../domain/workflow.js';
 
 /**
@@ -17,6 +19,9 @@ import { proofreadResponsibilities } from '../domain/workflow.js';
  * manuscript, and subscribes to /events (SSE) for live 留痕 updates.
  */
 export function renderWorkbench(): string {
+  // 顶栏的「全流程监控」入口只对能读留痕的角色出现。名单由权限矩阵推导，
+  // 页面不另抄一份——矩阵哪天收紧 audit:read，入口自动跟着消失。
+  const auditReadRoles = systemRoles.filter((role) => rolePermissions[role].includes('audit:read'));
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -73,14 +78,15 @@ export function renderWorkbench(): string {
   }
   .roles { display:flex; gap:6px; margin-left:auto; align-items:center; }
   .roles .lbl { font-size:11px; color:var(--faint); font-family:var(--mono); margin-right:4px; }
-  .role-btn {
+  .role-btn, a.topbar-link {
     position:relative;
     font-family:var(--sans); font-size:13px; color:var(--muted);
     padding:7px 14px; background:var(--panel-2);
     border:1px solid var(--line); border-radius:9px; cursor:pointer;
     transition:background-color .16s ease, border-color .16s ease, color .16s ease;
   }
-  .role-btn:hover { border-color:var(--accent); color:var(--ink); }
+  .role-btn:hover, a.topbar-link:hover { border-color:var(--accent); color:var(--ink); }
+  a.topbar-link { text-decoration:none; }
   .role-btn[aria-pressed="true"] {
     background:var(--accent-soft); border-color:var(--accent); color:var(--accent-deep);
   }
@@ -580,7 +586,8 @@ export function renderWorkbench(): string {
   }
   body.is-present .brand .name { font-family:var(--sans); font-size:24px; font-weight:800; letter-spacing:-.3px; }
   body.is-present .brand .sub { font-size:14px; color:var(--muted); }
-  body.is-present .demo-badge, body.is-present .present-launch { display:none; }
+  body.is-present .demo-badge, body.is-present .present-launch,
+  body.is-present .topbar-link { display:none; }
   body.is-present .present-controls { display:flex; }
   body.is-present .roles { margin-left:0; }
   body.is-present .roles .lbl { font-size:14px; color:var(--muted); }
@@ -810,7 +817,7 @@ export function renderWorkbench(): string {
 <header class="topbar">
   <div class="brand">
     <div class="name"><span class="dot"></span>把关人 · 稿件工作台</div>
-    <div class="sub">county media · production &amp; gatekeeping</div>
+    <div class="sub">converged media · production &amp; gatekeeping</div>
   </div>
   <span class="demo-badge">模拟 / 脱敏素材</span>
   <button class="btn present-launch" id="present-open" type="button">演示模式</button>
@@ -830,6 +837,7 @@ export function renderWorkbench(): string {
     <button class="role-btn" data-role="supervising-leader" aria-pressed="false" hidden>分管领导</button>
     <span class="visually-hidden" id="role-switch-status" aria-live="polite"></span>
   </div>
+  <a class="topbar-link" id="monitor-link" href="/monitor" hidden>全流程监控</a>
   <div class="account"><span class="account-name" id="account-name">—</span><button class="logout-btn" id="logout-btn">退出</button></div>
 </header>
 
@@ -909,6 +917,8 @@ export function renderWorkbench(): string {
     'department-head':'部门主任',
     'supervising-leader':'分管领导'
   };
+  // 能读留痕的角色，由服务端按权限矩阵注入——页面不自己判断谁配看全台数据。
+  var AUDIT_READ_ROLES = ${JSON.stringify(auditReadRoles)};
   var ORIGIN_LABEL = { 'ai':'AI 生成', 'ai-edited':'AI 生成·人改过', 'human':'人新写', 'source':'原文引用' };
   var ORIGIN_COLOR = { 'ai':'var(--ai)', 'ai-edited':'var(--ai-edited)', 'human':'var(--human)', 'source':'var(--source)' };
   var ACTION_LABEL = { 'block':'拦下不让播', 'redact':'标红待复核', 'flag':'放行留痕' };
@@ -1006,6 +1016,11 @@ export function renderWorkbench(): string {
       var allowed = roles.indexOf(button.getAttribute('data-role')) !== -1;
       button.hidden = !allowed;
       button.setAttribute('aria-pressed', String(allowed && button.getAttribute('data-role') === state.role));
+    });
+    // 监控看板入口跟着 audit:read 走，不跟着流程角色走——台领导没有流程
+    // 角色，却正是这块看板的主要读者。
+    $('monitor-link').hidden = !(user.roles || []).some(function (role) {
+      return AUDIT_READ_ROLES.indexOf(role) !== -1;
     });
     $('new-btn').hidden = roles.indexOf('editor') === -1;
     $('seed-btn').hidden = true;

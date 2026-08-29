@@ -188,14 +188,14 @@
 
 | # | 功能点 | 状态 | 负责人 | 证据 / 前置 |
 | --- | --- | --- | --- | --- |
-| 6.14 | 跨稿件聚合 API | ✅ | Leo + William | `GET /api/monitor/overview`（**挂 `requireAuth`**——横着看全台比单稿件端点更敏感）；SQL 在 [oversight.ts](../../src/db/oversight.ts) |
+| 6.14 | 跨稿件聚合 API | ✅ | Leo + William | `GET /api/monitor/overview`（**挂 `requireAuth` + `requireAuditRead`**——横着看全台比单稿件端点更敏感，与遗留审计面取齐）；SQL 在 [oversight.ts](../../src/db/oversight.ts) |
 | 6.15 | 时间维度（日 / 周 / 环节停留时长） | ✅ | Leo + William | 按自然日建稿量 + 各环节平均停留（从 status-changed 留痕成对推算） |
 | 6.16 | AI 参与度维度（可下钻到句） | ✅ | Leo + William | 全台来源构成 + 按稿件下钻，点稿件名跳 `/workbench#<id>` 看句级 |
 | 6.17 | 审核维度：各级退回率 / 通过率 | ✅ | Leo + William | 各级通过 / 退回数与退回率，≥30% 标黄 |
 | 6.18 | 规则命中维度（哪条规则最常命中） | ✅ | Leo + William | JSON1 展开 `trace_events.data_json` 的 `rules[]`，不另存表 |
 | 6.19 | **报道方向 / 题材维度** | ✅ | Leo + William | migration `0005` 加 `coverage_topic`（可空），编辑投料时手选。**未分类 ≠ 其他**；自动分类要过模型，归赛后 |
 | 6.20 | **内容生产者维度** | ✅ | Leo + William | 按 `actor_user_id` 归并——**认人不认角色**，一人多岗只算一个人头。建稿 / 改稿 / 审批 / 退回四栏 |
-| 6.21 | 监控看板界面（多维分析模板） | ✅ | Leo + William | `/monitor`。**追溯图谱答「这篇怎么走的」，看板答「这个台最近在怎么写稿」** |
+| 6.21 | 监控看板界面（多维分析模板） | ✅ | Leo + William | `/monitor`，入口在工作台顶栏（只对持有 `audit:read` 的角色显示）。**追溯图谱答「这篇怎么走的」，看板答「这个台最近在怎么写稿」** |
 
 ### 本块三个待定（要拍板才能往下做）
 

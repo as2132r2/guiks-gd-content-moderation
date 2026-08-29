@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { app } from '../src/index.js';
 import { aiShareWeights } from '../src/domain/ai-share.js';
+import { systemRoles, type SystemRole } from '../src/domain/contracts.js';
+import { rolePermissions, type Permission } from '../src/domain/permissions.js';
+import { renderWorkbench } from '../src/views/workbench-view.js';
 import type { OversightSnapshot } from '../src/db/oversight.js';
 import { authenticatedRequest, loginAs } from './helpers/auth.js';
 
@@ -212,10 +215,81 @@ describe('全流程监控聚合', () => {
   });
 
   it('serves the board with no external resource', async () => {
-    const response = await app.request('/monitor');
+    const response = await request('/monitor');
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('把关人 · 全流程监控');
     expect(html).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+});
+
+/**
+ * 眼下四个角色都持有 audit:read，真实账号里造不出「没这条权限的人」。临时把
+ * 矩阵收紧一格，验的正是收紧那天守卫会不会跟着生效——这也是给这两处补
+ * requireAuditRead 的全部理由。改动在 finally 里原样还回去。
+ */
+async function withoutAuditRead(role: SystemRole, run: () => Promise<void>): Promise<void> {
+  const granted = rolePermissions[role] as Permission[];
+  const index = granted.indexOf('audit:read');
+  expect(index, `${role} 本应持有 audit:read`).toBeGreaterThanOrEqual(0);
+  granted.splice(index, 1);
+  try {
+    await run();
+  } finally {
+    granted.splice(index, 0, 'audit:read');
+  }
+}
+
+describe('监控看板的守卫', () => {
+  it('sends an anonymous visitor to the login page instead of an empty shell', async () => {
+    const response = await app.request('/monitor');
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/login?next=/monitor');
+  });
+
+  it('requires audit:read, not merely a session, on both the board and its data', async () => {
+    const station = authenticatedRequest(app, await loginAs(app, 'stationadmin'));
+    expect((await station('/api/monitor/overview')).status).toBe(200);
+    expect((await station('/monitor')).status).toBe(200);
+
+    await withoutAuditRead('station-leader', async () => {
+      const data = await station('/api/monitor/overview');
+      expect(data.status).toBe(403);
+      expect(await data.json()).toMatchObject({ error: 'role_not_allowed' });
+      // 页面同样收紧，否则试用者会盯着一个只会报「取数失败」的空壳。
+      expect((await station('/monitor')).status).toBe(403);
+    });
+  });
+});
+
+describe('工作台顶栏的监控入口', () => {
+  const allowList = (html: string): string[] => {
+    const matched = html.match(/var AUDIT_READ_ROLES = (\[[^\]]*\]);/);
+    expect(matched, '顶栏没有注入可读留痕的角色名单').not.toBeNull();
+    return JSON.parse(matched![1]!) as string[];
+  };
+
+  it('puts a link to the board in the topbar, hidden until the account is known', () => {
+    const html = renderWorkbench();
+
+    expect(html).toContain(
+      '<a class="topbar-link" id="monitor-link" href="/monitor" hidden>全流程监控</a>',
+    );
+    expect(html).toContain("$('monitor-link').hidden = !(user.roles || []).some(");
+  });
+
+  it('derives the allow-list from the permission matrix instead of copying it', () => {
+    expect(allowList(renderWorkbench())).toEqual(
+      systemRoles.filter((role) => rolePermissions[role].includes('audit:read')),
+    );
+    // 台领导没有任何流程角色，却正是这块看板的主要读者。
+    expect(allowList(renderWorkbench())).toContain('station-leader');
+  });
+
+  it('hides the entry from a role the matrix stops granting audit:read', async () => {
+    await withoutAuditRead('station-leader', async () => {
+      expect(allowList(renderWorkbench())).not.toContain('station-leader');
+    });
   });
 });
