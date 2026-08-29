@@ -67,6 +67,20 @@ export const reviewStages = [
 ] as const;
 export type ReviewStage = (typeof reviewStages)[number];
 
+/** Only these three roles participate in the manuscript state machine. */
+export const workflowRoles = ['editor', 'department-head', 'supervising-leader'] as const;
+export type WorkflowRole = (typeof workflowRoles)[number];
+
+/** System roles may observe the product without becoming workflow actors. */
+export const systemRoles = [...workflowRoles, 'station-leader'] as const;
+export type SystemRole = (typeof systemRoles)[number];
+
+export const isWorkflowRole = (value: unknown): value is WorkflowRole =>
+  typeof value === 'string' && (workflowRoles as readonly string[]).includes(value);
+
+export const isSystemRole = (value: unknown): value is SystemRole =>
+  typeof value === 'string' && (systemRoles as readonly string[]).includes(value);
+
 /** 校次是预检标注的分类与审级职责，不是稿件状态。 */
 export const proofreadPasses = ['first', 'second', 'third'] as const;
 export type ProofreadPass = (typeof proofreadPasses)[number];
@@ -148,6 +162,8 @@ export interface ReviewRecord {
   stage: ReviewStage;
   decision: ReviewDecision;
   actor: string;
+  /** Stable account identity; actor remains the immutable display snapshot. */
+  actorUserId?: string;
   reason?: string;
   /** 第几轮三审三校；复核修改后重新预检时递增。 */
   round: number;
@@ -162,6 +178,8 @@ export interface TraceEvent {
   kind: TraceKind;
   actorType: ActorType;
   actor: string;
+  /** Present for authenticated human actions, absent for AI/system events. */
+  actorUserId?: string;
   data: JsonObject;
   createdAt: number;
 }
@@ -203,6 +221,7 @@ export interface CreateArtifactInput {
 /** A handoff rewrite: sentences are replaced wholesale, AI 参与度 recomputed. */
 export interface ReplaceSegmentsInput {
   actor: string;
+  actorUserId?: string;
   actorType?: ActorType;
   segments: CreateSegmentInput[];
 }
@@ -211,6 +230,7 @@ export interface RecordReviewInput {
   stage: ReviewStage;
   decision: ReviewDecision;
   actor: string;
+  actorUserId?: string;
   reason?: string;
   round?: number;
   countersignParty?: string;
@@ -221,6 +241,7 @@ export interface AppendTraceInput {
   kind: TraceKind;
   actorType: ActorType;
   actor: string;
+  actorUserId?: string;
   data?: JsonObject;
 }
 

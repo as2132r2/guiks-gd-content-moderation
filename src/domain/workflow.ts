@@ -8,12 +8,20 @@
  *
  * Pure data + pure functions: no IO, no HTTP, no database.
  */
-import type { ManuscriptStatus, ProofreadPass, ReviewStage } from './contracts.js';
+import {
+  isWorkflowRole,
+  workflowRoles,
+  type ManuscriptStatus,
+  type ProofreadPass,
+  type ReviewStage,
+  type WorkflowRole,
+} from './contracts.js';
 
-/** 三个角色写死（方案 §十三）。`system` is the machine writing its own verdict. */
-export const workflowRoles = ['editor', 'department-head', 'supervising-leader'] as const;
-export type WorkflowRole = (typeof workflowRoles)[number];
+/** `system` is the machine writing its own verdict; it is never a logged-in role. */
 export type TransitionActor = WorkflowRole | 'system';
+
+export { isWorkflowRole, workflowRoles };
+export type { WorkflowRole };
 
 export const roleLabels: Readonly<Record<WorkflowRole, string>> = {
   editor: '编辑 / 记者',
@@ -49,9 +57,6 @@ export const proofreadResponsibilities: readonly ProofreadResponsibility[] = [
     responsibilities: ['导向', '事实判断', '通读', '排版效果', '整体一致性'],
   },
 ];
-
-export const isWorkflowRole = (value: unknown): value is WorkflowRole =>
-  typeof value === 'string' && (workflowRoles as readonly string[]).includes(value);
 
 export const statusLabels: Readonly<Record<ManuscriptStatus, string>> = {
   draft: '草稿',

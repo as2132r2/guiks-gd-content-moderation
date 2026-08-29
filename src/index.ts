@@ -3,8 +3,12 @@ import { pathToFileURL } from 'node:url';
 import { Hono } from 'hono';
 import { config, requiresGatewayToken, usingMockUpstream } from './config.js';
 import { closeWorkflowRepository, getWorkflowRepository } from './db/repository.js';
+import { hasPermission } from './domain/permissions.js';
+import { readSessionUser } from './lib/session.js';
 import { snapshot } from './lib/store.js';
-import { eventsRoutes } from './routes/events.js';
+import { requireAuth, type AuthEnv } from './middleware/auth.js';
+import { authRoutes } from './routes/auth.js';
+import { eventsRoutes, requireAuditRead } from './routes/events.js';
 import { gatewayRoutes } from './routes/gateway.js';
 import { monitorRoutes } from './routes/monitor.js';
 import { manuscriptRoutes } from './routes/manuscripts.js';
@@ -17,35 +21,56 @@ import { targetRoutes } from './routes/target.js';
 import { workbenchRoutes } from './routes/workbench.js';
 import { renderConsole } from './views/console.js';
 
-export const app = new Hono();
+export const app = new Hono<AuthEnv>();
 
 app.get('/healthz', (c) => c.text('ok'));
 app.get('/readyz', (c) => {
   try {
-    const database = getWorkflowRepository().healthcheck();
+    const repository = getWorkflowRepository();
+    const database = repository.healthcheck();
     const model = usingMockUpstream()
       ? config.allowMockUpstream
         ? 'mock'
         : 'missing'
       : 'configured';
-    const gatewayAuth = config.gatewayToken
-      ? 'configured'
-      : requiresGatewayToken()
-        ? 'missing'
-        : 'demo-open';
-    const ready = database && model !== 'missing' && gatewayAuth !== 'missing';
+    const gatewayAuth = requiresGatewayToken()
+      ? config.gatewayToken && config.gatewayTokenReady
+        ? 'configured'
+        : 'missing'
+      : 'demo-open';
+    const authentication = config.sessionSecretReady ? 'configured' : 'missing';
+    const account =
+      config.appMode !== 'production'
+        ? 'not-required'
+        : repository.hasEnabledProductionUser()
+          ? 'configured'
+          : 'missing';
+    const ready =
+      database &&
+      model !== 'missing' &&
+      gatewayAuth !== 'missing' &&
+      authentication !== 'missing' &&
+      account !== 'missing';
     return c.json(
-      { status: ready ? 'ready' : 'not-ready', checks: { database, model, gatewayAuth } },
+      {
+        status: ready ? 'ready' : 'not-ready',
+        checks: { database, model, gatewayAuth, authentication, account },
+      },
       ready ? 200 : 503,
     );
   } catch {
     return c.json({ status: 'not-ready', checks: { database: false, model: 'unknown' } }, 503);
   }
 });
-// 遗留的 AuditGate 控制台还有用（红队、策略、逐用户计量），但它不是
-// guiks-gd-content-moderation 的首页——打开根路径应当直接进稿件工作台。
-app.get('/console', (c) => c.html(renderConsole({ targetLabel: config.targetLabel })));
-app.get('/api/state', (c) => c.json(snapshot()));
+// 「把关人」是这个产品的正面。遗留的 AuditGate 控制台还有用（红队、策略、
+// 逐用户计量），但它不是首页——打开根路径应当直接进稿件工作台。
+app.get('/console', async (c) => {
+  const user = await readSessionUser(c);
+  if (!user) return c.redirect('/login?next=/console');
+  if (!hasPermission(user, 'audit:read')) return c.json({ error: 'role_not_allowed' }, 403);
+  return c.html(renderConsole({ targetLabel: config.targetLabel }));
+});
+app.get('/api/state', requireAuth, requireAuditRead, (c) => c.json(snapshot()));
 app.get('/api/meta', (c) =>
   c.json({
     service: 'guiks-gd-content-moderation',
@@ -53,21 +78,25 @@ app.get('/api/meta', (c) =>
     persistence: 'sqlite',
     model: usingMockUpstream() ? 'mock' : 'configured',
     failClosed: config.failClosed,
+    authentication: config.sessionSecretReady ? 'configured' : 'missing',
   }),
 );
 
 app.route('/', eventsRoutes);
 app.route('/', gatewayRoutes);
-app.route('/', targetRoutes);
-app.route('/', monitorRoutes);
 app.route('/', manuscriptRoutes);
+app.route('/', authRoutes);
 app.route('/', workbenchRoutes);
 // 清空整库的端点不该存在于生产构建里。
-if (config.appMode === 'demo') app.route('/', demoRoutes);
-app.route('/', redteamRoutes);
-app.route('/', reportRoutes);
-app.route('/', runtimeRoutes);
-app.route('/', policyRoutes);
+if (config.appMode === 'demo') {
+  app.route('/', demoRoutes);
+  app.route('/', targetRoutes);
+  app.route('/', monitorRoutes);
+  app.route('/', redteamRoutes);
+  app.route('/', reportRoutes);
+  app.route('/', runtimeRoutes);
+  app.route('/', policyRoutes);
+}
 
 // Start only when run directly (not when imported by tests). pathToFileURL is
 // what makes this work on Windows too — a Windows path never string-concats

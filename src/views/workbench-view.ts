@@ -89,6 +89,10 @@ export function renderWorkbench(): string {
     padding:0 !important; margin:-1px !important; overflow:hidden !important;
     clip:rect(0,0,0,0) !important; white-space:nowrap !important; border:0 !important;
   }
+  .account { display:flex; align-items:center; gap:8px; margin-left:10px; padding-left:12px; border-left:1px solid var(--line); }
+  .account-name { font-size:12px; color:var(--muted); }
+  .logout-btn { border:0; background:transparent; color:var(--faint); font-size:12px; cursor:pointer; }
+  .logout-btn:hover { color:var(--block); }
 
   /* ---------- Layout ---------- */
   main { display:grid; grid-template-columns:250px minmax(0,1fr) 320px; flex:1; min-height:0; }
@@ -813,11 +817,12 @@ export function renderWorkbench(): string {
   </div>
   <div class="roles">
     <span class="lbl">当前身份</span>
-    <button class="role-btn" data-role="editor" aria-pressed="true">编辑 / 记者</button>
-    <button class="role-btn" data-role="department-head" aria-pressed="false">部门主任</button>
-    <button class="role-btn" data-role="supervising-leader" aria-pressed="false">分管领导</button>
+    <button class="role-btn" data-role="editor" aria-pressed="false" hidden>编辑 / 记者</button>
+    <button class="role-btn" data-role="department-head" aria-pressed="false" hidden>部门主任</button>
+    <button class="role-btn" data-role="supervising-leader" aria-pressed="false" hidden>分管领导</button>
     <span class="visually-hidden" id="role-switch-status" aria-live="polite"></span>
   </div>
+  <div class="account"><span class="account-name" id="account-name">—</span><button class="logout-btn" id="logout-btn">退出</button></div>
 </header>
 
 <div class="present-modal" id="present-modal" hidden>
@@ -854,8 +859,8 @@ export function renderWorkbench(): string {
   <aside class="list">
     <div class="present-drawer-tools"><h2>切换稿件</h2><button class="icon-btn" id="present-list-close" type="button" aria-label="关闭稿件列表">×</button></div>
     <h2 class="hd">稿件</h2>
-    <button class="btn wide" id="new-btn">＋ 新建稿件</button>
-    <button class="btn wide" id="seed-btn" style="margin-top:6px">演示准备（重置并建样例）</button>
+    <button class="btn wide" id="new-btn" hidden>＋ 新建稿件</button>
+    <button class="btn wide" id="seed-btn" style="margin-top:6px" hidden>演示准备（重置并建样例）</button>
     <div id="ms-list" style="margin-top:12px"></div>
   </aside>
 
@@ -917,7 +922,7 @@ export function renderWorkbench(): string {
   try { storedMainId = sessionStorage.getItem('gatekeeper-presentation-main-id'); } catch (error) { /* storage is optional */ }
 
   var state = {
-    list:[], view:null, role:'editor', currentId:null, prevShare:null, editing:null,
+    list:[], view:null, user:null, role:null, currentId:null, prevShare:null, editing:null,
     editDrafts:{}, appliedSuggestions:{}, activeAnnotation:null,
     error:'', contrast:null, showContrast:false,
     present:query.get('present') === '1', display:initialDisplay, setupDisplay:'projector',
@@ -975,11 +980,26 @@ export function renderWorkbench(): string {
 
   function api(path, options) {
     return fetch(path, options).then(function (response) {
+      if (response.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); throw new Error('请先登录'); }
       return response.json().catch(function () { return {}; }).then(function (body) {
         if (!response.ok) throw new Error(body.message || body.error || ('HTTP ' + response.status));
         return body;
       });
     });
+  }
+
+  function applyUser(user) {
+    state.user = user;
+    $('account-name').textContent = user.displayName + ' · @' + user.username;
+    var roles = (user.roles || []).filter(function (role) { return Boolean(ROLE_LABEL[role]); });
+    state.role = roles.length ? roles[0] : null;
+    Array.prototype.forEach.call(document.querySelectorAll('.role-btn'), function (button) {
+      var allowed = roles.indexOf(button.getAttribute('data-role')) !== -1;
+      button.hidden = !allowed;
+      button.setAttribute('aria-pressed', String(allowed && button.getAttribute('data-role') === state.role));
+    });
+    $('new-btn').hidden = roles.indexOf('editor') === -1;
+    $('seed-btn').hidden = true;
   }
 
   // ——————————————————— data ———————————————————
@@ -997,6 +1017,7 @@ export function renderWorkbench(): string {
     return api('/api/demo/fixtures').then(function (data) {
       state.demoFixtures = data;
       state.demoFixturesError = '';
+      $('seed-btn').hidden = !state.user || (state.user.roles || []).indexOf('editor') === -1;
       recoverPresentationMain();
       renderList();
       checkPresentationReadiness();
@@ -1112,7 +1133,10 @@ export function renderWorkbench(): string {
   function renderList() {
     var host = $('ms-list');
     if (state.list.length === 0) {
-      host.innerHTML = '<div class="empty">还没有稿件。点上面新建，粘贴一份通稿开始。</div>';
+      var canCreate = state.user && (state.user.roles || []).indexOf('editor') !== -1;
+      host.innerHTML = '<div class="empty">' +
+        (canCreate ? '还没有稿件。点上面新建，粘贴一份通稿开始。' : '还没有可查看的稿件。') +
+        '</div>';
       return;
     }
     var ordered = state.list.slice();
@@ -1139,7 +1163,8 @@ export function renderWorkbench(): string {
   var STATUS_LABEL = {
     'draft':'草稿', 'admission-blocked':'已拒绝', 'admission-reason-required':'待填选题依据',
     'admitted':'已准入', 'generated':'已生成', 'preflight':'预检完成',
-    'first-review':'待初审', 'second-review':'待复审', 'final-review':'待终审',
+    'first-review':'待初审', 'second-review':'待复审', 'countersign':'待会签',
+    'final-review':'待终审', 'revision':'复核修改',
     'signed':'已签发', 'published':'已发布'
   };
   function statusLabel(status) { return STATUS_LABEL[status] || status; }
@@ -1305,7 +1330,11 @@ export function renderWorkbench(): string {
 
   function renderPanel() {
     var host = $('panel');
-    if (!state.view) { host.innerHTML = newForm(); return; }
+    if (!state.view) {
+      var canCreate = state.user && (state.user.roles || []).indexOf('editor') !== -1;
+      host.innerHTML = canCreate ? newForm() : (state.role ? reviewerLanding() : readOnlyLanding());
+      return;
+    }
     var view = state.view;
     var parts = [];
     if (state.present && view.stage !== 'trace') parts.push(actionsBar(view));
@@ -1338,6 +1367,16 @@ export function renderWorkbench(): string {
       '</div>' +
       (state.error ? '<div class="err">' + esc(state.error) + '</div>' : '') +
       '</div>';
+  }
+
+  function readOnlyLanding() {
+    return '<div class="card"><h3>只读工作台</h3>' +
+      '<p>当前账号可查看稿件、追溯与分析，但不能新建、改稿或推进流程。</p></div>';
+  }
+
+  function reviewerLanding() {
+    return '<div class="card"><h3>等待稿件流转</h3>' +
+      '<p>请从左侧选择稿件，系统会在轮到当前职责时显示复审、会签、终审或签发动作；此账号不能新建稿件。</p></div>';
   }
 
   function admissionPanel(view) {
@@ -1491,9 +1530,11 @@ export function renderWorkbench(): string {
   function artifactBlock(item, showAnnotations) {
     var artifact = item.artifact;
     var editing = state.editing === artifact.id;
-    var canEdit = state.role === 'editor' && ['generated', 'preflight', 'revision'].indexOf(state.view.manuscript.status) !== -1;
+    var canEdit = state.role === 'editor' && state.view && state.view.contentEditable;
     var head = '<h4><span>' + esc(KIND_LABEL[artifact.kind] || artifact.kind) + '</span>' +
-      (editing
+      (!canEdit
+        ? ''
+        : editing
         ? '<span><button class="btn" data-save="' + esc(artifact.id) + '">保存改动</button> ' +
           '<button class="btn" data-cancel="1">取消</button></span>'
         : canEdit
@@ -1752,7 +1793,8 @@ export function renderWorkbench(): string {
 
   var STAGE_LABEL = {
     'admission':'入口准入', 'preflight':'输出预检',
-    'editor':'初审 · 编辑', 'department-head':'复审 · 部门主任', 'supervising-leader':'终审 · 分管领导'
+    'editor':'初审 · 编辑', 'department-head':'复审 · 部门主任', 'countersign':'会签 · 部门主任',
+    'supervising-leader':'终审 · 分管领导'
   };
   var DECISION_LABEL = {
     'approved':'通过', 'changes-requested':'退回', 'rejected':'拒绝',
@@ -2011,6 +2053,9 @@ export function renderWorkbench(): string {
   }
 
   function actionsBar(view) {
+    if (!state.role) {
+      return '<div class="card"><p style="margin:0">当前账号为只读身份，可查看追溯与分析，但不能操作稿件流程。</p></div>';
+    }
     var mine = view.actions[state.role] || [];
     if (mine.length === 0) {
       var owner = view.waitingOn;
@@ -2327,6 +2372,7 @@ export function renderWorkbench(): string {
   // ——————————————————— wiring ———————————————————
 
   function selectRole(role) {
+    if (!state.user || (state.user.roles || []).indexOf(role) === -1) return;
     var previousRole = state.role;
     state.role = role;
     if (role !== 'editor' && state.editing) {
@@ -2484,7 +2530,6 @@ export function renderWorkbench(): string {
     }
 
     if (target.closest('#new-btn')) { showNew(); return; }
-
     if (target.closest('#nf-sample')) {
       api('/api/demo/fixtures').then(function (data) {
         var t = $('nf-title'), y = $('nf-type'), x = $('nf-text');
@@ -2504,6 +2549,11 @@ export function renderWorkbench(): string {
         try { sessionStorage.removeItem('gatekeeper-presentation-main-id'); } catch (error) { /* storage is optional */ }
         return loadList().then(render);
       }).catch(function (error) { state.error = error.message; renderPanel(); });
+      return;
+    }
+
+    if (target.closest('#logout-btn')) {
+      fetch('/api/auth/logout', { method:'POST' }).finally(function () { location.href='/login'; });
       return;
     }
     if (target.closest('#nf-submit')) { submitNew(); return; }
@@ -2589,7 +2639,10 @@ export function renderWorkbench(): string {
     events.addEventListener('manuscript', function () { loadList(); });
   } catch (error) { /* SSE is a nicety; the page works without it */ }
 
-  Promise.all([loadDemoFixtures(), loadList()]).then(function () {
+  api('/api/auth/me').then(function (data) {
+    applyUser(data.user);
+    return Promise.all([loadDemoFixtures(), loadList()]);
+  }).then(function () {
     if (state.present && state.presentationMainId) return openManuscript(state.presentationMainId);
     render();
   }).catch(function () { render(); });

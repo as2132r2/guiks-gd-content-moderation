@@ -9,12 +9,17 @@
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { getWorkflowRepository } from '../db/repository.js';
+import {
+  getWorkflowRepository,
+  type PreparedPreflightMutation,
+} from '../db/repository.js';
 import { computeAiShare } from '../domain/ai-share.js';
+import type { UserAccount } from '../domain/auth.js';
 import {
   contentSourceTypes,
   manuscriptStatuses,
   type ContentArtifact,
+  type CreateArtifactInput,
   type JsonObject,
   type Manuscript,
   type ManuscriptStatus,
@@ -30,6 +35,18 @@ import {
 } from '../domain/gatekeeping.js';
 import { splitSentences } from '../domain/segmentation.js';
 import {
+  manuscriptNotEditableMessage,
+  mayMutateManuscriptContent,
+} from '../domain/mutation-policy.js';
+import {
+  hasPermission,
+  mayActAs,
+  mayPerformAs,
+  requiredPermissionForTransition,
+  requiredRoleForReview,
+  workflowActorLabel,
+} from '../domain/permissions.js';
+import {
   checkTransition,
   findTransition,
   isWorkflowRole,
@@ -43,7 +60,10 @@ import {
   type WorkflowRole,
 } from '../domain/workflow.js';
 import { publish } from '../lib/bus.js';
+import { KeyedLock } from '../lib/keyed-lock.js';
+import { readSessionUser } from '../lib/session.js';
 import { UpstreamError } from '../lib/upstream.js';
+import { requireAuth, type AuthEnv } from '../middleware/auth.js';
 import { generateBroadcastArtifacts } from '../model/broadcast.js';
 import { runAdmission, runPreflight } from '../rules/index.js';
 import { renderWorkbench } from '../views/workbench-view.js';
@@ -81,15 +101,6 @@ async function readJson(request: { json: () => Promise<unknown> }): Promise<unkn
     return undefined;
   }
 }
-
-/** 角色可合并: the switcher names the role someone is acting as right now. */
-const actorNames: Readonly<Record<WorkflowRole, string>> = {
-  editor: '编辑·张敏',
-  'department-head': '部门主任·李建国',
-  'supervising-leader': '分管领导·王志远',
-};
-
-const actorName = (role: WorkflowRole) => actorNames[role];
 
 export interface ArtifactView {
   artifact: ContentArtifact;
@@ -144,6 +155,8 @@ export interface WorkbenchView {
   /** AI 参与度随流转的变化，供追溯图谱画折线。 */
   provenance: ProvenancePoint[];
   signOff?: SignOff;
+  /** UI hint only; the route repeats the authoritative server-side check. */
+  contentEditable: boolean;
 }
 
 function hasRevisionAfterLatestReturn(
@@ -243,6 +256,7 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
   const owner = waitingOn(manuscript.status);
   const signed = trace.find((event) => event.kind === 'signed');
   const share = computeAiShare(segments);
+  const signedShare = signed ? asNumber(signed.data.aiShare) : undefined;
   return {
     manuscript,
     stage: stageOf(manuscript.status),
@@ -258,12 +272,16 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
     ...(owner ? { waitingOn: owner } : {}),
     revisionReady: manuscript.status === 'revision' && hasRevisionAfterLatestReturn(reviews, trace),
     provenance: readProvenance(trace),
+    contentEditable: mayMutateManuscriptContent(
+      manuscript.status,
+      'workbench-artifact-revise',
+    ),
     ...(signed
       ? {
           signOff: {
             actor: signed.actor,
             at: signed.createdAt,
-            ...(share === undefined ? {} : { aiShare: share }),
+            ...(signedShare === undefined ? {} : { aiShare: signedShare }),
           },
         }
       : {}),
@@ -283,72 +301,83 @@ function admissionStatus(result: AdmissionResult): ManuscriptStatus {
   return 'admitted';
 }
 
-/** 自动补显式标识、写隐式元数据，并把本轮预检命中固化到追溯链。 */
-function persistPreflight(manuscriptId: string, round: number): void {
+/**
+ * Prepare deterministic preflight mutations without writing SQLite.
+ * The canonical repository commit applies the whole plan with the status edge.
+ */
+function preparePreflight(manuscriptId: string): PreparedPreflightMutation[] | undefined {
   const repository = getWorkflowRepository();
   const aggregate = repository.getAggregate(manuscriptId);
-  if (!aggregate) return;
+  if (!aggregate) return undefined;
 
-  for (const artifact of aggregate.artifacts.filter((item) => item.kind !== 'source')) {
-    const own = aggregate.segments.filter((segment) => segment.artifactId === artifact.id);
-    const sentences = own.length > 0 ? own.map((segment) => segment.text) : splitSentences(artifact.content);
-    const checked = runPreflight({
-      artifactId: artifact.id,
-      sentences,
-      sourceText: aggregate.manuscript.sourceText,
-    });
-    const label = checked.annotations.find(
-      (annotation) => annotation.category === 'ai-label' && annotation.suggestion,
-    );
-
-    if (label?.suggestion) {
-      repository.replaceArtifactSegments(manuscriptId, artifact.id, {
-        actor: '输出预检·自动标识',
-        actorType: 'system',
-        segments: [
-          ...own.map((segment) => ({
-            text: segment.text,
-            origin: segment.origin,
-            ...(segment.sourceRef ? { sourceRef: segment.sourceRef } : {}),
-          })),
-          { text: label.suggestion, origin: 'ai' as const },
-        ],
-      });
-    }
-
-    repository.setArtifactMetadata(manuscriptId, artifact.id, {
-      ...(artifact.metadata ?? {}),
-      aiGenerated: true,
-      aiLabel: '人工智能生成',
-      labeledAt: Date.now(),
-    });
-
-    repository.appendTrace(manuscriptId, {
-      kind: 'rule-hit',
-      actorType: 'system',
-      actor: '输出预检',
-      data: {
+  return aggregate.artifacts
+    .filter((item) => item.kind !== 'source')
+    .map((artifact) => {
+      const own = aggregate.segments.filter((segment) => segment.artifactId === artifact.id);
+      const sentences =
+        own.length > 0
+          ? own.map((segment) => segment.text)
+          : splitSentences(artifact.content);
+      const checked = runPreflight({
         artifactId: artifact.id,
-        kind: artifact.kind,
-        round,
-        ...checked.summary,
-        rules: checked.annotations.map((annotation) => annotation.category),
-        proofreadPasses: checked.annotations.map((annotation) => annotation.proofreadPass),
-        autoFixed: label ? ['ai-label'] : [],
-      },
+        sentences,
+        sourceText: aggregate.manuscript.sourceText,
+      });
+      const label = checked.annotations.find(
+        (annotation) => annotation.category === 'ai-label' && annotation.suggestion,
+      );
+
+      return {
+        artifactId: artifact.id,
+        ...(label?.suggestion
+          ? {
+              replacementSegments: [
+                ...own.map((segment) => ({
+                  text: segment.text,
+                  origin: segment.origin,
+                  ...(segment.sourceRef ? { sourceRef: segment.sourceRef } : {}),
+                })),
+                { text: label.suggestion, origin: 'ai' as const },
+              ],
+            }
+          : {}),
+        metadata: {
+          ...(artifact.metadata ?? {}),
+          aiGenerated: true,
+          aiLabel: '人工智能生成',
+          labeledAt: Date.now(),
+        },
+        traceData: {
+          artifactId: artifact.id,
+          kind: artifact.kind,
+          ...checked.summary,
+          rules: checked.annotations.map((annotation) => annotation.category),
+          proofreadPasses: checked.annotations.map((annotation) => annotation.proofreadPass),
+          autoFixed: label ? ['ai-label'] : [],
+        },
+      } satisfies PreparedPreflightMutation;
     });
-  }
 }
 
-export const workbenchRoutes = new Hono();
-const activeGenerations = new Set<string>();
+export const workbenchRoutes = new Hono<AuthEnv>();
 
 // 根路径就是工作台。/workbench 保留为别名，旧链接和书签不会断。
-workbenchRoutes.get('/', (c) => c.html(renderWorkbench()));
-workbenchRoutes.get('/workbench', (c) => c.html(renderWorkbench()));
+workbenchRoutes.get('/', async (c) =>
+  (await readSessionUser(c)) ? c.html(renderWorkbench()) : c.redirect('/login?next=/'),
+);
+workbenchRoutes.get('/workbench', async (c) =>
+  (await readSessionUser(c))
+    ? c.html(renderWorkbench())
+    : c.redirect('/login?next=/workbench'),
+);
+
+workbenchRoutes.use('/api/workbench', requireAuth);
+workbenchRoutes.use('/api/workbench/*', requireAuth);
 
 workbenchRoutes.get('/api/workbench', (c) =>
-  c.json({ items: getWorkflowRepository().listManuscripts(50) }),
+  hasPermission(c.get('currentUser'), 'manuscript:read')
+    ? c.json({ items: getWorkflowRepository().listManuscripts(50) })
+    : c.json({ error: 'role_not_allowed' }, 403),
 );
 
 /**
@@ -362,9 +391,14 @@ workbenchRoutes.post('/api/workbench', async (c) => {
   const parsed = createSchema.safeParse(await readJson(c.req));
   if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
 
+  const user = c.get('currentUser');
+  if (!mayPerformAs(user, 'editor', 'manuscript:create')) {
+    return c.json({ error: 'role_not_allowed', message: '当前账号不能新建稿件。' }, 403);
+  }
   const repository = getWorkflowRepository();
   const admission = runAdmission(parsed.data);
-  const manuscript = repository.createManuscript(parsed.data);
+  const actor = workflowActorLabel(user, 'editor');
+  const manuscript = repository.createManuscript(parsed.data, { label: actor, userId: user.id });
   repository.saveAdmissionResult(manuscript.id, admission);
 
   repository.appendTrace(manuscript.id, {
@@ -386,6 +420,9 @@ workbenchRoutes.post('/api/workbench', async (c) => {
 });
 
 workbenchRoutes.get('/api/workbench/:id', (c) => {
+  if (!hasPermission(c.get('currentUser'), 'manuscript:read')) {
+    return c.json({ error: 'role_not_allowed' }, 403);
+  }
   const view = buildView(c.req.param('id'));
   if (!view) return c.json({ error: 'manuscript_not_found' }, 404);
   return c.json(view);
@@ -398,6 +435,9 @@ workbenchRoutes.get('/api/workbench/:id', (c) => {
  * 的每个数字都能指回真实留痕，被追问「这是演的还是真的」时答得出来。
  */
 workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
+  if (!hasPermission(c.get('currentUser'), 'audit:read')) {
+    return c.json({ error: 'role_not_allowed' }, 403);
+  }
   const view = buildView(c.req.param('id'));
   if (!view) return c.json({ error: 'manuscript_not_found' }, 404);
 
@@ -463,66 +503,110 @@ workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
   });
 });
 
-/**
- * The one button. Every stage advance goes through here so the state machine
- * is the only thing that decides what may happen next.
- */
-workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
-  const parsed = transitionSchema.safeParse(await readJson(c.req));
-  if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
+export interface AuthenticatedTransitionIntent {
+  to: ManuscriptStatus;
+  role: WorkflowRole;
+  reason?: string;
+  countersignParty?: string;
+  opinion?: string;
+}
 
-  const repository = getWorkflowRepository();
-  const id = c.req.param('id');
-  const manuscript = repository.findManuscript(id);
-  if (!manuscript) return c.json({ error: 'manuscript_not_found' }, 404);
+type TransitionFailure = {
+  ok: false;
+  status: 400 | 403 | 404 | 409 | 502 | 503;
+  body: { error: string; message?: string };
+};
 
-  const { to, role, reason, countersignParty, opinion } = parsed.data;
-  const refusal = checkTransition({ from: manuscript.status, to, actor: role, ...(reason ? { reason } : {}) });
-  if (refusal) {
-    return c.json(
-      { error: refusal.code, message: refusal.message },
-      refusal.code === 'reason_required' ? 400 : 409,
-    );
-  }
+type TransitionSuccess = {
+  ok: true;
+  manuscript: Manuscript;
+  view: WorkbenchView;
+};
 
-  const transition = findTransition(manuscript.status, to, role)!;
-  const actor = actorName(role);
-  let updated: Manuscript | undefined;
+const transitionLocks = new KeyedLock<string>();
 
-  if (transition.from === 'revision' && to === 'preflight') {
-    const aggregate = repository.getAggregate(id);
-    if (!aggregate || !hasRevisionAfterLatestReturn(aggregate.reviews, aggregate.trace)) {
-      return c.json(
-        {
-          error: 'revision_required',
-          message: '请先按退回意见实际修改并保存至少一处内容，再重新预检。',
+/** Canonical human transition pipeline shared by both HTTP API surfaces. */
+export async function executeAuthenticatedTransition(
+  id: string,
+  user: UserAccount,
+  intent: AuthenticatedTransitionIntent,
+): Promise<TransitionFailure | TransitionSuccess> {
+  return transitionLocks.run(id, async () => {
+    const repository = getWorkflowRepository();
+    const manuscript = repository.findManuscript(id);
+    if (!manuscript) {
+      return { ok: false, status: 404, body: { error: 'manuscript_not_found' } };
+    }
+
+    const { to, role, reason, countersignParty, opinion } = intent;
+    const permission = requiredPermissionForTransition(manuscript.status, to);
+    if (!mayActAs(user, role)) {
+      return {
+        ok: false,
+        status: 403,
+        body: { error: 'role_not_allowed', message: '当前账号不能行使该角色。' },
+      };
+    }
+    const refusal = checkTransition({
+      from: manuscript.status,
+      to,
+      actor: role,
+      ...(reason ? { reason } : {}),
+    });
+    if (refusal) {
+      return {
+        ok: false,
+        status: refusal.code === 'reason_required' ? 400 : 409,
+        body: { error: refusal.code, message: refusal.message },
+      };
+    }
+
+    // A state-machine edge without an authorization mapping is a configuration
+    // defect. Fail closed instead of silently treating membership as permission.
+    if (!permission || !mayPerformAs(user, role, permission)) {
+      return {
+        ok: false,
+        status: 403,
+        body: { error: 'role_not_allowed', message: '当前角色无权执行该动作。' },
+      };
+    }
+
+    const transition = findTransition(manuscript.status, to, role)!;
+    const actor = workflowActorLabel(user, role);
+
+    if (transition.from === 'revision' && to === 'preflight') {
+      const aggregate = repository.getAggregate(id);
+      if (!aggregate || !hasRevisionAfterLatestReturn(aggregate.reviews, aggregate.trace)) {
+        return {
+          ok: false,
+          status: 409,
+          body: {
+            error: 'revision_required',
+            message: '请先按退回意见实际修改并保存至少一处内容，再重新预检。',
+          },
+        };
+      }
+    }
+
+    if (
+      transition.from === 'countersign' &&
+      to === 'final-review' &&
+      (!countersignParty || !opinion)
+    ) {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: 'countersign_details_required',
+          message: '完成会签必须填写会签方和会签意见。',
         },
-        409,
-      );
+      };
     }
-  }
 
-  if (
-    transition.from === 'countersign' &&
-    to === 'final-review' &&
-    (!countersignParty || !opinion)
-  ) {
-    return c.json(
-      { error: 'countersign_details_required', message: '完成会签必须填写会签方和会签意见。' },
-      400,
-    );
-  }
-
-  // 生成 and 预检 are side effects of their transition, not separate buttons.
-  if (transition.from === 'admitted' && to === 'generated') {
-    if (activeGenerations.has(id)) {
-      return c.json(
-        { error: 'generation_in_progress', message: '稿件正在生成，请勿重复提交。' },
-        409,
-      );
-    }
-    activeGenerations.add(id);
-    try {
+    // Finish external work and deterministic preparation before opening the
+    // one synchronous SQLite transaction for this edge.
+    let generatedArtifacts: CreateArtifactInput[] | undefined;
+    if (transition.from === 'admitted' && to === 'generated') {
       let generated: Awaited<ReturnType<typeof generateBroadcastArtifacts>>;
       try {
         generated = await generateBroadcastArtifacts({
@@ -532,81 +616,124 @@ workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
           actor,
         });
       } catch (error) {
-        // The gateway has already written a paired error trace. Keep the workflow
-        // at admitted so a retry cannot look like a successful generation.
         if (error instanceof UpstreamError) {
-          return c.json(
-            {
+          return {
+            ok: false,
+            status: 502,
+            body: {
               error: 'model_upstream_failed',
               message: '模型暂时不可用，稿件状态未推进，请稍后重试。',
             },
-            502,
-          );
+          };
         }
         if (error instanceof ModelTraceError) {
-          return c.json(
-            {
+          return {
+            ok: false,
+            status: 503,
+            body: {
               error: 'model_trace_unavailable',
               message: '调用留痕暂时不可用，系统未放行本次生成。',
             },
-            503,
-          );
+          };
         }
         throw error;
       }
-
-      // Both artifacts and the `generated` transition commit in one transaction.
-      const completed = repository.completeGeneration(
-        id,
-        generated.map((item) => {
-          const sentences = splitSentences(item.content);
-          return {
-            kind: item.kind,
-            content: item.content,
-            origin: 'ai' as const,
-            model: item.model,
-            metadata: { aiGenerated: true, aiLabel: '人工智能生成' },
-            segments: sentences.map((text) => ({ text, origin: 'ai' as const })),
-          };
-        }),
-        actor,
-      );
-      if (!completed) {
-        return c.json(
-          { error: 'generation_conflict', message: '稿件状态已变化，请刷新后重试。' },
-          409,
-        );
-      }
-      updated = completed.manuscript;
-    } finally {
-      activeGenerations.delete(id);
+      generatedArtifacts = generated.map((item) => {
+        const sentences = splitSentences(item.content);
+        return {
+          kind: item.kind,
+          content: item.content,
+          origin: 'ai',
+          model: item.model,
+          metadata: { aiGenerated: true, aiLabel: '人工智能生成' },
+          segments: sentences.map((text) => ({ text, origin: 'ai' as const })),
+        };
+      });
     }
-  }
 
-  if ((transition.from === 'generated' || transition.from === 'revision') && to === 'preflight') {
-    const round = manuscript.reviewRound + (transition.from === 'revision' ? 1 : 0);
-    persistPreflight(id, round);
-  }
+    let preflightMutations: PreparedPreflightMutation[] | undefined;
+    if (
+      (transition.from === 'generated' || transition.from === 'revision') &&
+      to === 'preflight'
+    ) {
+      preflightMutations = preparePreflight(id);
+      if (!preflightMutations) {
+        return { ok: false, status: 404, body: { error: 'manuscript_not_found' } };
+      }
+    }
 
-  if (transition.stage) {
-    repository.recordReview(id, {
-      stage: transition.stage,
-      decision: transition.kind === 'return' ? 'changes-requested' : 'approved',
+    const committed = repository.commitCanonicalTransition({
+      manuscriptId: id,
+      expectedFrom: transition.from,
+      to,
       actor,
-      ...(reason ? { reason } : {}),
-      round: manuscript.reviewRound + (transition.from === 'revision' ? 1 : 0),
-      ...(countersignParty ? { countersignParty } : {}),
-      ...(opinion ? { opinion } : {}),
+      actorUserId: user.id,
+      incrementReviewRound: transition.from === 'revision' && to === 'preflight',
+      ...(generatedArtifacts ? { generatedArtifacts } : {}),
+      ...(preflightMutations ? { preflightMutations } : {}),
+      ...(transition.stage
+        ? {
+            review: {
+              mode: requiredRoleForReview(transition.stage)
+                ? ('idempotent-human' as const)
+                : ('append-system' as const),
+              stage: transition.stage,
+              decision:
+                transition.kind === 'return'
+                  ? ('changes-requested' as const)
+                  : ('approved' as const),
+              ...(reason ? { reason } : {}),
+              ...(countersignParty ? { countersignParty } : {}),
+              ...(opinion ? { opinion } : {}),
+            },
+          }
+        : {}),
     });
-  }
+    if (committed.outcome === 'manuscript-not-found') {
+      return { ok: false, status: 404, body: { error: 'manuscript_not_found' } };
+    }
+    if (committed.outcome === 'review-conflict') {
+      return {
+        ok: false,
+        status: 409,
+        body: {
+          error: 'review_decision_conflict',
+          message: '本轮该审级已有不同审核决定，不能覆盖或继续流转。',
+        },
+      };
+    }
+    if (committed.outcome === 'status-conflict') {
+      return {
+        ok: false,
+        status: 409,
+        body: { error: 'illegal_transition', message: '稿件状态已变化，请刷新后重试。' },
+      };
+    }
+    emit(id, { action: 'transition', from: transition.from, to, role, actor });
 
-  updated ??= repository.updateStatus(id, to, actor, {
-    incrementReviewRound: transition.from === 'revision' && to === 'preflight',
+    const view = buildView(id);
+    if (!view) {
+      return { ok: false, status: 404, body: { error: 'manuscript_not_found' } };
+    }
+    return { ok: true, manuscript: committed.manuscript, view };
   });
-  emit(id, { action: 'transition', from: transition.from, to, role, actor });
+}
 
-  const view = buildView(id);
-  return c.json({ manuscript: updated, view });
+/**
+ * The one button. Every stage advance goes through the canonical pipeline so
+ * state, generated artifacts, reviews, trace, and authorization stay atomic in meaning.
+ */
+workbenchRoutes.post('/api/workbench/:id/transition', async (c) => {
+  const parsed = transitionSchema.safeParse(await readJson(c.req));
+  if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
+
+  const result = await executeAuthenticatedTransition(
+    c.req.param('id'),
+    c.get('currentUser'),
+    parsed.data,
+  );
+  if (!result.ok) return c.json(result.body, result.status);
+  return c.json({ manuscript: result.manuscript, view: result.view });
 });
 
 /**
@@ -623,21 +750,18 @@ workbenchRoutes.post('/api/workbench/:id/artifacts/:artifactId/revise', async (c
 
   const repository = getWorkflowRepository();
   const id = c.req.param('id');
+  const user = c.get('currentUser');
+  if (!mayPerformAs(user, parsed.data.role, 'artifact:revise')) {
+    return c.json({ error: 'role_not_allowed', message: '只有编辑角色可以改稿。' }, 403);
+  }
   const manuscript = repository.findManuscript(id);
   if (!manuscript) return c.json({ error: 'manuscript_not_found' }, 404);
-  if (parsed.data.role !== 'editor') {
+  if (!mayMutateManuscriptContent(manuscript.status, 'workbench-artifact-revise')) {
     return c.json(
-      { error: 'wrong_role', message: '只有编辑 / 记者可以修改稿件内容。' },
+      { error: 'manuscript_not_editable', message: manuscriptNotEditableMessage },
       409,
     );
   }
-  if (!['generated', 'preflight', 'revision'].includes(manuscript.status)) {
-    return c.json(
-      { error: 'invalid_state', message: '当前流程状态不允许修改稿件。' },
-      409,
-    );
-  }
-
   const sentences = splitSentences(parsed.data.content);
   if (sentences.length === 0) return c.json({ error: 'empty_content' }, 400);
 
@@ -645,7 +769,10 @@ workbenchRoutes.post('/api/workbench/:id/artifacts/:artifactId/revise', async (c
   const existing = repository.findArtifact(id, artifactId);
   if (!existing) return c.json({ error: 'artifact_not_found' }, 404);
   const previous = repository.listArtifactSegments(artifactId).map((segment) => segment.text);
-  if (previous.length === sentences.length && previous.every((sentence, index) => sentence === sentences[index])) {
+  if (
+    previous.length === sentences.length &&
+    previous.every((sentence, index) => sentence === sentences[index])
+  ) {
     return c.json(
       { error: 'no_content_change', message: '稿件内容没有变化，请修改后再保存。' },
       409,
@@ -653,7 +780,8 @@ workbenchRoutes.post('/api/workbench/:id/artifacts/:artifactId/revise', async (c
   }
 
   const result = repository.reviseArtifact(id, artifactId, {
-    actor: parsed.data.actor?.trim() || actorName(parsed.data.role),
+    actor: workflowActorLabel(user, 'editor'),
+    actorUserId: user.id,
     sentences,
   });
   if (!result) return c.json({ error: 'artifact_not_found' }, 404);

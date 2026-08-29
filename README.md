@@ -30,6 +30,7 @@
 - 红队与报告
 - 广电主链共享契约（稿件、产物、审次、决定、追溯）
 - SQLite/Drizzle 持久化与自动迁移
+- SQLite 账号、固定角色组合、签名会话与稳定真人留痕
 - 稿件工作流 REST API 与 SSE 事件
 - `healthz` 存活检查和 `readyz` 数据库/模型就绪检查
 - Vitest 全量自动化回归与 GitHub Actions
@@ -44,7 +45,10 @@ cp .env.example .env
 npm run dev
 ```
 
-打开 <http://localhost:3300>。
+打开 <http://localhost:3300>，未登录会跳转到 `/login`。demo/test 模式会幂等创建四个演示账号；
+默认密码为 `gatekeeper-demo`，也可以在登录页一键进入。`zhangmin`（张敏）持有全部三个流程角色，
+可在同一工作台切换本次行使身份；`lijianguo`、`wangzhiyuan` 分别只有主任和分管领导角色，
+`stationadmin` 是只读台领导账号。production 不创建这些已知密码账号，也禁止一键登录。
 
 ```bash
 npm run check
@@ -64,17 +68,53 @@ Docker 会以非 root 用户运行，并把 SQLite 数据保存在命名卷
 `moderation-data`。`docker compose down` 不会删除数据；只有明确执行
 `docker compose down -v` 才会删除该卷。
 
+## Production 启动边界
+
+production 的 `SESSION_SECRET` 和 `GATEWAY_TOKEN` 必须各自使用 `base64:` 加至少 32 个
+随机字节，且不能复用。分别运行下面的生成命令两次，把两个不同结果交给部署环境的 secret
+管理器；仓库和 `.env.example` 不保存可用于 production 的已知值：
+
+```bash
+node -e "console.log('base64:'+require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+production 不自动创建账号。启动进程或容器后，使用同一 `DATABASE_PATH` 执行一次性建号命令；
+交互式终端会隐藏输入并要求确认密码，密码不会出现在参数、输出或应用日志中：
+
+```bash
+APP_MODE=production DATABASE_PATH=./data/app.db npm run provision:user -- \
+  --username news-editor --display-name "生产编辑" --roles editor
+```
+
+production 镜像内可执行：
+
+```bash
+docker compose exec app node dist/provision-user.js \
+  --username news-editor --display-name "生产编辑" --roles editor
+```
+
+自动化只能通过 stdin 提供密码；必须使用 CI secret 注入并关闭命令回显，避免 shell 历史、
+进程列表和构建日志泄露。CLI 明确拒绝 `--password`。可用角色为 `editor`、
+`department-head`、`supervising-leader`、`station-leader`，至少一个角色且不得重复。
+
+`/readyz` 在 production 同时要求数据库、模型、强会话密钥、强机器网关密钥，以及至少一个
+启用且角色合法的非 demo 账号。原演示控制面（policy/runtime/redteam/monitor/report/controlled
+target）只在 demo 挂载，production 返回 404。HTTP `/gateway/v1/messages` 使用独立的
+`GATEWAY_TOKEN`（`Authorization: Bearer ...` 或 `x-api-key`）；进程内稿件生成仍直接调用
+`throughGateway()`，不需要伪造 HTTP 凭据。
+
 ## 底座 API
 
 - `GET /healthz`：进程存活
-- `GET /readyz`：SQLite 与模型配置就绪状态
+- `GET /readyz`：SQLite、模型与 production 身份/机器凭据就绪状态
 - `GET /api/meta`：无密钥的运行信息
+- `POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`：登录与签名会话
 - `GET/POST /api/manuscripts`：稿件列表与创建
 - `GET /api/manuscripts/:id`：稿件、产物、审核和追溯聚合
 - `POST /api/manuscripts/:id/artifacts`：保存播报稿或短视频文案
 - `POST /api/manuscripts/:id/reviews`：保存准入/预检/三审决定
 - `PATCH /api/manuscripts/:id/status`：推进工作流状态
-- `POST /api/manuscripts/:id/trace`：追加模型、规则或系统追溯事件
+- `POST /api/manuscripts/:id/trace`：仅应用内部 repository 能力，浏览器 HTTP 账号不可伪造
 - `GET /events`：SSE 实时事件流
 
 请求与响应示例见 [底座 API 契约](docs/API.md)。

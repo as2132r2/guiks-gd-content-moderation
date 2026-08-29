@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { computeAiShare, deriveArtifactOrigin } from '../domain/ai-share.js';
-import { deriveSegmentOrigins } from '../domain/segmentation.js';
+import {
+  hashPassword,
+  parseRolesJson,
+  type StoredUserAccount,
+  type UserAccount,
+} from '../domain/auth.js';
+import { deriveSegmentOrigins, splitSentences } from '../domain/segmentation.js';
 import type {
   AppendTraceInput,
   ContentArtifact,
@@ -16,11 +22,20 @@ import type {
   ManuscriptStatus,
   RecordReviewInput,
   ReplaceSegmentsInput,
+  ReviewDecision,
   ReviewRecord,
+  ReviewStage,
   SentenceSegment,
+  SystemRole,
   TraceEvent,
 } from '../domain/contracts.js';
 import type { AdmissionResult, RuleHit } from '../domain/gatekeeping.js';
+import {
+  isSameHumanReviewDecision,
+  type HumanReviewDecisionInput,
+  type HumanReviewDecisionResult,
+} from '../domain/review-decision.js';
+import { config } from '../config.js';
 import { createDatabase, type DatabaseHandle } from './client.js';
 import {
   admissionResults,
@@ -29,6 +44,7 @@ import {
   reviewRecords,
   sentenceSegments,
   traceEvents,
+  users,
 } from './schema.js';
 
 const parseJsonObject = (value: string): JsonObject => {
@@ -44,6 +60,28 @@ const parseJsonObject = (value: string): JsonObject => {
 
 type ArtifactRow = typeof contentArtifacts.$inferSelect;
 type SegmentRow = typeof sentenceSegments.$inferSelect;
+type UserRow = typeof users.$inferSelect;
+type ReviewRow = typeof reviewRecords.$inferSelect;
+
+const toStoredUser = (row: UserRow): StoredUserAccount | undefined => {
+  const roles = parseRolesJson(row.rolesJson);
+  if (!roles) return undefined;
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.displayName,
+    passwordHash: row.passwordHash,
+    roles,
+    isDemo: row.isDemo,
+    disabled: row.disabled,
+    sessionVersion: row.sessionVersion,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+};
+
+const withoutPassword = ({ passwordHash: _passwordHash, ...user }: StoredUserAccount): UserAccount =>
+  user;
 
 const toArtifact = (row: ArtifactRow): ContentArtifact => ({
   id: row.id,
@@ -54,6 +92,20 @@ const toArtifact = (row: ArtifactRow): ContentArtifact => ({
   ...(row.aiShare === null ? {} : { aiShare: row.aiShare }),
   ...(row.model === null ? {} : { model: row.model }),
   ...(row.metadataJson === null ? {} : { metadata: parseJsonObject(row.metadataJson) }),
+  createdAt: row.createdAt,
+});
+
+const toReview = (row: ReviewRow): ReviewRecord => ({
+  id: row.id,
+  manuscriptId: row.manuscriptId,
+  stage: row.stage as ReviewRecord['stage'],
+  decision: row.decision as ReviewRecord['decision'],
+  actor: row.actor,
+  ...(row.actorUserId === null ? {} : { actorUserId: row.actorUserId }),
+  ...(row.reason === null ? {} : { reason: row.reason }),
+  round: row.round,
+  ...(row.countersignParty === null ? {} : { countersignParty: row.countersignParty }),
+  ...(row.opinion === null ? {} : { opinion: row.opinion }),
   createdAt: row.createdAt,
 });
 
@@ -130,12 +182,147 @@ const artifactOriginOf = (segments: readonly SentenceSegment[]): ContentArtifact
   if (machine && human) return 'mixed';
   return machine ? 'ai' : 'human';
 };
-
 const countOrigins = (segments: SentenceSegment[]): JsonObject => {
   const counts: Record<string, number> = {};
   for (const segment of segments) counts[segment.origin] = (counts[segment.origin] ?? 0) + 1;
   return counts;
 };
+
+type WorkflowTransaction = Parameters<
+  Parameters<DatabaseHandle['orm']['transaction']>[0]
+>[0];
+
+interface ArtifactWrite {
+  artifact: ContentArtifact;
+  segments: SentenceSegment[];
+}
+
+const prepareArtifactWrite = (
+  manuscriptId: string,
+  input: CreateArtifactInput,
+  createdAt: number,
+): ArtifactWrite => {
+  const artifactId = randomUUID();
+  const segments = buildSegments(manuscriptId, artifactId, input.segments ?? [], createdAt);
+  const aiShare = segments.length > 0 ? computeAiShare(segments) : input.aiShare;
+  const origin = deriveArtifactOrigin(segments) ?? input.origin;
+  return {
+    artifact: {
+      id: artifactId,
+      manuscriptId,
+      kind: input.kind,
+      content: input.content,
+      origin,
+      ...(aiShare === undefined ? {} : { aiShare }),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+      createdAt,
+    },
+    segments,
+  };
+};
+
+const insertArtifactWrite = (
+  tx: WorkflowTransaction,
+  write: ArtifactWrite,
+  traceActor?: { actor: string; actorUserId: string },
+): void => {
+  const { artifact, segments } = write;
+  tx.insert(contentArtifacts)
+    .values({
+      id: artifact.id,
+      manuscriptId: artifact.manuscriptId,
+      kind: artifact.kind,
+      content: artifact.content,
+      origin: artifact.origin,
+      aiShare: artifact.aiShare ?? null,
+      model: artifact.model ?? null,
+      metadataJson: artifact.metadata ? JSON.stringify(artifact.metadata) : null,
+      createdAt: artifact.createdAt,
+    })
+    .run();
+  if (segments.length > 0) tx.insert(sentenceSegments).values(toSegmentRows(segments)).run();
+  tx.insert(traceEvents)
+    .values({
+      id: randomUUID(),
+      manuscriptId: artifact.manuscriptId,
+      kind: 'artifact-created',
+      actorType: traceActor ? 'human' : artifact.origin === 'human' ? 'human' : 'ai',
+      actor: traceActor?.actor ?? artifact.model ?? artifact.origin,
+      actorUserId: traceActor?.actorUserId ?? null,
+      dataJson: JSON.stringify({
+        artifactId: artifact.id,
+        kind: artifact.kind,
+        origin: artifact.origin,
+        aiShare: artifact.aiShare ?? null,
+        segmentCount: segments.length,
+        origins: countOrigins(segments),
+        content: artifact.content,
+      }),
+      createdAt: artifact.createdAt,
+    })
+    .run();
+};
+
+const insertReviewWrite = (tx: WorkflowTransaction, review: ReviewRecord): void => {
+  tx.insert(reviewRecords).values(review).run();
+  tx.insert(traceEvents)
+    .values({
+      id: randomUUID(),
+      manuscriptId: review.manuscriptId,
+      kind: 'review-recorded',
+      actorType: 'human',
+      actor: review.actor,
+      actorUserId: review.actorUserId ?? null,
+      dataJson: JSON.stringify({
+        reviewId: review.id,
+        stage: review.stage,
+        decision: review.decision,
+        reason: review.reason ?? null,
+        round: review.round,
+        countersignParty: review.countersignParty ?? null,
+        opinion: review.opinion ?? null,
+      }),
+      createdAt: review.createdAt,
+    })
+    .run();
+};
+
+export interface PreparedPreflightMutation {
+  artifactId: string;
+  /** Present only when preflight auto-appends the explicit AI label. */
+  replacementSegments?: CreateSegmentInput[];
+  metadata: JsonObject;
+  /** Round is injected from the manuscript row inside the transaction. */
+  traceData: JsonObject;
+}
+
+export interface CanonicalTransitionReview {
+  mode: 'append-system' | 'idempotent-human';
+  stage: ReviewStage;
+  decision: ReviewDecision;
+  reason?: string;
+  countersignParty?: string;
+  opinion?: string;
+}
+
+export interface CommitCanonicalTransitionInput {
+  manuscriptId: string;
+  expectedFrom: ManuscriptStatus;
+  to: ManuscriptStatus;
+  actor: string;
+  actorUserId: string;
+  incrementReviewRound?: boolean;
+  generatedArtifacts?: CreateArtifactInput[];
+  preflightMutations?: PreparedPreflightMutation[];
+  review?: CanonicalTransitionReview;
+}
+
+export type CommitCanonicalTransitionResult =
+  | { outcome: 'committed'; manuscript: Manuscript; review?: ReviewRecord }
+  | { outcome: 'manuscript-not-found' }
+  | { outcome: 'status-conflict'; manuscript: Manuscript }
+  | { outcome: 'review-conflict'; review: ReviewRecord };
 
 export class WorkflowRepository {
   constructor(private readonly database: DatabaseHandle) {
@@ -212,7 +399,157 @@ export class WorkflowRepository {
     return row?.ok === 1;
   }
 
-  createManuscript(input: CreateManuscriptInput): Manuscript {
+  /** Demo identities are deterministic and idempotent; production never gets known passwords. */
+  ensureDemoUsers(): void {
+    if (!config.seedDemoUsers) return;
+    const now = Date.now();
+    const seeds = [
+      {
+        id: 'user_demo_zhangmin',
+        username: 'zhangmin',
+        displayName: '张敏',
+        roles: ['editor', 'department-head', 'supervising-leader'],
+      },
+      {
+        id: 'user_demo_lijianguo',
+        username: 'lijianguo',
+        displayName: '李建国',
+        roles: ['department-head'],
+      },
+      {
+        id: 'user_demo_wangzhiyuan',
+        username: 'wangzhiyuan',
+        displayName: '王志远',
+        roles: ['supervising-leader'],
+      },
+      {
+        id: 'user_demo_stationadmin',
+        username: 'stationadmin',
+        displayName: '台领导·管理员',
+        roles: ['station-leader'],
+      },
+    ] as const;
+
+    for (const seed of seeds) {
+      if (this.database.orm.select({ id: users.id }).from(users).where(eq(users.id, seed.id)).get()) {
+        continue;
+      }
+      this.database.orm
+        .insert(users)
+        .values({
+          id: seed.id,
+          username: seed.username,
+          displayName: seed.displayName,
+          passwordHash: hashPassword(config.demoSeedPassword),
+          rolesJson: JSON.stringify(seed.roles),
+          isDemo: true,
+          disabled: false,
+          sessionVersion: 1,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+        .run();
+    }
+  }
+
+  provisionProductionUser(input: {
+    username: string;
+    displayName: string;
+    password: string;
+    roles: SystemRole[];
+  }): UserAccount {
+    const username = input.username.trim().toLowerCase();
+    const displayName = input.displayName.trim();
+    if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) {
+      throw new Error('username must be 3-64 lowercase letters, digits, dot, underscore or hyphen');
+    }
+    if (displayName.length === 0 || displayName.length > 100) {
+      throw new Error('display name must be 1-100 characters');
+    }
+    if (input.password.length < 12) throw new Error('password must be at least 12 characters');
+    const roles = parseRolesJson(JSON.stringify(input.roles));
+    if (!roles || roles.length !== input.roles.length) {
+      throw new Error('roles must be a non-empty, duplicate-free list of system roles');
+    }
+    if (this.findStoredUserByUsername(username)) throw new Error('username already exists');
+
+    const now = Date.now();
+    const id = `user_${randomUUID()}`;
+    this.database.orm
+      .insert(users)
+      .values({
+        id,
+        username,
+        displayName,
+        passwordHash: hashPassword(input.password),
+        rolesJson: JSON.stringify(roles),
+        isDemo: false,
+        disabled: false,
+        sessionVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    return this.findUserById(id)!;
+  }
+
+  hasEnabledProductionUser(): boolean {
+    return this.database.orm
+      .select()
+      .from(users)
+      .all()
+      .some((row) => {
+        const user = toStoredUser(row);
+        return Boolean(user && !user.isDemo && !user.disabled);
+      });
+  }
+
+  findUserById(id: string): UserAccount | undefined {
+    const row = this.database.orm.select().from(users).where(eq(users.id, id)).get();
+    const stored = row ? toStoredUser(row) : undefined;
+    return stored ? withoutPassword(stored) : undefined;
+  }
+
+  findStoredUserByUsername(username: string): StoredUserAccount | undefined {
+    const row = this.database.orm
+      .select()
+      .from(users)
+      .where(eq(users.username, username.trim().toLowerCase()))
+      .get();
+    return row ? toStoredUser(row) : undefined;
+  }
+
+  incrementSessionVersion(id: string): UserAccount | undefined {
+    const existing = this.findUserById(id);
+    if (!existing) return undefined;
+    this.database.orm
+      .update(users)
+      .set({ sessionVersion: existing.sessionVersion + 1, updatedAt: Date.now() })
+      .where(eq(users.id, id))
+      .run();
+    return this.findUserById(id);
+  }
+
+  setUserDisabled(id: string, disabled: boolean): UserAccount | undefined {
+    const existing = this.findUserById(id);
+    if (!existing) return undefined;
+    this.database.orm
+      .update(users)
+      .set({
+        disabled,
+        sessionVersion: existing.sessionVersion + 1,
+        updatedAt: Date.now(),
+      })
+      .where(eq(users.id, id))
+      .run();
+    return this.findUserById(id);
+  }
+
+  createManuscript(
+    input: CreateManuscriptInput,
+    actor?: { label: string; userId?: string },
+  ): Manuscript {
     const now = Date.now();
     const manuscript: Manuscript = {
       id: randomUUID(),
@@ -233,7 +570,8 @@ export class WorkflowRepository {
           manuscriptId: manuscript.id,
           kind: 'manuscript-created',
           actorType: 'human',
-          actor: 'editor',
+          actor: actor?.label ?? 'editor',
+          actorUserId: actor?.userId ?? null,
           dataJson: JSON.stringify({ sourceType: manuscript.sourceType }),
           createdAt: now,
         })
@@ -343,18 +681,7 @@ export class WorkflowRepository {
       .where(eq(reviewRecords.manuscriptId, id))
       .orderBy(asc(reviewRecords.createdAt))
       .all();
-    const reviews: ReviewRecord[] = reviewRows.map((row) => ({
-      id: row.id,
-      manuscriptId: row.manuscriptId,
-      stage: row.stage as ReviewRecord['stage'],
-      decision: row.decision as ReviewRecord['decision'],
-      actor: row.actor,
-      ...(row.reason === null ? {} : { reason: row.reason }),
-      round: row.round,
-      ...(row.countersignParty === null ? {} : { countersignParty: row.countersignParty }),
-      ...(row.opinion === null ? {} : { opinion: row.opinion }),
-      createdAt: row.createdAt,
-    }));
+    const reviews: ReviewRecord[] = reviewRows.map(toReview);
     const traceRows = this.database.orm
       .select()
       .from(traceEvents)
@@ -367,6 +694,7 @@ export class WorkflowRepository {
       kind: row.kind as TraceEvent['kind'],
       actorType: row.actorType as TraceEvent['actorType'],
       actor: row.actor,
+      ...(row.actorUserId === null ? {} : { actorUserId: row.actorUserId }),
       data: parseJsonObject(row.dataJson),
       createdAt: row.createdAt,
     }));
@@ -379,7 +707,12 @@ export class WorkflowRepository {
     id: string,
     status: ManuscriptStatus,
     actor: string,
-    options: { incrementReviewRound?: boolean } = {},
+    options: {
+      incrementReviewRound?: boolean;
+      actorUserId?: string;
+      signedAiShare?: number | null;
+      signedSegmentCount?: number;
+    } = {},
   ): Manuscript | undefined {
     const existing = this.findManuscript(id);
     if (!existing) return undefined;
@@ -398,7 +731,18 @@ export class WorkflowRepository {
           kind: status === 'signed' ? 'signed' : 'status-changed',
           actorType: 'human',
           actor,
-          dataJson: JSON.stringify({ from: existing.status, to: status, round: reviewRound }),
+          actorUserId: options.actorUserId ?? null,
+          dataJson: JSON.stringify({
+            from: existing.status,
+            to: status,
+            round: reviewRound,
+            ...(status === 'signed' && options.signedAiShare !== undefined
+              ? { aiShare: options.signedAiShare }
+              : {}),
+            ...(status === 'signed' && options.signedSegmentCount !== undefined
+              ? { segmentCount: options.signedSegmentCount }
+              : {}),
+          }),
           createdAt: now,
         })
         .run();
@@ -406,57 +750,61 @@ export class WorkflowRepository {
     return this.findManuscript(id);
   }
 
-  addArtifact(manuscriptId: string, input: CreateArtifactInput): ContentArtifact | undefined {
+  addArtifact(
+    manuscriptId: string,
+    input: CreateArtifactInput,
+    traceActor?: { actor: string; actorUserId: string },
+  ): ContentArtifact | undefined {
     if (!this.findManuscript(manuscriptId)) return undefined;
-    const { artifact, segments } = prepareArtifact(
+    const write = prepareArtifactWrite(
       manuscriptId,
       input,
       this.nextTraceTimestamp(manuscriptId),
     );
 
     this.database.orm.transaction((tx) => {
-      tx.insert(contentArtifacts)
-        .values({
-          id: artifact.id,
-          manuscriptId: artifact.manuscriptId,
-          kind: artifact.kind,
-          content: artifact.content,
-          origin: artifact.origin,
-          aiShare: artifact.aiShare ?? null,
-          model: artifact.model ?? null,
-          metadataJson: artifact.metadata ? JSON.stringify(artifact.metadata) : null,
-          createdAt: artifact.createdAt,
-        })
-        .run();
-      if (segments.length > 0) tx.insert(sentenceSegments).values(toSegmentRows(segments)).run();
+      insertArtifactWrite(tx, write, traceActor);
       tx.update(manuscripts)
-        .set({ updatedAt: artifact.createdAt })
+        .set({ updatedAt: write.artifact.createdAt })
         .where(eq(manuscripts.id, manuscriptId))
         .run();
-      tx.insert(traceEvents)
-        .values({
-          id: randomUUID(),
-          manuscriptId,
-
-          kind: 'artifact-created',
-          actorType: artifact.origin === 'human' ? 'human' : 'ai',
-          actor: input.model ?? artifact.origin,
-          dataJson: JSON.stringify({
-            artifactId: artifact.id,
-            kind: artifact.kind,
-            origin: artifact.origin,
-            aiShare: artifact.aiShare ?? null,
-            segmentCount: segments.length,
-            origins: countOrigins(segments),
-            // 生成时的原文要留下来: 人改过之后就找不回来了, 而对照组问的正是
-            // 「没有把关人的话, 会播出去的是什么」—— 那是这一版, 不是改完的。
-            content: artifact.content,
-          }),
-          createdAt: artifact.createdAt,
-        })
-        .run();
     });
-    return artifact;
+    return write.artifact;
+  }
+
+  /**
+   * Persist an artifact submitted by an authenticated editor.
+   *
+   * The browser supplies content, not provenance. Sentence origins are derived
+   * from the authoritative source text and the action is always attributed to
+   * the stable human account. Canonical model generation continues to call
+   * `addArtifact` directly with trusted in-process provenance and model data.
+   */
+  addHumanArtifact(
+    manuscriptId: string,
+    input: Pick<CreateArtifactInput, 'kind' | 'content'> & {
+      actor: string;
+      actorUserId: string;
+    },
+  ): ContentArtifact | undefined {
+    const manuscript = this.findManuscript(manuscriptId);
+    if (!manuscript) return undefined;
+
+    const segments = deriveSegmentOrigins(
+      [],
+      splitSentences(input.content),
+      manuscript.sourceText,
+    );
+    return this.addArtifact(
+      manuscriptId,
+      {
+        kind: input.kind,
+        content: input.content,
+        origin: 'human',
+        segments,
+      },
+      { actor: input.actor, actorUserId: input.actorUserId },
+    );
   }
 
   /**
@@ -605,6 +953,7 @@ export class WorkflowRepository {
           kind: 'segments-recorded',
           actorType: input.actorType ?? 'human',
           actor: input.actor,
+          actorUserId: input.actorUserId ?? null,
 
           dataJson: JSON.stringify({
             artifactId,
@@ -635,12 +984,12 @@ export class WorkflowRepository {
    *
    * The caller sends text only. AI 参与度 is the number a 台领导 uses to spot
    * 走过场的审核, so the person being measured never gets to label their own
-   * sentences — see [segmentation.ts](../lib/segmentation.ts).
+   * sentences — see [segmentation.ts](../domain/segmentation.ts).
    */
   reviseArtifact(
     manuscriptId: string,
     artifactId: string,
-    input: { actor: string; sentences: string[] },
+    input: { actor: string; actorUserId?: string; sentences: string[] },
   ): { artifact: ContentArtifact; segments: SentenceSegment[] } | undefined {
     const manuscript = this.findManuscript(manuscriptId);
     const existing = manuscript ? this.findArtifact(manuscriptId, artifactId) : undefined;
@@ -650,12 +999,12 @@ export class WorkflowRepository {
     const derived = deriveSegmentOrigins(prior, input.sentences, manuscript.sourceText);
     const result = this.replaceArtifactSegments(manuscriptId, artifactId, {
       actor: input.actor,
+      ...(input.actorUserId ? { actorUserId: input.actorUserId } : {}),
       segments: derived,
     });
     if (!result) return undefined;
 
-    const origin = artifactOriginOf(result.segments);
-    return { artifact: { ...result.artifact, origin }, segments: result.segments };
+    return result;
   }
 
   setArtifactMetadata(
@@ -682,6 +1031,7 @@ export class WorkflowRepository {
       stage: input.stage,
       decision: input.decision,
       actor: input.actor,
+      ...(input.actorUserId ? { actorUserId: input.actorUserId } : {}),
       ...(input.reason ? { reason: input.reason } : {}),
       round: input.round ?? manuscript.reviewRound,
       ...(input.countersignParty ? { countersignParty: input.countersignParty } : {}),
@@ -690,32 +1040,321 @@ export class WorkflowRepository {
     };
 
     this.database.orm.transaction((tx) => {
-      tx.insert(reviewRecords).values(review).run();
+      insertReviewWrite(tx, review);
       tx.update(manuscripts)
         .set({ updatedAt: review.createdAt })
         .where(eq(manuscripts.id, manuscriptId))
         .run();
+    });
+    return review;
+  }
+
+  /**
+   * Persist one human decision per (manuscript, stage, round).
+   *
+   * The lookup and insert share one synchronous SQLite transaction. That is
+   * the single-process concurrency boundary: two request handlers cannot both
+   * observe an empty key and append competing facts.
+   */
+  recordOrReuseHumanReview(
+    manuscriptId: string,
+    input: HumanReviewDecisionInput,
+  ): HumanReviewDecisionResult {
+    return this.database.orm.transaction((tx) => {
+      const manuscript = tx
+        .select({ id: manuscripts.id })
+        .from(manuscripts)
+        .where(eq(manuscripts.id, manuscriptId))
+        .get();
+      if (!manuscript) return { outcome: 'manuscript-not-found' } as const;
+
+      const existing = tx
+        .select()
+        .from(reviewRecords)
+        .where(
+          and(
+            eq(reviewRecords.manuscriptId, manuscriptId),
+            eq(reviewRecords.stage, input.stage),
+            eq(reviewRecords.round, input.round),
+          ),
+        )
+        .orderBy(asc(reviewRecords.createdAt))
+        .all()
+        .map(toReview);
+
+      if (existing.length > 0) {
+        const conflict = existing.find((review) => !isSameHumanReviewDecision(review, input));
+        return conflict
+          ? ({ outcome: 'conflict', review: conflict } as const)
+          : ({ outcome: 'reused', review: existing[0]! } as const);
+      }
+
+      const review: ReviewRecord = {
+        id: randomUUID(),
+        manuscriptId,
+        stage: input.stage,
+        decision: input.decision,
+        actor: input.actor,
+        actorUserId: input.actorUserId,
+        ...(input.reason ? { reason: input.reason } : {}),
+        round: input.round,
+        ...(input.countersignParty ? { countersignParty: input.countersignParty } : {}),
+        ...(input.opinion ? { opinion: input.opinion } : {}),
+        createdAt: Date.now(),
+      };
+
+      insertReviewWrite(tx, review);
+      tx.update(manuscripts)
+        .set({ updatedAt: review.createdAt })
+        .where(eq(manuscripts.id, manuscriptId))
+        .run();
+      return { outcome: 'created', review } as const;
+    });
+  }
+
+  /**
+   * Commit every SQLite side effect of one canonical state-machine edge.
+   *
+   * Callers must finish external model work and deterministic preflight
+   * preparation before entering here. The callback is synchronous: no network
+   * await can hold the SQLite transaction open.
+   */
+  commitCanonicalTransition(
+    input: CommitCanonicalTransitionInput,
+  ): CommitCanonicalTransitionResult {
+    const transitionAt = Date.now();
+    const artifactWrites = (input.generatedArtifacts ?? []).map((artifact) =>
+      prepareArtifactWrite(input.manuscriptId, artifact, transitionAt),
+    );
+    const committedAt = transitionAt;
+
+    return this.database.orm.transaction((tx) => {
+      const row = tx
+        .select()
+        .from(manuscripts)
+        .where(eq(manuscripts.id, input.manuscriptId))
+        .get();
+      if (!row) return { outcome: 'manuscript-not-found' } as const;
+
+      const current = row as Manuscript;
+      if (current.status !== input.expectedFrom) {
+        return { outcome: 'status-conflict', manuscript: current } as const;
+      }
+
+      const reviewRound = current.reviewRound + (input.incrementReviewRound ? 1 : 0);
+      let review: ReviewRecord | undefined;
+      let shouldInsertReview = false;
+
+      // A contradictory human decision must be discovered before the first
+      // write. An identical direct review is reused while the status advances.
+      if (input.review) {
+        const candidate: HumanReviewDecisionInput = {
+          stage: input.review.stage,
+          decision: input.review.decision,
+          actor: input.actor,
+          actorUserId: input.actorUserId,
+          ...(input.review.reason ? { reason: input.review.reason } : {}),
+          round: reviewRound,
+          ...(input.review.countersignParty
+            ? { countersignParty: input.review.countersignParty }
+            : {}),
+          ...(input.review.opinion ? { opinion: input.review.opinion } : {}),
+        };
+
+        if (input.review.mode === 'idempotent-human') {
+          const existing = tx
+            .select()
+            .from(reviewRecords)
+            .where(
+              and(
+                eq(reviewRecords.manuscriptId, input.manuscriptId),
+                eq(reviewRecords.stage, candidate.stage),
+                eq(reviewRecords.round, candidate.round),
+              ),
+            )
+            .orderBy(asc(reviewRecords.createdAt))
+            .all()
+            .map(toReview);
+          if (existing.length > 0) {
+            const conflict = existing.find(
+              (record) => !isSameHumanReviewDecision(record, candidate),
+            );
+            if (conflict) return { outcome: 'review-conflict', review: conflict } as const;
+            review = existing[0]!;
+          }
+        }
+
+        if (!review) {
+          review = {
+            id: randomUUID(),
+            manuscriptId: input.manuscriptId,
+            stage: candidate.stage,
+            decision: candidate.decision,
+            actor: candidate.actor,
+            actorUserId: candidate.actorUserId,
+            ...(candidate.reason ? { reason: candidate.reason } : {}),
+            round: candidate.round,
+            ...(candidate.countersignParty
+              ? { countersignParty: candidate.countersignParty }
+              : {}),
+            ...(candidate.opinion ? { opinion: candidate.opinion } : {}),
+            createdAt: committedAt,
+          };
+          shouldInsertReview = true;
+        }
+      }
+
+      // This compare-and-set is the authoritative status precondition and the
+      // first write lock. A later failure rolls it back with every side effect.
+      const statusWrite = tx
+        .update(manuscripts)
+        .set({ status: input.to, reviewRound, updatedAt: committedAt })
+        .where(
+          and(
+            eq(manuscripts.id, input.manuscriptId),
+            eq(manuscripts.status, input.expectedFrom),
+            eq(manuscripts.reviewRound, current.reviewRound),
+          ),
+        )
+        .run();
+      if (statusWrite.changes !== 1) {
+        const latest = tx
+          .select()
+          .from(manuscripts)
+          .where(eq(manuscripts.id, input.manuscriptId))
+          .get();
+        return latest
+          ? ({ outcome: 'status-conflict', manuscript: latest as Manuscript } as const)
+          : ({ outcome: 'manuscript-not-found' } as const);
+      }
+
+      for (const write of artifactWrites) insertArtifactWrite(tx, write);
+
+      for (const mutation of input.preflightMutations ?? []) {
+        const artifactRow = tx
+          .select()
+          .from(contentArtifacts)
+          .where(
+            and(
+              eq(contentArtifacts.id, mutation.artifactId),
+              eq(contentArtifacts.manuscriptId, input.manuscriptId),
+            ),
+          )
+          .get();
+        if (!artifactRow) throw new Error('preflight artifact not found');
+
+        if (mutation.replacementSegments) {
+          const segments = buildSegments(
+            input.manuscriptId,
+            mutation.artifactId,
+            mutation.replacementSegments,
+            committedAt,
+          );
+          const aiShare = computeAiShare(segments) ?? null;
+          const origin = deriveArtifactOrigin(segments) ?? artifactRow.origin;
+          const content = segments.map((segment) => segment.text).join('\n');
+
+          tx.delete(sentenceSegments)
+            .where(eq(sentenceSegments.artifactId, mutation.artifactId))
+            .run();
+          if (segments.length > 0) tx.insert(sentenceSegments).values(toSegmentRows(segments)).run();
+          tx.update(contentArtifacts)
+            .set({ aiShare, origin, content })
+            .where(eq(contentArtifacts.id, mutation.artifactId))
+            .run();
+          tx.insert(traceEvents)
+            .values({
+              id: randomUUID(),
+              manuscriptId: input.manuscriptId,
+              kind: 'segments-recorded',
+              actorType: 'system',
+              actor: '输出预检·自动标识',
+              actorUserId: null,
+              dataJson: JSON.stringify({
+                artifactId: mutation.artifactId,
+                segmentCount: segments.length,
+                aiShare,
+                previousAiShare: artifactRow.aiShare,
+                origin,
+                previousOrigin: artifactRow.origin,
+                origins: countOrigins(segments),
+              }),
+              createdAt: committedAt,
+            })
+            .run();
+        }
+
+        tx.update(contentArtifacts)
+          .set({ metadataJson: JSON.stringify(mutation.metadata) })
+          .where(
+            and(
+              eq(contentArtifacts.id, mutation.artifactId),
+              eq(contentArtifacts.manuscriptId, input.manuscriptId),
+            ),
+          )
+          .run();
+        tx.insert(traceEvents)
+          .values({
+            id: randomUUID(),
+            manuscriptId: input.manuscriptId,
+            kind: 'rule-hit',
+            actorType: 'system',
+            actor: '输出预检',
+            actorUserId: null,
+            dataJson: JSON.stringify({ ...mutation.traceData, round: reviewRound }),
+            createdAt: committedAt,
+          })
+          .run();
+      }
+
+      if (review && shouldInsertReview) insertReviewWrite(tx, review);
+
+      const signedSegments =
+        input.to === 'signed'
+          ? tx
+              .select()
+              .from(sentenceSegments)
+              .where(eq(sentenceSegments.manuscriptId, input.manuscriptId))
+              .all()
+              .map(toSegment)
+          : undefined;
+      const signedAiShare = signedSegments ? computeAiShare(signedSegments) ?? null : undefined;
+
       tx.insert(traceEvents)
         .values({
           id: randomUUID(),
-          manuscriptId,
-          kind: 'review-recorded',
+          manuscriptId: input.manuscriptId,
+          kind: input.to === 'signed' ? 'signed' : 'status-changed',
           actorType: 'human',
           actor: input.actor,
+          actorUserId: input.actorUserId,
           dataJson: JSON.stringify({
-            reviewId: review.id,
-            stage: review.stage,
-            decision: review.decision,
-            reason: review.reason ?? null,
-            round: review.round,
-            countersignParty: review.countersignParty ?? null,
-            opinion: review.opinion ?? null,
+            from: input.expectedFrom,
+            to: input.to,
+            round: reviewRound,
+            ...(input.to === 'signed'
+              ? {
+                  aiShare: signedAiShare ?? null,
+                  segmentCount: signedSegments?.length ?? 0,
+                }
+              : {}),
           }),
-          createdAt: review.createdAt,
+          createdAt: committedAt,
         })
         .run();
+
+      const manuscript: Manuscript = {
+        ...current,
+        status: input.to,
+        reviewRound,
+        updatedAt: committedAt,
+      };
+      return {
+        outcome: 'committed',
+        manuscript,
+        ...(review ? { review } : {}),
+      } as const;
     });
-    return review;
   }
 
   appendTrace(manuscriptId: string, input: AppendTraceInput): TraceEvent | undefined {
@@ -726,12 +1365,13 @@ export class WorkflowRepository {
       kind: input.kind,
       actorType: input.actorType,
       actor: input.actor,
+      ...(input.actorUserId ? { actorUserId: input.actorUserId } : {}),
       data: input.data ?? {},
       createdAt: this.nextTraceTimestamp(manuscriptId),
     };
     this.database.orm
       .insert(traceEvents)
-      .values({ ...event, dataJson: JSON.stringify(event.data) })
+      .values({ ...event, actorUserId: event.actorUserId ?? null, dataJson: JSON.stringify(event.data) })
       .run();
     return event;
   }
@@ -765,7 +1405,10 @@ export class WorkflowRepository {
 let singleton: WorkflowRepository | undefined;
 
 export function getWorkflowRepository(): WorkflowRepository {
-  singleton ??= new WorkflowRepository(createDatabase());
+  if (!singleton) {
+    singleton = new WorkflowRepository(createDatabase());
+    singleton.ensureDemoUsers();
+  }
   return singleton;
 }
 

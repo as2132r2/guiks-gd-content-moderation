@@ -19,11 +19,15 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      # 全部可选。不填任何一项也能零配置跑（内置确定性 mock 上游，无需 API key）。
+      # demo 可零配置跑；production 必须按 README 配置身份、机器凭据和上游。
       PORT: 3300
       APP_MODE: ${APP_MODE:-demo}
       DATABASE_PATH: /app/data/app.db
       FAIL_CLOSED: ${FAIL_CLOSED:-true}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:-}
+      SEED_DEMO_USERS: ${SEED_DEMO_USERS:-}
+      DEMO_SEED_PASSWORD: ${DEMO_SEED_PASSWORD:-gatekeeper-demo}
       # 留空时 demo=true、production=false；也可在 .env 中显式覆盖。
       ALLOW_MOCK_UPSTREAM: ${ALLOW_MOCK_UPSTREAM:-}
       # 控制台里显示的「接管目标」标签（受控靶子）。

@@ -1,4 +1,21 @@
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    username: text('username').notNull(),
+    displayName: text('display_name').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    rolesJson: text('roles_json').notNull(),
+    isDemo: integer('is_demo', { mode: 'boolean' }).notNull().default(false),
+    disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false),
+    sessionVersion: integer('session_version').notNull().default(1),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [uniqueIndex('users_username_idx').on(table.username)],
+);
 
 export const manuscripts = sqliteTable(
   'manuscripts',
@@ -66,6 +83,7 @@ export const reviewRecords = sqliteTable(
     stage: text('stage').notNull(),
     decision: text('decision').notNull(),
     actor: text('actor').notNull(),
+    actorUserId: text('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
     reason: text('reason'),
     round: integer('round').notNull().default(1),
     countersignParty: text('countersign_party'),
@@ -97,6 +115,7 @@ export const traceEvents = sqliteTable(
     kind: text('kind').notNull(),
     actorType: text('actor_type').notNull(),
     actor: text('actor').notNull(),
+    actorUserId: text('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
     dataJson: text('data_json').notNull(),
     createdAt: integer('created_at').notNull(),
   },
@@ -105,6 +124,7 @@ export const traceEvents = sqliteTable(
 
 
 export const schema = {
+  users,
   manuscripts,
   admissionResults,
   contentArtifacts,
