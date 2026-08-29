@@ -1,6 +1,6 @@
 # guiks-gd-content-moderation
 
-贵客松赛道二·广电方向的独立 Web Demo。目标是一条可现场跑通的县级融媒闭环：
+贵客松赛道二·广电方向的独立 Web Demo。目标是一条可现场跑通的融媒闭环：
 
 > 素材入口 → 入口准入 → 稿件生成 → 输出预检 → 三审流转 → AI 参与度追溯
 
@@ -34,7 +34,7 @@
 - `healthz` 存活检查和 `readyz` 数据库/模型就绪检查
 - Vitest 全量自动化回归与 GitHub Actions
 
-这些能力将从“通用 AI 保密审计”改造为“县级融媒适播预检与生产追溯”。原说明保存在 [docs/legacy-auditgate-readme.md](docs/legacy-auditgate-readme.md)，组长方案保存在 [docs/design/broadcast-pivot.html](docs/design/broadcast-pivot.html)。
+这些能力将从“通用 AI 保密审计”改造为“融媒适播预检与生产追溯”。原说明保存在 [docs/legacy-auditgate-readme.md](docs/legacy-auditgate-readme.md)，组长方案保存在 [docs/design/broadcast-pivot.html](docs/design/broadcast-pivot.html)。
 
 ## 本地运行
 

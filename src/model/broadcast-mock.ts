@@ -62,10 +62,10 @@ function broadcastScript(sourceText: string): string {
   const misquote = misquoteQuantity(sourceText);
   const lines = [
     `各位听众，${trimTo(lead, 60)}。`,
-    '会议在县融媒体中心隆重召开，县领导亲自出席并讲话。',
+    '会议在市融媒体中心隆重召开，市领导亲自出席并讲话。',
     misquote
-      ? `据介绍，该项目总投资 ${misquote.altered}，建成后将惠及全县群众。`
-      : '据介绍，该项目预计带动就业 1200 人，建成后将惠及全县群众。',
+      ? `据介绍，该项目总投资 ${misquote.altered}，建成后将惠及全市群众。`
+      : '据介绍，该项目预计带动就业 1200 人，建成后将惠及全市群众。',
     '下一步，相关部门将按照会议部署抓好落实，确保各项任务落地见效。',
   ];
   return lines.join('\n');

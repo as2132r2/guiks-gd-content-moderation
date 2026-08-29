@@ -142,7 +142,7 @@ interface EntityCandidate {
 }
 
 const PERSON_TITLE_PATTERN =
-  /[\u4e00-\u9fff]{2,4}(?:同志)?(?:担任|任|是)?(?:县委书记|县长|副县长|局长|主任|党组书记|党委书记)/g;
+  /[\u4e00-\u9fff]{2,4}(?:同志)?(?:担任|任|是)?(?:省委书记|省长|副省长|市委书记|市长|副市长|县委书记|县长|副县长|局长|主任|党组书记|党委书记)/g;
 const LOCATION_PATTERN = /(?:在|赴|到|位于)([\u4e00-\u9fff]{2,10}(?:县|市|区|镇|乡|村|社区))/g;
 
 function entityCandidates(sentence: string): EntityCandidate[] {

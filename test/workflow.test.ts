@@ -71,7 +71,7 @@ describe('稿件状态机', () => {
         from: 'admission-reason-required',
         to: 'admitted',
         actor: 'editor',
-        reason: '县应急管理局已授权发布。',
+        reason: '市应急管理局已授权发布。',
       }),
     ).toBeNull();
   });

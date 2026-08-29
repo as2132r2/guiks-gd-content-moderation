@@ -27,7 +27,7 @@ services:
       # 留空时 demo=true、production=false；也可在 .env 中显式覆盖。
       ALLOW_MOCK_UPSTREAM: ${ALLOW_MOCK_UPSTREAM:-}
       # 控制台里显示的「接管目标」标签（受控靶子）。
-      TARGET_LABEL: ${TARGET_LABEL:-县级融媒体中心（演示环境）}
+      TARGET_LABEL: ${TARGET_LABEL:-融媒体中心（演示环境）}
       # 留空 = 用内置 mock 上游；填真实 base_url 才会去代理真实上游。
       UPSTREAM_URL: ${UPSTREAM_URL:-}
       UPSTREAM_KEY: ${UPSTREAM_KEY:-}
