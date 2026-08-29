@@ -141,15 +141,92 @@ interface EntityCandidate {
   kind: '人名与职务' | '地名';
 }
 
-const PERSON_TITLE_PATTERN =
-  /[\u4e00-\u9fff]{2,4}(?:同志)?(?:担任|任|是)?(?:省委书记|省长|副省长|市委书记|市长|副市长|县委书记|县长|副县长|局长|主任|党组书记|党委书记)/g;
-const LOCATION_PATTERN = /(?:在|赴|到|位于)([\u4e00-\u9fff]{2,10}(?:县|市|区|镇|乡|村|社区))/g;
+/**
+ * 领导职务，**长的排前面**。
+ *
+ * 顺序即匹配优先级：`市长` 排在 `副市长` 前面的话，「副市长马晓东」会被切成
+ * 「市长马晓东」——少一个「副」，比不出来反而更糟。
+ */
+const LEADER_TITLES = [
+  '省委书记', '市委书记', '县委书记', '党组书记', '党委书记',
+  '副省长', '副市长', '副县长',
+  '省长', '市长', '县长', '局长', '主任',
+] as const;
+
+/** 写法一：「姓名（同志）（任）职务」——张伟任县长、李强同志担任局长。 */
+const NAME_THEN_TITLE_PATTERN = new RegExp(
+  `[\\u4e00-\\u9fff]{2,4}(?:同志)?(?:担任|任|是)?(?:${LEADER_TITLES.join('|')})`,
+  'g',
+);
+
+/**
+ * 写法二的前半段：「职务 + 姓」——市委书记周、县长马。
+ *
+ * **时政通稿绝大多数是这一种写法**，而写法一那条正则要求姓名在前，
+ * 对「市委书记周立」一个都匹配不上。名字部分不在这条正则里取，
+ * 见 titleThenNameCandidates。
+ */
+const TITLE_THEN_SURNAME_PATTERN = new RegExp(
+  `(?:${LEADER_TITLES.join('|')})(?:${SURNAMES.join('|')})`,
+  'g',
+);
+
+/**
+ * 名字后面允许出现什么。
+ *
+ * 「职务 + 姓 + 一两个字」单看断不干净——「主任周五召开例会」里周是百家姓，
+ * 周五不是人。所以要求名字后面接标点、句末或一个谓语，靠上下文把日期、
+ * 序数这类假人名挡掉。
+ */
+const NAME_TAIL_BOUNDARY =
+  /^(?:$|[^一-鿿]|出席|列席|讲话|指出|强调|表示|要求|主持|宣布|介绍|率|带队|一行|等|说|在|到|赴|就)/;
+
+const LOCATION_PATTERN = /(?:在|赴|到|位于)([一-鿿]{2,10}(?:县|市|区|镇|乡|村|社区))/g;
+
+/** 「职务+姓名」的候选。名字取两字优先、一字次之，都不成立就不是人名。 */
+function titleThenNameCandidates(sentence: string): EntityCandidate[] {
+  const candidates: EntityCandidate[] = [];
+  for (const match of sentence.matchAll(TITLE_THEN_SURNAME_PATTERN)) {
+    const surnameEnd = match.index + match[0].length;
+    for (const givenLength of [2, 1]) {
+      const end = surnameEnd + givenLength;
+      const given = sentence.slice(surnameEnd, end);
+      if (given.length !== givenLength) continue;
+      if (!/^[一-鿿]+$/.test(given)) continue;
+      if (!NAME_TAIL_BOUNDARY.test(sentence.slice(end))) continue;
+      candidates.push({
+        literal: sentence.slice(match.index, end),
+        start: match.index,
+        kind: '人名与职务',
+      });
+      break;
+    }
+  }
+  return candidates;
+}
+
+/** 同一段文字被两种写法各命中一次时只留长的，否则同一个人会被标两遍。 */
+function dropContained(candidates: EntityCandidate[]): EntityCandidate[] {
+  return candidates.filter(
+    (candidate, index) =>
+      !candidates.some((other, otherIndex) => {
+        if (otherIndex === index || other.kind !== candidate.kind) return false;
+        const contains =
+          other.start <= candidate.start &&
+          other.start + other.literal.length >= candidate.start + candidate.literal.length;
+        if (!contains) return false;
+        // 完全同 span 时保留先出现的那条，否则两条会互相淘汰、一条不剩。
+        return other.literal.length > candidate.literal.length || otherIndex < index;
+      }),
+  );
+}
 
 function entityCandidates(sentence: string): EntityCandidate[] {
   const candidates: EntityCandidate[] = [];
-  for (const match of sentence.matchAll(PERSON_TITLE_PATTERN)) {
+  for (const match of sentence.matchAll(NAME_THEN_TITLE_PATTERN)) {
     candidates.push({ literal: match[0], start: match.index, kind: '人名与职务' });
   }
+  candidates.push(...titleThenNameCandidates(sentence));
   for (const match of sentence.matchAll(LOCATION_PATTERN)) {
     const literal = match[1];
     if (!literal) continue;
@@ -159,7 +236,7 @@ function entityCandidates(sentence: string): EntityCandidate[] {
       kind: '地名',
     });
   }
-  return candidates;
+  return dropContained(candidates);
 }
 
 const JUDGMENT_RULES: ReadonlyArray<{
