@@ -253,6 +253,10 @@ export const config = {
    * the built-in deterministic mock upstream (no key needed, reliable on stage).
    * Set to a real OpenAI-compatible Chat Completions base URL to proxy a model.
    * Anthropic Messages/SSE needs its own adapter and is not implemented here.
+   * `@anthropic-ai/claude-agent-sdk` used to sit in dependencies for that
+   * adapter but was never imported, so it was removed — reinstall it when the
+   * adapter is actually written rather than carrying an unused dependency that
+   * makes the stack description wrong.
    */
   upstreamUrl: process.env.UPSTREAM_URL ?? '',
   upstreamKey: process.env.UPSTREAM_KEY ?? '',

@@ -9,14 +9,14 @@
 ## 黑客松技术栈
 
 - Node.js 22 + TypeScript
-- Hono + 服务端 HTML/Hono JSX + 少量浏览器 JavaScript
-- SQLite + Drizzle ORM
-- Claude Agent SDK
-- 统一模型 Gateway（当前为 OpenAI-compatible Chat Completions；Anthropic Messages/SSE 适配待接入）
+- Hono + 服务端拼装 HTML（模板字符串，无前端框架、无构建步骤）+ 页面内联的少量浏览器 JavaScript
+- SQLite（better-sqlite3）+ Drizzle ORM；迁移是手写的幂等 SQL 数组，运行时不读 drizzle 生成物
+- 统一模型 Gateway（当前为 OpenAI-compatible Chat Completions，已接 GLM 与 DeepSeek；Anthropic Messages/SSE 适配待接入）
 - REST + SSE
-- Vitest + Docker Compose
+- Vitest + GitHub Actions
+- Docker Compose 用于本地与容器化演示；线上实例走 systemd + Nginx，见 [docs/deploy/](docs/deploy/)
 
-第一版保持单仓库、单服务、单容器。模型 Gateway 是代码级硬边界：业务模块不得直接访问模型供应商。
+第一版保持单仓库、单服务、单进程。模型 Gateway 是代码级硬边界：业务模块不得直接访问模型供应商。
 
 ## 当前底座
 
@@ -32,6 +32,10 @@
 - SQLite/Drizzle 持久化与自动迁移
 - SQLite 账号、固定角色组合、签名会话与稳定真人留痕
 - 稿件工作流 REST API 与 SSE 事件
+- 判定依据（词表）落库、可管理，带单调递增的 `rulesetVersion` 并写进每一次准入与预检留痕
+- 按账号的每日调用次数与 token 上限，挂在网关上；超限是资源判定，与内容判定不共用字段
+- 全流程监控看板的跨稿件聚合
+- 产品介绍首页与可切换主题
 - `healthz` 存活检查和 `readyz` 数据库/模型就绪检查
 - Vitest 全量自动化回归与 GitHub Actions
 
@@ -46,10 +50,18 @@ npm run dev
 ```
 
 打开 <http://localhost:3300> 是产品介绍页（公开，无需登录），点「进入试用」进 `/workbench`，
-未登录会跳转到 `/login`。demo/test 模式会幂等创建四个演示账号；
-默认密码为 `gatekeeper-demo`，也可以在登录页一键进入。`zhangmin`（张敏）持有全部三个流程角色，
-可在同一工作台切换本次行使身份；`lijianguo`、`wangzhiyuan` 分别只有主任和分管领导角色，
-`stationadmin` 是只读台领导账号。production 不创建这些已知密码账号，也禁止一键登录。
+未登录会跳转到 `/login`。demo/test 模式会幂等创建五个演示账号，
+默认密码为 `gatekeeper-demo`，也可以在登录页一键进入：
+
+| 账号 | 显示名 | 角色 | 用来验证什么 |
+| --- | --- | --- | --- |
+| `zhangmin` | 张敏 | 编辑 + 部门主任 + 分管领导 | 一人多岗，可独自走完三审三校；在同一工作台切换本次行使身份 |
+| `lijianguo` | 李建国 | 部门主任 | 只有复审权，点不动终审——用来验证越权推不动 |
+| `wangzhiyuan` | 王志远 | 分管领导 | 只有终审与签发权 |
+| `chenxue` | 陈雪 | 编辑 | 一线记者的日常身份，写得了稿、推不动审批 |
+| `stationadmin` | 台领导·管理员 | 台领导 | 只看不批，用来看全流程监控看板 |
+
+production 不创建这些已知密码账号，也禁止一键登录。
 
 ```bash
 npm run check
@@ -74,6 +86,11 @@ Docker 会以非 root 用户运行，并把 SQLite 数据保存在命名卷
 `docker compose down -v` 才会删除该卷。
 
 ## Production 启动边界
+
+> 下面讲的是启动必须满足的条件。**具体怎么部署到服务器看 [docs/deploy/](docs/deploy/)**——
+> 线上实例跑的是 systemd + Nginx，不跑 Docker；环境变量、播种、清理、备份与排错在
+> [operations.md](docs/deploy/operations.md)。
+
 
 production 的 `SESSION_SECRET` 和 `GATEWAY_TOKEN` 必须各自使用 `base64:` 加至少 32 个
 随机字节，且不能复用。分别运行下面的生成命令两次，把两个不同结果交给部署环境的 secret
@@ -103,31 +120,79 @@ docker compose exec app node dist/provision-user.js \
 `department-head`、`supervising-leader`、`station-leader`，至少一个角色且不得重复。
 
 `/readyz` 在 production 同时要求数据库、模型、强会话密钥、强机器网关密钥，以及至少一个
-启用且角色合法的非 demo 账号。原演示控制面（policy/runtime/redteam/monitor/report/controlled
-target）只在 demo 挂载，production 返回 404。HTTP `/gateway/v1/messages` 使用独立的
+启用且角色合法的非 demo 账号。原演示控制面（policy / runtime / redteam / report /
+controlled target，以及 AuditGate 时代的 `/api/monitor/start`）只在 demo 挂载，production
+返回 404——**注意这里的 monitor 指的是那个遗留播种端点，不是 `/monitor` 全流程监控看板，
+后者在 production 照常挂载**。HTTP `/gateway/v1/messages` 使用独立的
 `GATEWAY_TOKEN`（`Authorization: Bearer ...` 或 `x-api-key`）；进程内稿件生成仍直接调用
 `throughGateway()`，不需要伪造 HTTP 凭据。
 
+## 页面
+
+| 路径 | 内容 | 鉴权 |
+| --- | --- | --- |
+| `/` | 产品介绍页 | 公开 |
+| `/login` | 登录 | 公开 |
+| `/workbench` | 稿件工作台，六步主链都在这里 | 登录 |
+| `/monitor` | 全流程监控看板（跨稿件态势） | 登录 + `audit:read` |
+| `/rules` | 判定依据管理（词表与变更台账） | 登录 + `rules:read` |
+| `/console`、`/policy`、`/runtime`、`/report` | 遗留 AuditGate 控制面 | **仅 demo 挂载，production 返回 404** |
+
 ## 底座 API
+
+**健康与元信息**
 
 - `GET /healthz`：进程存活
 - `GET /readyz`：SQLite、模型与 production 身份/机器凭据就绪状态
 - `GET /api/meta`：无密钥的运行信息
+
+**登录与会话**
+
 - `POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`：登录与签名会话
-- `GET /api/workbench-models`：工作台可选模型（仅返回名称、供应商与运行模式，不返回 URL / Key）
+
+**工作台**（界面直接调用的主链接口）
+
+- `GET/POST /api/workbench`：稿件列表与创建（创建即走入口准入）
+- `GET /api/workbench/:id`：稿件、产物、审核与追溯聚合
+- `GET /api/workbench/:id/contrast`：与原通稿的一致性比对
+- `POST /api/workbench/:id/transition`：推进三审流转
+- `POST /api/workbench/:id/artifacts/:artifactId/revise`：人工改稿并重新预检
+- `GET /api/workbench-models`：可选模型（仅名称、供应商与运行模式，不返回 URL / Key）
+
+**稿件底座 REST**
+
 - `GET/POST /api/manuscripts`：稿件列表与创建
 - `GET /api/manuscripts/:id`：稿件、产物、审核和追溯聚合
 - `POST /api/manuscripts/:id/artifacts`：保存播报稿或短视频文案
+- `PUT /api/manuscripts/:id/artifacts/:artifactId/segments`：整段替换句级来源并重算 AI 参与度
 - `POST /api/manuscripts/:id/reviews`：保存准入/预检/三审决定
 - `PATCH /api/manuscripts/:id/status`：推进工作流状态
 - `POST /api/manuscripts/:id/trace`：仅应用内部 repository 能力，浏览器 HTTP 账号不可伪造
-- `GET /events`：SSE 实时事件流
 
-请求与响应示例见 [底座 API 契约](docs/API.md)。
+**监控、判定依据与使用限制**
+
+- `GET /api/monitor/overview`：全流程监控看板的跨稿件聚合
+- `GET /api/rules`、`POST /api/rules`、`PATCH /api/rules/:ruleId`、`DELETE /api/rules/:ruleId`：词表读写
+- `GET /api/rules/changes`：不可变的词表变更台账
+- `GET/PUT /api/usage-limits`：按账号的每日调用与 token 上限
+- `GET /api/fixtures`：内置示例素材
+
+**事件与网关**
+
+- `GET /events`：SSE 实时事件流
+- `POST /gateway/v1/messages`：原始网关入口，使用独立的 `GATEWAY_TOKEN`
+
+**遗留接口**（`/api/state`、`/api/usage`、`/api/policy*`、`/api/redteam/run`、`/api/runtime/*`、`/api/monitor/start`、`/api/demo/*`、`/target/*`）只在 demo 挂载。注意 `/api/monitor/start` 是 AuditGate 时代的内存态播种，**与 `/api/monitor/overview` 无关**。
+
+请求与响应示例见 [底座 API 契约](docs/API.md)（覆盖稿件底座、判定依据与使用限制；工作台与监控聚合接口尚未收录）。
 
 ## 开发入口
 
 - [最终架构与边界](docs/ARCHITECTURE.md)
+- [底座 API 契约](docs/API.md)
+- [方案与口径](docs/gatekeeper/)——先读 [plan.md](docs/gatekeeper/plan.md)，功能清单与进度在 [requirements.md](docs/gatekeeper/requirements.md)
+- [部署与试用](docs/deploy/)——运维看 [operations.md](docs/deploy/operations.md)，试用者看 [user-manual.md](docs/deploy/user-manual.md)
+- [演示脚本与检查单](docs/demo/)
 - [团队分工与截止时间](docs/EXECUTION-PLAN.md)
 - [协作规则](CONTRIBUTING.md)
 

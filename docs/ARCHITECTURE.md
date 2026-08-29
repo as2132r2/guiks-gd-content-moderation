@@ -2,7 +2,7 @@
 
 ## 拍板结论
 
-黑客松版本采用单体 Web 应用：`Hono + TypeScript + SQLite + Claude Agent SDK + REST/SSE`。
+黑客松版本采用单体 Web 应用：`Hono + TypeScript + SQLite + REST/SSE`，服务端拼装 HTML，无前端框架。
 
 不做前后端分离，不拆 Console/Worker/Proxy 三个部署进程。原因是提交截止在 8 月 29 日 24:00，当前最重要的是尽早跑通完整演示链路。
 
@@ -39,12 +39,14 @@ Hono Web/API
 ## 技术分层
 
 ```text
-src/routes/       页面、REST、SSE、Gateway HTTP 入口
-src/views/        工作台、预检、流转、追溯、管理页面
-src/domain/       稿件、审次、决定、追溯等纯领域模型
+src/routes/       页面、REST、SSE、Gateway HTTP 入口（`throughGateway()` 在 gateway.ts）
+src/views/        工作台、监控看板、判定依据、追溯等页面，服务端拼装 HTML
+src/domain/       稿件、审次、决定、追溯、句级来源等纯领域模型
+src/rules/        入口准入与输出预检的判定实现
 src/lib/          detector、guardrail、policy、event 等通用能力
-src/model/        ModelGateway、AgentRuntime、供应商适配
-src/db/           SQLite、Drizzle schema、repository
+src/middleware/   会话鉴权
+src/model/        稿件生成（播报稿 / 短视频文案）与确定性 mock
+src/db/           SQLite、Drizzle schema、repository、手写幂等迁移
 test/             确定性规则、接口、演示主链回归
 ```
 
