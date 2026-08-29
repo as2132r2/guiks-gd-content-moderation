@@ -437,6 +437,7 @@ sudo -u guiks node "$(readlink -f /opt/guiks-gd-content-moderation/current)/dist
 | --- | --- |
 | [../DEPLOYMENT-TENCENT-CLOUD.html](../DEPLOYMENT-TENCENT-CLOUD.html) | **线上实例的部署手册**（Node + systemd + Nginx），发布与回滚流程 |
 | [user-manual.md](user-manual.md) | 试用手册，给使用者 |
+| [user-manual.html](user-manual.html) | 同一份手册的网页版。**`npm run build` 会把它拷进 `dist/assets/`**，服务端以 `/manual` 提供，介绍页的「试用手册」按钮指向它。发布只带 `dist/` 时它跟着走 |
 | [../demo/script.md](../demo/script.md) | 三分钟演示口播稿与操作清单 |
 | [../demo/runbook.md](../demo/runbook.md) | 演示前检查单与应急预案 |
 | [../ARCHITECTURE.md](../ARCHITECTURE.md) | 技术边界 |
