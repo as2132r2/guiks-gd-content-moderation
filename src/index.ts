@@ -141,22 +141,56 @@ if (isMain) {
   );
 
   let shuttingDown = false;
+  /**
+   * 优雅停机。
+   *
+   * **`server.close()` 只是停止接受新连接，它会一直等已有连接自己结束。**
+   * `/events` 的 SSE 是长连接，谁开着工作台或监控页，这一等就是无限期——于是
+   * 每次 `systemctl restart` 都熬满 5 秒被强杀、以退出码 1 收场，systemd 记一条
+   * `Failed with result 'exit-code'`。而运维手册把「systemd 服务失败」列为告警项，
+   * 也就是说**每次正常部署都会打一次假警报**，真出事那天反而被淹掉。
+   *
+   * 所以分三档：先断空闲连接，再给在途请求一点时间后强断长连接，最后才是兜底。
+   * 断 SSE 是安全的——[events.ts](routes/events.ts) 给浏览器下发了 `retry: 3000`，
+   * EventSource 会自己重连。
+   */
   const shutdown = () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    const forceExit = setTimeout(() => {
+
+    let settled = false;
+    const finish = (code: number) => {
+      if (settled) return;
+      settled = true;
+      closeWorkflowRepository();
+      process.exit(code);
+    };
+
+    // 兜底：连强断都没能收尾，那是真卡住了，退 1 让告警响。
+    const hardExit = setTimeout(() => {
       if ('closeAllConnections' in server && typeof server.closeAllConnections === 'function') {
         server.closeAllConnections();
       }
-      closeWorkflowRepository();
-      process.exit(1);
+      finish(1);
     }, 5000);
-    forceExit.unref();
+    hardExit.unref();
+
     server.close(() => {
-      clearTimeout(forceExit);
-      closeWorkflowRepository();
-      process.exit(0);
+      clearTimeout(hardExit);
+      finish(0);
     });
+
+    // 空闲的 keep-alive（nginx 常年挂着几条）先断，它们没有在途请求可等。
+    if ('closeIdleConnections' in server && typeof server.closeIdleConnections === 'function') {
+      server.closeIdleConnections();
+    }
+    // 长连接（SSE）等不到自己结束。留一点时间给在途的普通请求写完响应，然后强断。
+    const cutLongLived = setTimeout(() => {
+      if ('closeAllConnections' in server && typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
+    }, 1500);
+    cutLongLived.unref();
   };
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
