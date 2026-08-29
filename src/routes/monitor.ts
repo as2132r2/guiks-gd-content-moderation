@@ -3,7 +3,9 @@
 import { Hono } from 'hono';
 import { publish } from '../lib/bus.js';
 import { getScenario } from '../lib/scenarios.js';
+import { requireAuth, type AuthEnv } from '../middleware/auth.js';
 import { askTarget } from './target.js';
+import { requireAuditRead } from './events.js';
 
 const BENIGN = getScenario().benignSeed;
 
@@ -20,9 +22,10 @@ export async function seedBenign(): Promise<number> {
   return BENIGN.length;
 }
 
-export const monitorRoutes = new Hono();
+export const monitorRoutes = new Hono<AuthEnv>();
 
-monitorRoutes.post('/api/monitor/start', async (c) => {
+// 它会真的打模型（askTarget → 网关 → 上游），所以匿名一次就能烧掉真实额度。
+monitorRoutes.post('/api/monitor/start', requireAuth, requireAuditRead, async (c) => {
   const count = await seedBenign();
   return c.json({ ok: true, seeded: count });
 });

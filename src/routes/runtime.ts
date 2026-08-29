@@ -7,7 +7,9 @@ import { publish } from '../lib/bus.js';
 import { applyGuardrail, evaluateGuardrails, type GuardrailVerdict } from '../lib/guardrails.js';
 import { getScenario } from '../lib/scenarios.js';
 import { recordGuardrail, recordUsage, usageSnapshot } from '../lib/store.js';
+import { requireAuth, requirePageAuth, type AuthEnv } from '../middleware/auth.js';
 import { renderRuntime } from '../views/runtime-view.js';
+import { requireAuditRead } from './events.js';
 import { askTarget } from './target.js';
 
 export interface RuntimeResult {
@@ -33,9 +35,16 @@ export async function runtimeExchange(user: string, message: string): Promise<Ru
 // mostly ordinary work, with a handful of requests that trip real guardrails.
 const SIMULATION = getScenario().simulation;
 
-export const runtimeRoutes = new Hono();
+export const runtimeRoutes = new Hono<AuthEnv>();
 
-runtimeRoutes.get('/runtime', (c) => c.html(renderRuntime({ targetLabel: config.targetLabel })));
+// 逐用户计量和这两个会真打模型的端点都收在 `audit:read` 之下，与 `/api/state`
+// 取齐。`/api/runtime/chat`、`/api/runtime/simulate` 匿名一次就能烧真实额度。
+runtimeRoutes.use('/api/usage', requireAuth, requireAuditRead);
+runtimeRoutes.use('/api/runtime/*', requireAuth, requireAuditRead);
+
+runtimeRoutes.get('/runtime', requirePageAuth('/runtime'), (c) =>
+  c.html(renderRuntime({ targetLabel: config.targetLabel })),
+);
 
 runtimeRoutes.get('/api/usage', (c) => c.json(usageSnapshot()));
 
