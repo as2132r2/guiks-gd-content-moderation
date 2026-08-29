@@ -98,13 +98,13 @@ export function renderOversight(): string {
 <header class="topbar">
   <div class="brand">
     <div class="name"><span class="dot"></span>把关人 · 全流程监控</div>
-    <div class="sub">county media · oversight</div>
+    <div class="sub">converged media · oversight</div>
   </div>
   <span class="demo-badge">模拟 / 脱敏素材</span>
   <div class="nav">
     <span class="stamp" id="stamp"></span>
     <button id="refresh">刷新</button>
-    <a href="/">回工作台</a>
+    <a href="/workbench">回工作台</a>
   </div>
 </header>
 
