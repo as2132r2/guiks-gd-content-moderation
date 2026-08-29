@@ -11,6 +11,19 @@
 import { systemRoles } from '../domain/contracts.js';
 import { rolePermissions } from '../domain/permissions.js';
 import { proofreadResponsibilities } from '../domain/workflow.js';
+import { renderThemeControl, themeBootstrap, themeStyles } from './theme.js';
+
+type WorkbenchPanelIdentity = { manuscript: { id: string }; stage: string };
+
+/** SSE may refresh the live rails without replacing an editor's active panel. */
+export function shouldKeepWorkbenchPanel(
+  previous: WorkbenchPanelIdentity | null,
+  next: WorkbenchPanelIdentity,
+  source: string,
+): boolean {
+  return source === 'sse' && previous !== null && previous.manuscript.id === next.manuscript.id &&
+    previous.stage === next.stage;
+}
 
 /**
  * Render the manuscript workbench as a complete HTML document string.
@@ -29,25 +42,17 @@ export function renderWorkbench(): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark light" />
 <title>把关人 · 稿件工作台</title>
-<style>
+${themeBootstrap}<style>${themeStyles}
   :root {
-    --bg:#0E1512; --panel:#141D19; --panel-2:#18231E; --panel-3:#1D2A24;
-    --ink:#E9F0EB; --muted:#9DB0A5; --faint:#6C7E74;
-    --line:rgba(233,240,235,.11); --line-strong:rgba(233,240,235,.2);
-    --accent:#33D6A2; --accent-deep:#7FEBCB; --accent-soft:rgba(51,214,162,.13);
-    --block:#F0705F; --block-soft:rgba(240,112,95,.15);
-    --warn:#E0A94A; --warn-soft:rgba(224,169,74,.14);
-    --info:#6FA8DC; --info-soft:rgba(111,168,220,.14);
-    --ai:#6FA8DC; --ai-edited:#33D6A2; --human:#E0A94A; --source:#8E9E95;
     --mono: ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-    --sans: system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
-    --serif: 'Songti SC','Noto Serif SC',serif;
+    --sans:var(--theme-sans);
+    --serif:var(--theme-sans);
     --radius:12px;
   }
   * { box-sizing:border-box; }
   html,body { margin:0; padding:0; height:100%; }
   body {
-    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    background:var(--bg-effect); color:var(--ink); font-family:var(--sans);
     font-size:14px; line-height:1.6; -webkit-font-smoothing:antialiased;
     display:flex; flex-direction:column; min-height:100vh;
   }
@@ -147,7 +152,7 @@ export function renderWorkbench(): string {
   .rail .step.done { color:var(--muted); border-color:var(--line-strong); }
   .rail .step.done .n { background:var(--accent-soft); color:var(--accent-deep); }
   .rail .step.now { color:var(--accent-deep); border-color:var(--accent); background:var(--accent-soft); }
-  .rail .step.now .n { background:var(--accent); color:#0E1512; font-weight:700; }
+  .rail .step.now .n { background:var(--accent); color:var(--on-accent); font-weight:700; }
 
   /* ---------- Cards & forms ---------- */
   .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px; }
@@ -357,6 +362,15 @@ export function renderWorkbench(): string {
   .cell.o-human { background:var(--human); }
   .cell.o-source { background:var(--source); }
 
+  .panel-enter { animation:panel-enter .24s cubic-bezier(.16,1,.3,1) both; }
+  @keyframes panel-enter { from { opacity:.55; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
+  .trace-reveal { opacity:1; transform:translateY(0); filter:blur(0); }
+  .trace-animating .trace-reveal { opacity:0; transform:translateY(8px); filter:blur(3px); animation:trace-reveal .44s cubic-bezier(.16,1,.3,1) forwards; animation-delay:calc(var(--trace-order,0) * 72ms); }
+  .trace-animating .chart .line { stroke-dasharray:1; stroke-dashoffset:1; animation:trace-draw .68s cubic-bezier(.22,.61,.36,1) forwards .26s; }
+  .trace-animating .chart .dot { opacity:0; transform-box:fill-box; transform-origin:center; animation:trace-point .32s cubic-bezier(.16,1,.3,1) forwards .65s; }
+  .trace-animating .cell { opacity:0; transform:scale(.72); animation:trace-cell .32s cubic-bezier(.16,1,.3,1) forwards; animation-delay:calc(.26s + var(--trace-cell-order,0) * 22ms); }
+  @keyframes trace-reveal { to { opacity:1; transform:translateY(0); filter:blur(0); } } @keyframes trace-draw { to { stroke-dashoffset:0; } } @keyframes trace-point { to { opacity:1; transform:scale(1); } } @keyframes trace-cell { to { opacity:1; transform:scale(1); } }
+
   .chain { display:flex; flex-wrap:wrap; gap:8px; }
   .link {
     flex:1 1 190px; background:var(--panel-2); border:1px solid var(--line);
@@ -559,26 +573,10 @@ export function renderWorkbench(): string {
     --present-stage-max:1280px;
   }
   body.is-present[data-display="led"] {
-    color-scheme:dark;
-    --bg:#09110E; --panel:#121D18; --panel-2:#1A2821; --panel-3:#22342A;
-    --ink:#F7FAF8; --muted:#C6D2CB; --faint:#A7B8AE;
-    --line:rgba(247,250,248,.16); --line-strong:rgba(247,250,248,.3);
-    --accent:#33D6A2; --accent-deep:#8AF2D2; --accent-soft:rgba(51,214,162,.16);
-    --block:#FF8C7A; --block-soft:rgba(255,140,122,.16);
-    --warn:#F3C66C; --warn-soft:rgba(243,198,108,.16);
-    --info:#8EC5F4; --info-soft:rgba(142,197,244,.16);
-    --ai:#8EC5F4; --ai-edited:#33D6A2; --human:#F3C66C; --source:#A7B8AE;
+    background-image:none;
   }
   body.is-present[data-display="projector"] {
-    color-scheme:light;
-    --bg:#F2F0E8; --panel:#FAF9F4; --panel-2:#E8ECE6; --panel-3:#DCE4DD;
-    --ink:#10211A; --muted:#3F554A; --faint:#5C7166;
-    --line:#B8C3BB; --line-strong:#7E9185;
-    --accent:#087A55; --accent-deep:#075E43; --accent-soft:rgba(8,122,85,.12);
-    --block:#B3261E; --block-soft:rgba(179,38,30,.1);
-    --warn:#8A5B00; --warn-soft:rgba(138,91,0,.11);
-    --info:#285D8F; --info-soft:rgba(40,93,143,.1);
-    --ai:#285D8F; --ai-edited:#087A55; --human:#8A5B00; --source:#5C7166;
+    background-image:none;
   }
   body.is-present header.topbar {
     position:sticky; top:0; z-index:40; padding:12px 24px; gap:14px;
@@ -604,11 +602,11 @@ export function renderWorkbench(): string {
   body.is-present .role-btn.role-switching::after {
     content:'身份已切换'; position:absolute; top:calc(100% + 9px); left:50%;
     transform:translateX(-50%); padding:5px 9px; border-radius:6px;
-    background:var(--warn); color:#fff; white-space:nowrap; pointer-events:none;
+    background:var(--warn); color:var(--on-accent); white-space:nowrap; pointer-events:none;
     font-size:14px; font-weight:800; line-height:1.2;
     animation:role-handoff-label .76s cubic-bezier(.16,1,.3,1) both;
   }
-  body.is-present[data-display="led"] .role-btn.role-switching::after { color:#09110E; }
+  body.is-present[data-display="led"] .role-btn.role-switching::after { color:var(--on-accent); }
   @keyframes role-release {
     0% { opacity:1; }
     100% { opacity:.62; }
@@ -700,7 +698,7 @@ export function renderWorkbench(): string {
     content:'当前'; position:absolute; top:-11px; right:8px; padding:1px 7px;
     border-radius:99px; background:var(--accent); color:var(--panel); font-size:11px;
   }
-  body.is-present[data-display="projector"] .rail .step.now::after { color:#fff; }
+  body.is-present[data-display="projector"] .rail .step.now::after { color:var(--on-accent); }
 
   body.is-present .card { padding:22px; margin-bottom:18px; border-width:2px; background-image:none; }
   body.is-present .card h3 { font-family:var(--sans); font-size:24px; font-weight:800; }
@@ -806,6 +804,11 @@ export function renderWorkbench(): string {
     .guide-item + .guide-item { border-left:0; border-top:2px solid var(--line-strong); }
   }
   @media (prefers-reduced-motion:reduce) {
+    .panel-enter, .trace-animating .trace-reveal, .trace-animating .chart .line,
+    .trace-animating .chart .dot, .trace-animating .cell {
+      animation:none !important; opacity:1 !important; transform:none !important;
+      filter:none !important; stroke-dashoffset:0 !important;
+    }
     body.is-present *, body.is-present *::before, body.is-present *::after {
       scroll-behavior:auto !important; transition-duration:.001ms !important; animation-duration:.001ms !important;
     }
@@ -838,6 +841,7 @@ export function renderWorkbench(): string {
     <span class="visually-hidden" id="role-switch-status" aria-live="polite"></span>
   </div>
   <a class="topbar-link" id="monitor-link" href="/monitor" hidden>全流程监控</a>
+  ${renderThemeControl()}
   <div class="account"><span class="account-name" id="account-name">—</span><button class="logout-btn" id="logout-btn">退出</button></div>
 </header>
 
@@ -853,11 +857,11 @@ export function renderWorkbench(): string {
     <div class="setup-display" aria-label="选择显示档">
       <button class="setup-choice" type="button" data-setup-display="projector" aria-pressed="true">
         <strong>低清投影（推荐）</strong>
-        <span>新闻纸浅底、深墨文字、2px 关键边界，适合泛白或对焦一般的投影。</span>
+        <span>保留大字号、2px 关键边界与低清可读性；颜色跟随当前主题。</span>
       </button>
       <button class="setup-choice" type="button" data-setup-display="led" aria-pressed="false">
         <strong>LED 大屏</strong>
-        <span>高对比暗色值班台，适合黑位与亮度可靠的大屏。</span>
+        <span>保留大字号、高对比边界与远距可读性；颜色跟随当前主题。</span>
       </button>
     </div>
     <div class="setup-warning"><strong>会清空当前全部稿件。</strong>重建后只保留“要理由 / 硬拦 / 公器私用”三组对比样例；主通稿仍由台上现场投料。</div>
@@ -903,6 +907,7 @@ export function renderWorkbench(): string {
 
   // 校次职责由契约注入，页面不另抄一份 (src/domain/workflow.ts 的 5.9)。
   var PASSES = ${JSON.stringify(proofreadResponsibilities)};
+  var shouldKeepPanel = ${shouldKeepWorkbenchPanel.toString()};
 
   var STAGES = [
     { key:'source',     label:'素材入口' },
@@ -946,10 +951,13 @@ export function renderWorkbench(): string {
     error:'', contrast:null, showContrast:false,
     present:query.get('present') === '1', display:initialDisplay, setupDisplay:'projector',
     presentPrepared:false, presentFeedback:null, demoFixtures:null, demoFixturesError:'', presentationMainId:storedMainId,
-    roleAnimationTimer:null
+    roleAnimationTimer:null, panelAnimationTimer:null, traceAnimationTimer:null, panelTransition:false
   };
 
   var $ = function (id) { return document.getElementById(id); };
+  function prefersReducedMotion() {
+    return Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
 
   function applyPresentationShell() {
     document.body.classList.toggle('is-present', state.present);
@@ -1127,24 +1135,34 @@ export function renderWorkbench(): string {
     state.contrast = null;
     state.presentFeedback = null;
     return api('/api/workbench/' + encodeURIComponent(id)).then(function (view) {
-      applyView(view);
+      applyView(view, { source:'navigation' });
     });
   }
 
-  function applyView(view) {
+  function applyView(view, options) {
+    options = options || { source:'api' };
     var previous = state.view;
+    var samePanel = shouldKeepPanel(previous, view, options.source);
+    cancelTraceReplay();
     if (previous && previous.manuscript.id === view.manuscript.id) {
       state.prevShare = previous.aiShare == null ? null : previous.aiShare;
     } else {
       state.prevShare = null;
     }
+    state.panelTransition = !samePanel && Boolean(previous) &&
+      (previous.manuscript.id !== view.manuscript.id || previous.stage !== view.stage);
+    var shouldReplayTrace = !samePanel && view.stage === 'trace' && (!previous ||
+      previous.manuscript.id !== view.manuscript.id || previous.stage !== 'trace');
     state.view = view;
     state.currentId = view.manuscript.id;
-    render();
+    if (samePanel) renderWithoutPanel();
+    else render();
     renderList();
+    if (shouldReplayTrace) replayTrace();
   }
 
   function showNew() {
+    cancelTraceReplay();
     state.currentId = null;
     state.view = null;
     state.editing = null;
@@ -1162,6 +1180,14 @@ export function renderWorkbench(): string {
   function render() {
     renderRail();
     renderPanel();
+    renderSide();
+    renderPresentationGuide();
+    renderPresentationSummary();
+    renderRoleHints();
+  }
+
+  function renderWithoutPanel() {
+    renderRail();
     renderSide();
     renderPresentationGuide();
     renderPresentationSummary();
@@ -1367,10 +1393,14 @@ export function renderWorkbench(): string {
   }
 
   function renderPanel() {
+    cancelTraceReplay();
     var host = $('panel');
+    if (state.panelAnimationTimer) window.clearTimeout(state.panelAnimationTimer);
+    host.classList.remove('panel-enter');
     if (!state.view) {
       var canCreate = state.user && (state.user.roles || []).indexOf('editor') !== -1;
       host.innerHTML = canCreate ? newForm() : (state.role ? reviewerLanding() : readOnlyLanding());
+      state.panelTransition = false;
       return;
     }
     var view = state.view;
@@ -1383,6 +1413,13 @@ export function renderWorkbench(): string {
     if (view.stage === 'trace') parts.push(tracePanel(view));
     if (!state.present || view.stage === 'trace') parts.push(actionsBar(view));
     host.innerHTML = parts.join('');
+    var reduced = prefersReducedMotion();
+    if (state.panelTransition && !reduced) {
+      void host.offsetWidth;
+      host.classList.add('panel-enter');
+      state.panelAnimationTimer = window.setTimeout(function () { host.classList.remove('panel-enter'); }, 260);
+    }
+    state.panelTransition = false;
   }
 
   function newForm() {
@@ -1881,7 +1918,7 @@ export function renderWorkbench(): string {
       'aria-label="AI 参与度从 ' + pct(points[0].share) + ' 变化到 ' + pct(points[n - 1].share) + '">' +
       grid +
       (n > 1 ? '<path d="' + area + '" class="fill"/>' : '') +
-      '<path d="' + path + '" class="line"/>' + dots +
+      '<path d="' + path + '" class="line" pathLength="1"/>' + dots +
       '</svg></div>';
   }
 
@@ -1896,8 +1933,8 @@ export function renderWorkbench(): string {
         '<div class="smap-hd"><span>' + esc(KIND_LABEL[item.artifact.kind] || item.artifact.kind) + '</span>' +
           '<span class="dim">' + item.segments.length + ' 句 · AI 参与度 ' +
           (item.artifact.aiShare == null ? '未测量' : pct(item.artifact.aiShare)) + '</span></div>' +
-        '<div class="cells">' + item.segments.map(function (s) {
-          return '<i class="cell o-' + esc(s.origin) + '" title="' +
+        '<div class="cells">' + item.segments.map(function (s, index) {
+          return '<i class="cell o-' + esc(s.origin) + '" style="--trace-cell-order:' + Math.min(index, 24) + '" title="' +
             esc((ORIGIN_LABEL[s.origin] || s.origin) + '：' + s.text) + '"></i>';
         }).join('') + '</div>' +
         '</div>';
@@ -1959,7 +1996,7 @@ export function renderWorkbench(): string {
 
   function tracePanel(view) {
     if (state.showContrast) return contrastPanel(view);
-    var out = '<div class="card"><h3>⑥ AI 参与度追溯</h3>' +
+    var out = '<div class="card trace-reveal" style="--trace-order:0"><div class="actions-bar" style="justify-content:space-between;margin:0 0 8px"><h3 style="margin:0">⑥ AI 参与度追溯</h3><button class="btn" id="trace-replay" type="button">重新播放追溯动效</button></div>' +
       '<p>整条链路的收口：每句话谁写的、命中过哪些规则、被谁在哪一级放行、谁最终签发。' +
       '这些数字只有站在生产现场才拿得到——拿到成品的审校产品给不出它们。</p></div>';
 
@@ -1967,7 +2004,7 @@ export function renderWorkbench(): string {
     if (view.signOff) {
       var s = view.signOff.aiShare;
       var hot = s != null && s >= 0.9;
-      out += '<div class="signoff' + (hot ? ' hot' : '') + '">' +
+      out += '<div class="signoff trace-reveal' + (hot ? ' hot' : '') + '" style="--trace-order:1">' +
         '<div class="so-main"><div class="so-k">签发</div>' +
           '<div class="so-v">' + esc(view.signOff.actor) + '</div>' +
           '<div class="so-t">' + clock(view.signOff.at) + '</div></div>' +
@@ -1979,19 +2016,20 @@ export function renderWorkbench(): string {
         '</div>';
     }
 
-    out += '<h2 class="hd">AI 参与度怎么变的</h2>';
+    out += '<section class="trace-reveal" style="--trace-order:2"><h2 class="hd">AI 参与度怎么变的</h2>';
     out += view.provenance.length > 0
       ? shareChart(view.provenance) +
         '<p class="hint">口径：(ai + ai-edited×0.5) / 总句数。每次流转由系统逐句比对上一版重算，' +
         '句子来源不由填报的人决定。</p>'
       : '<div class="empty">还没有可测量的变动。</div>';
+    out += '</section>';
 
-    out += '<h2 class="hd">句级来源图谱</h2>' +
+    out += '<section class="trace-reveal" style="--trace-order:3"><h2 class="hd">句级来源图谱</h2>' +
       '<div class="legend">' + Object.keys(ORIGIN_LABEL).map(function (key) {
         return '<span><i style="background:' + ORIGIN_COLOR[key] + '"></i>' + ORIGIN_LABEL[key] + '</span>';
-      }).join('') + '</div>' + sentenceMap(view);
+      }).join('') + '</div>' + sentenceMap(view) + '</section>';
 
-    out += '<h2 class="hd">责任链</h2>' + responsibility(view);
+    out += '<section class="trace-reveal" style="--trace-order:4"><h2 class="hd">责任链</h2>' + responsibility(view) + '</section>';
     out += '<h2 class="hd">规则命中</h2>' + ruleHits(view);
     out += '<div class="actions-bar" style="margin-top:18px">' +
       '<button class="btn" id="contrast-on">对照组：关掉把关人会怎样</button>' +
@@ -2241,12 +2279,36 @@ export function renderWorkbench(): string {
       ? '<div class="empty">还没有留痕。</div>'
       : trace.slice().reverse().map(function (event) {
           var cls = event.actorType === 'system' ? 'sys' : (event.actorType === 'ai' ? 'ai' : 'hum');
-          return '<div class="ev ' + cls + '">' +
+          return '<div class="ev trace-reveal ' + cls + '" style="--trace-order:' + (5 + Math.min(5, trace.indexOf(event))) + '">' +
             '<div class="k">' + esc(TRACE_LABEL[event.kind] || event.kind) + '</div>' +
             '<div class="m">' + clock(event.createdAt) + ' · ' + esc(event.actor) + '</div>' +
             (traceDetail(event) ? '<div class="d">' + esc(traceDetail(event)) + '</div>' : '') +
             '</div>';
         }).join('');
+  }
+
+  function cancelTraceReplay() {
+    var panel = $('panel');
+    var timeline = $('timeline');
+    if (state.traceAnimationTimer) window.clearTimeout(state.traceAnimationTimer);
+    state.traceAnimationTimer = null;
+    if (panel) panel.classList.remove('trace-animating');
+    if (timeline) timeline.classList.remove('trace-animating');
+  }
+
+  function replayTrace() {
+    if (!state.view || state.view.stage !== 'trace' || state.showContrast) return;
+    var panel = $('panel');
+    var timeline = $('timeline');
+    cancelTraceReplay();
+    var reduced = prefersReducedMotion();
+    if (reduced) return;
+    void panel.offsetWidth;
+    panel.classList.add('trace-animating');
+    timeline.classList.add('trace-animating');
+    state.traceAnimationTimer = window.setTimeout(function () {
+      cancelTraceReplay();
+    }, 1350);
   }
 
   // ——————————————————— actions ———————————————————
@@ -2333,7 +2395,7 @@ export function renderWorkbench(): string {
       body: JSON.stringify(body)
     }).then(function (data) {
       state.presentFeedback = presentationFeedback(label || '流程状态已经更新', data.view, reason);
-      applyView(data.view);
+      applyView(data.view, { source:'api' });
       return loadList();
     }).catch(function (error) {
       state.error = error.message;
@@ -2356,7 +2418,7 @@ export function renderWorkbench(): string {
       state.appliedSuggestions = {};
       state.activeAnnotation = null;
       state.presentFeedback = presentationFeedback('人工改稿已保存，来源比例已重算', data.view, '系统逐句比对上一版');
-      applyView(data.view);
+      applyView(data.view, { source:'api' });
     }).catch(function (error) {
       state.error = error.message;
       renderPanel();
@@ -2437,7 +2499,7 @@ export function renderWorkbench(): string {
       nextField.setSelectionRange(insertAt, insertAt + replacement.length);
     }
     var card = $('issue-' + annotationId);
-    if (card) card.scrollIntoView({ block:'nearest', behavior:'smooth' });
+    if (card) card.scrollIntoView({ block:'nearest', behavior:prefersReducedMotion() ? 'auto' : 'smooth' });
   }
 
   // ——————————————————— wiring ———————————————————
@@ -2459,18 +2521,22 @@ export function renderWorkbench(): string {
     if (state.present && previousRole !== role) {
       var previousButton = document.querySelector('.role-btn[data-role="' + previousRole + '"]');
       var nextButton = document.querySelector('.role-btn[data-role="' + role + '"]');
-      if (previousButton) previousButton.classList.add('role-leaving');
-      if (nextButton) {
-        void nextButton.offsetWidth;
-        nextButton.classList.add('role-switching');
-      }
       var roleStatus = $('role-switch-status');
       if (roleStatus) roleStatus.textContent = '身份已切换为' + (ROLE_LABEL[role] || role);
       if (state.roleAnimationTimer) window.clearTimeout(state.roleAnimationTimer);
-      state.roleAnimationTimer = window.setTimeout(function () {
-        if (previousButton) previousButton.classList.remove('role-leaving');
-        if (nextButton) nextButton.classList.remove('role-switching');
-      }, 900);
+      state.roleAnimationTimer = null;
+      if (!prefersReducedMotion()) {
+        if (previousButton) previousButton.classList.add('role-leaving');
+        if (nextButton) {
+          void nextButton.offsetWidth;
+          nextButton.classList.add('role-switching');
+        }
+        state.roleAnimationTimer = window.setTimeout(function () {
+          if (previousButton) previousButton.classList.remove('role-leaving');
+          if (nextButton) nextButton.classList.remove('role-switching');
+          state.roleAnimationTimer = null;
+        }, 900);
+      }
     }
     state.error = '';
     renderPanel();
@@ -2674,12 +2740,14 @@ export function renderWorkbench(): string {
     if (save) { saveRevision(save.getAttribute('data-save')); return; }
 
     if (target.closest('#contrast-on')) {
+      cancelTraceReplay();
       api('/api/workbench/' + encodeURIComponent(state.currentId) + '/contrast')
         .then(function (data) { state.contrast = data; state.showContrast = true; renderPanel(); })
         .catch(function (error) { state.error = error.message; renderPanel(); });
       return;
     }
-    if (target.closest('#contrast-off')) { state.showContrast = false; renderPanel(); return; }
+    if (target.closest('#trace-replay')) { replayTrace(); return; }
+    if (target.closest('#contrast-off')) { cancelTraceReplay(); state.showContrast = false; renderPanel(); return; }
 
     var move = target.closest('[data-to]');
     if (move) {
@@ -2709,7 +2777,9 @@ export function renderWorkbench(): string {
     var events = new EventSource('/events');
     var refresh = function () {
       if (state.currentId) {
-        api('/api/workbench/' + encodeURIComponent(state.currentId)).then(applyView).catch(function () {});
+        api('/api/workbench/' + encodeURIComponent(state.currentId)).then(function (view) {
+          applyView(view, { source:'sse' });
+        }).catch(function () {});
       }
     };
     events.addEventListener('trace', refresh);

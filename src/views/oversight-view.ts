@@ -5,32 +5,26 @@
 //
 // 它回答的是「这个台最近在怎么写稿」，不是「这一篇怎么走的」。后者在工作台第 ⑥ 屏。
 
+import { renderThemeControl, themeBootstrap, themeStyles } from './theme.js';
+
 export function renderOversight(): string {
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="dark" />
+<meta name="color-scheme" content="dark light" />
 <title>把关人 · 全流程监控</title>
-<style>
+${themeBootstrap}<style>${themeStyles}
   :root {
-    --bg:#0E1512; --panel:#141D19; --panel-2:#18231E; --panel-3:#1D2A24;
-    --ink:#E9F0EB; --muted:#9DB0A5; --faint:#6C7E74;
-    --line:rgba(233,240,235,.11); --line-strong:rgba(233,240,235,.2);
-    --accent:#33D6A2; --accent-deep:#7FEBCB; --accent-soft:rgba(51,214,162,.13);
-    --block:#F0705F; --block-soft:rgba(240,112,95,.15);
-    --warn:#E0A94A; --warn-soft:rgba(224,169,74,.14);
-    --info:#6FA8DC; --info-soft:rgba(111,168,220,.14);
-    --ai:#6FA8DC; --ai-edited:#33D6A2; --human:#E0A94A; --source:#8E9E95;
     --mono: ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-    --sans: system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
-    --serif: 'Songti SC','Noto Serif SC',serif;
+    --sans:var(--theme-sans);
+    --serif:var(--theme-sans);
     --radius:12px;
   }
   * { box-sizing:border-box; }
   html,body { margin:0; padding:0; }
-  body { background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:14px; line-height:1.6; -webkit-font-smoothing:antialiased; }
+  body { background:var(--bg-effect); color:var(--ink); font-family:var(--sans); font-size:14px; line-height:1.6; -webkit-font-smoothing:antialiased; }
 
   header.topbar { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:12px 22px; border-bottom:1px solid var(--line-strong); background:var(--panel); }
   .brand { display:flex; flex-direction:column; gap:1px; }
@@ -103,6 +97,7 @@ export function renderOversight(): string {
   <span class="demo-badge">模拟 / 脱敏素材</span>
   <div class="nav">
     <span class="stamp" id="stamp"></span>
+    ${renderThemeControl()}
     <button id="refresh">刷新</button>
     <a href="/workbench">回工作台</a>
   </div>

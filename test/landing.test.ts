@@ -30,7 +30,8 @@ describe('产品介绍首页', () => {
   it('零外部资源，会场断网也能开', async () => {
     const html = await landing();
     expect(html).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
-    expect(html).not.toContain('<script');
+    expect(html).not.toMatch(/<script[^>]+src=/);
+    expect(html).toContain('gatekeeper.theme.v1');
   });
 
   it('标明素材为模拟 / 脱敏', async () => {

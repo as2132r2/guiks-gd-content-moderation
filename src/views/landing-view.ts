@@ -9,36 +9,28 @@
 // 文案口径不自创：三句话取自 docs/gatekeeper/plan.md 第〇节，能力描述取自
 // docs/deploy/user-manual.md。改文案前先读那两份，别在这里另起一套说法。
 
+import { renderThemeControl, themeBootstrap, themeStyles } from './theme.js';
+
 export function renderLanding(): string {
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="dark" />
+<meta name="color-scheme" content="dark light" />
 <meta name="description" content="把关人 · 融媒体中心的稿件生产与监理系统。把三审三校里机械的校对自动化、判断留给人、每一步留痕。" />
 <title>把关人 · 融媒体中心稿件生产与监理</title>
-<style>
+${themeBootstrap}<style>${themeStyles}
   :root {
-    --bg:#0E1512; --panel:#141D19; --panel-2:#18231E; --panel-3:#1D2A24;
-    /* --faint 比工作台的 #6C7E74 亮一档：那边是密集操作界面，这里是给访客读的
-       长句说明，设计系统要求辅助文字对比度不低于 4.5:1（#6C7E74 只有 4.2:1）。 */
-    --ink:#E9F0EB; --muted:#9DB0A5; --faint:#7A8D82;
-    --line:rgba(233,240,235,.11); --line-strong:rgba(233,240,235,.2);
-    --accent:#33D6A2; --accent-deep:#7FEBCB; --accent-soft:rgba(51,214,162,.13);
-    --block:#F0705F; --block-soft:rgba(240,112,95,.15);
-    --warn:#E0A94A; --warn-soft:rgba(224,169,74,.14);
-    --info:#6FA8DC; --info-soft:rgba(111,168,220,.14);
-    --ai:#6FA8DC; --ai-edited:#33D6A2; --human:#E0A94A; --source:#8E9E95;
     --mono: ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-    --sans: system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
-    --serif: 'Songti SC','Noto Serif SC',serif;
+    --sans:var(--theme-sans);
+    --serif:var(--theme-sans);
     --radius:12px;
   }
   * { box-sizing:border-box; }
   html,body { margin:0; padding:0; }
   body {
-    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    background:var(--bg-effect); color:var(--ink); font-family:var(--sans);
     font-size:15px; line-height:1.7; -webkit-font-smoothing:antialiased;
   }
   a { color:inherit; }
@@ -64,7 +56,7 @@ export function renderLanding(): string {
   }
   .nav a:hover { border-color:var(--accent); color:var(--ink); }
   .nav a.primary { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-deep); font-weight:600; }
-  .nav a.primary:hover { background:var(--accent); color:#08140F; }
+  .nav a.primary:hover { background:var(--accent); color:var(--on-accent); }
 
   /* ---------- Layout ---------- */
   main { max-width:1180px; margin:0 auto; padding:22px 22px 8px; display:flex; flex-direction:column; gap:48px; }
@@ -91,7 +83,7 @@ export function renderLanding(): string {
     display:inline-flex; align-items:center; justify-content:center; gap:8px;
     font-size:18px; font-weight:600; text-decoration:none; white-space:nowrap;
     padding:15px 32px; border-radius:10px; border:2px solid var(--accent);
-    background:var(--accent); color:#08140F;
+    background:var(--accent); color:var(--on-accent);
     transition:background .16s ease, color .16s ease, border-color .16s ease;
   }
   .btn:hover { background:var(--accent-deep); border-color:var(--accent-deep); }
@@ -212,6 +204,7 @@ export function renderLanding(): string {
   </div>
   <span class="demo-badge">模拟 / 脱敏演示环境</span>
   <nav class="nav">
+    ${renderThemeControl()}
     <a href="/monitor">全流程监控看板</a>
     <a class="primary" href="/workbench">进入试用</a>
   </nav>
