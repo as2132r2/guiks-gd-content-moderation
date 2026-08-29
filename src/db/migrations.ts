@@ -182,6 +182,49 @@ export const migrations: Migration[] = [
       INSERT INTO ruleset_meta (id, version, updated_at) VALUES (1, 0, 0);
     `,
   },
+  {
+    id: '0007_usage_limits',
+    sql: `
+      -- 单行。全台统一的每日上限，两个字段都可空——空即不限，也是出厂默认，
+      -- 所以装上这一版之后开箱行为一个字都没变。
+      CREATE TABLE usage_limits (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        daily_calls INTEGER,
+        daily_tokens INTEGER,
+        updated_at INTEGER NOT NULL,
+        updated_by TEXT
+      );
+      INSERT INTO usage_limits (id, daily_calls, daily_tokens, updated_at)
+        VALUES (1, NULL, NULL, 0);
+
+      -- 用量必须落库。/api/usage 那套是内存环形缓冲，进程重启即清零——
+      -- 配额建在它上面，重启就是一次免费续杯，等于没有配额。
+      CREATE TABLE usage_counters (
+        day TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        calls INTEGER NOT NULL DEFAULT 0,
+        tokens_in INTEGER NOT NULL DEFAULT 0,
+        tokens_out INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (day, user_id)
+      );
+
+      -- 超限留痕。独立成表而不是挤进 admission_results：超限是资源判定，
+      -- 不是内容判定，两套结论共用一个字段迟早长出「因为超限所以被判违规」。
+      CREATE TABLE usage_limit_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        actor TEXT NOT NULL,
+        manuscript_id TEXT,
+        kind TEXT NOT NULL,
+        used INTEGER NOT NULL,
+        limit_value INTEGER NOT NULL,
+        day TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX usage_limit_events_time_idx ON usage_limit_events(created_at);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

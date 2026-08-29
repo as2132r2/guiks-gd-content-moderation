@@ -65,6 +65,12 @@ test/             确定性规则、接口、演示主链回归
 - 遗留 policy/runtime/redteam/monitor/report/controlled-target 路由只在 demo 挂载；production
   HTTP `/gateway/v1/messages` 使用独立强 API key。进程内 `throughGateway()` 仍是主链唯一模型
   出口，不经过浏览器会话或 HTTP 机器认证。
+- 判定依据（词表）落库并可管理，词表整体带单调递增的 `rulesetVersion`，写进每一次准入与
+  预检留痕；改动写不可变的 `rule_change_log`。**判定依据可变之后，留痕必须带依据的版本，
+  否则留痕本身失去意义。**
+- 每日调用次数与 token 上限挂在 `throughGateway()` 上（与「绕不过网关就绕不过准入」同一个
+  论证），计数按（本地日期，账号）落库。**超限是资源判定，与入口准入的内容判定不共用任何
+  字段**：独立的 429、独立的 `quota-blocked` 留痕、稿件状态不动。出厂不限。
 
 ## 黑客松内明确不做
 

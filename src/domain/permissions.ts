@@ -29,6 +29,9 @@ export const permissions = [
   // 「说得清」的底，谁都能改就等于谁都不负责。
   'rules:read',
   'rules:write',
+  // 使用限制。和判定依据同一个道理：读给所有人，写只给台领导。
+  'usage-limit:read',
+  'usage-limit:write',
 ] as const;
 export type Permission = (typeof permissions)[number];
 
@@ -46,6 +49,7 @@ export const rolePermissions: Readonly<Record<SystemRole, readonly Permission[]>
     'workflow:initial-review',
     'audit:read',
     'rules:read',
+    'usage-limit:read',
   ],
   'department-head': [
     'manuscript:read',
@@ -54,6 +58,7 @@ export const rolePermissions: Readonly<Record<SystemRole, readonly Permission[]>
     'workflow:countersign',
     'audit:read',
     'rules:read',
+    'usage-limit:read',
   ],
   'supervising-leader': [
     'manuscript:read',
@@ -63,9 +68,17 @@ export const rolePermissions: Readonly<Record<SystemRole, readonly Permission[]>
     'workflow:publish',
     'audit:read',
     'rules:read',
+    'usage-limit:read',
   ],
   // 台领导不进状态机，但判定依据和使用限制归他管——这是这个角色唯一的写权限。
-  'station-leader': ['manuscript:read', 'audit:read', 'rules:read', 'rules:write'],
+  'station-leader': [
+    'manuscript:read',
+    'audit:read',
+    'rules:read',
+    'rules:write',
+    'usage-limit:read',
+    'usage-limit:write',
+  ],
 };
 
 export const hasPermission = (user: UserAccount, permission: Permission): boolean =>

@@ -66,6 +66,8 @@ export async function generateBroadcastArtifacts(input: {
   sourceText: string;
   actor: string;
   model?: string;
+  /** 配额按账号记，不按显示名——显示名可改，改了就能重置额度。 */
+  userId?: string;
 }): Promise<GeneratedArtifact[]> {
   const out: GeneratedArtifact[] = [];
   for (const task of TASKS) {
@@ -78,6 +80,9 @@ export async function generateBroadcastArtifacts(input: {
         operation: task.kind,
       },
       governanceUser: input.actor,
+      // 一篇稿子产两份产物，就是两次调用，各记一次——配额算的是模型调用次数，
+      // 不是稿件数。第二次撞上限时第一份产物已经生成，工作台会整体回滚状态。
+      ...(input.userId ? { quota: { userId: input.userId, actor: input.actor } } : {}),
     });
     out.push({
       kind: task.kind,

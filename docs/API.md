@@ -308,3 +308,52 @@ AI 参与度与产物级来源始终由服务端持有的句级来源派生：
 时返回 `409 block_bucket_confirmation_required`。**这不是禁止**——带 `"acknowledge": true`
 重发即可通过，警示原文会写进该条改动记录的 `acknowledgedWarning`。收窄这一档的理由见
 `src/rules/terms.ts` 顶部：任何题材都可能是新闻，按题材硬拦会把正常选题拦死。
+
+## 使用限制
+
+⚠️ **与入口准入判然两分。** 入口准入判「这次调用**该不该发生**」（看内容），使用限制判
+「这个账号**今天还能不能调**」（看用量）。两套结论一个字段都不共用——共用了，留痕里就会
+长出「因为超限所以被判违规」这种说不清的东西。
+
+`usage-limit:read` 归全部系统角色，`usage-limit:write` 只归 `station-leader`。
+
+`GET /api/usage-limits`
+
+```json
+{
+  "limits": { "dailyCalls": 40, "dailyTokens": 200000, "updatedAt": 1787900000000, "updatedBy": "台领导·管理员" },
+  "day": "2026-08-29",
+  "today": [{ "userId": "user_demo_zhangmin", "displayName": "张敏", "calls": 6, "tokensIn": 4210, "tokensOut": 1880 }],
+  "blocked": [{ "actor": "编辑·张敏", "kind": "calls", "used": 40, "limit": 40, "day": "2026-08-29" }],
+  "canWrite": true
+}
+```
+
+`limits` 里字段缺席即**不限**，也是出厂默认。`today` 按（本地日期，账号）统计，**落库**——
+`/api/usage` 那份是内存环形缓冲，进程重启即清零，配额建在它上面等于重启就能续杯。
+
+`PUT /api/usage-limits`
+
+```json
+{ "dailyCalls": 40, "dailyTokens": null }
+```
+
+`null` 是显式取消该项限制，字段缺席表示不动它。`dailyCalls` 下限为 1、`dailyTokens` 下限为
+1000——0 的含义是「一次都不许调」，那是停用账号，该走账号禁用而不是从配额绕。
+
+**执行点是 `throughGateway()`**，与「绕不过网关就绕不过准入」同一个论证：挡在模型之前，
+token 一个没烧、内容一个字没产生。上游 429/502 不吃额度。一次稿件生成产两份产物，
+所以算**两次**调用。
+
+超限时：
+
+| | 值 |
+| --- | --- |
+| HTTP | `429 usage_quota_exceeded` |
+| 稿件状态 | **一步不动**，也不写成任何一种准入结论 |
+| 留痕 | `trace_events` 里一条 `quota-blocked`，`actor` 为「使用限制」（不是「入口准入」）；另有 `usage_limit_events` 一行 |
+| 文案 | 「今日调用次数已用完（N / N）。**这不是内容判定**——这篇稿子本身没有问题，稿件状态也没有变。请联系台领导调整额度，或明天再试。」 |
+
+最后一行是刻意的：编辑看到 429 的第一反应一定是「我写的东西有问题？」，得在同一屏把这个
+误解掐掉，否则他会去改一篇本来没问题的稿子。
+

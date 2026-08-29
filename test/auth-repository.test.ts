@@ -24,6 +24,7 @@ describe('track C migration and account repository', () => {
       '0004_track_a_workflow',
       '0005_coverage_topic',
       '0006_managed_ruleset',
+      '0007_usage_limits',
     ]);
     expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'users'").get()).toBeTruthy();
     const userColumns = sqlite.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
