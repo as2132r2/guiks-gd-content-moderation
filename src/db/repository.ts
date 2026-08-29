@@ -38,6 +38,8 @@ import {
 import { config } from '../config.js';
 import { createDatabase, type DatabaseHandle } from './client.js';
 import { buildOversight, type OversightSnapshot } from './oversight.js';
+import { RulesetStore } from './ruleset.js';
+import { builtinManagedRules } from '../rules/ruleset.js';
 import {
   admissionResults,
   contentArtifacts,
@@ -368,8 +370,22 @@ function validateAccountInput(input: AccountInput): {
 }
 
 export class WorkflowRepository {
+  /** 判定依据（词表）。SQL 在 [ruleset.ts](ruleset.ts)，这里只持有它。 */
+  readonly ruleset: RulesetStore;
+
   constructor(private readonly database: DatabaseHandle) {
+    this.ruleset = new RulesetStore(database);
     this.reconcileInterruptedModelCalls();
+  }
+
+  /**
+   * 把 `src/rules/terms.ts` 的内置基线灌进库。
+   *
+   * 幂等，只补缺失的 ruleId——停用过的条目不会被重启冲回来。和
+   * `ensureDemoUsers()` 一样在取单例时调一次。
+   */
+  ensureBuiltinRuleTerms(): void {
+    this.ruleset.ensureBuiltins(builtinManagedRules(Date.now()));
   }
 
   private nextTraceTimestamp(manuscriptId: string): number {
@@ -1537,6 +1553,7 @@ let singleton: WorkflowRepository | undefined;
 export function getWorkflowRepository(): WorkflowRepository {
   if (!singleton) {
     singleton = new WorkflowRepository(createDatabase());
+    singleton.ensureBuiltinRuleTerms();
     singleton.ensureDemoUsers();
   }
   return singleton;

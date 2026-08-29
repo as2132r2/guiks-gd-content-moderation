@@ -99,6 +99,7 @@ ${themeBootstrap}<style>${themeStyles}
     <span class="stamp" id="stamp"></span>
     ${renderThemeControl()}
     <button id="refresh">刷新</button>
+    <a href="/rules">判定依据</a>
     <a href="/workbench">回工作台</a>
   </div>
 </header>

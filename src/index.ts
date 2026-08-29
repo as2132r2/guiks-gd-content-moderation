@@ -16,6 +16,7 @@ import { oversightRoutes } from './routes/oversight.js';
 import { policyRoutes } from './routes/policy.js';
 import { redteamRoutes } from './routes/redteam.js';
 import { reportRoutes } from './routes/report.js';
+import { rulesRoutes } from './routes/rules.js';
 import { runtimeRoutes } from './routes/runtime.js';
 import { demoRoutes } from './routes/demo.js';
 import { fixtureRoutes } from './routes/fixtures.js';
@@ -94,6 +95,8 @@ app.route('/', workbenchRoutes);
 app.route('/', oversightRoutes);
 // 只读的示例素材两种模式都要——手册第 2 步就让人点「填入示例通稿」。
 app.route('/', fixtureRoutes);
+// 判定依据管理。**不是 demo-only**：真实部署也要能改词表与看改动史。
+app.route('/', rulesRoutes);
 // 清空整库的端点不该存在于生产构建里。
 if (config.appMode === 'demo') {
   app.route('/', demoRoutes);

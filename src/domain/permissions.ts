@@ -25,6 +25,10 @@ export const permissions = [
   'workflow:sign',
   'workflow:publish',
   'audit:read',
+  // 判定依据（词表）与使用限制。读给所有系统角色，写只给台领导——判定依据是
+  // 「说得清」的底，谁都能改就等于谁都不负责。
+  'rules:read',
+  'rules:write',
 ] as const;
 export type Permission = (typeof permissions)[number];
 
@@ -41,6 +45,7 @@ export const rolePermissions: Readonly<Record<SystemRole, readonly Permission[]>
     'workflow:submit-initial-review',
     'workflow:initial-review',
     'audit:read',
+    'rules:read',
   ],
   'department-head': [
     'manuscript:read',
@@ -48,6 +53,7 @@ export const rolePermissions: Readonly<Record<SystemRole, readonly Permission[]>
     'workflow:department-review',
     'workflow:countersign',
     'audit:read',
+    'rules:read',
   ],
   'supervising-leader': [
     'manuscript:read',
@@ -56,8 +62,10 @@ export const rolePermissions: Readonly<Record<SystemRole, readonly Permission[]>
     'workflow:sign',
     'workflow:publish',
     'audit:read',
+    'rules:read',
   ],
-  'station-leader': ['manuscript:read', 'audit:read'],
+  // 台领导不进状态机，但判定依据和使用限制归他管——这是这个角色唯一的写权限。
+  'station-leader': ['manuscript:read', 'audit:read', 'rules:read', 'rules:write'],
 };
 
 export const hasPermission = (user: UserAccount, permission: Permission): boolean =>

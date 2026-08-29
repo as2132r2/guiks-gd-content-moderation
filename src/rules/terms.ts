@@ -9,6 +9,17 @@
  * **当前是节选，不是全部 102 条。** 补全归轨道 B，补的时候只加数组元素，
  * 不要动 index.ts。每条都要能说出出处，说不出的宁可不加——在广电评委面前，
  * 一条错的禁用词比少十条更伤。
+ *
+ * ————————————————————————————————————————————————————————————————————
+ * **词表落库之后，这个文件的身份变了：它不再是运行时数据，而是「内置基线」的
+ * 权威定义。** 运行时读的是 SQLite 里的 `rule_terms`，由启动时幂等的
+ * `ensureBuiltinRuleTerms()` 从这里灌进去（只补缺失的 ruleId，绝不覆盖已有行，
+ * 所以台领导停用过的条目不会被重启冲回来）。
+ *
+ * 「说得出出处」因此从注释变成了**列**：每条基线都必须能通过
+ * `baselineSourceFor()` 拿到一句出处，人工新增的条目 `source` 必填。
+ * 基线行在管理界面里删不掉、词面改不了，只能停用或改档位——这样「基线是什么」
+ * 永远查得回去。
  */
 import type { AnnotationCategory, PreflightAction } from '../domain/gatekeeping.js';
 
@@ -21,6 +32,8 @@ export interface TermRule {
   title: string;
   detail: string;
   suggestion?: string;
+  /** 出处。省略时由 `baselineSourceFor()` 按 ruleId 前缀补齐。 */
+  source?: string;
 }
 
 /** 一条按模式匹配的规则。`pattern` 必须带 `g`，引擎按全局扫。 */
@@ -39,6 +52,40 @@ export interface PatternRule {
 export interface AdmissionTerm {
   ruleId: string;
   term: string;
+  /** 出处。省略时由 `baselineSourceFor()` 按 ruleId 前缀补齐。 */
+  source?: string;
+}
+
+/**
+ * 内置基线的出处，按 ruleId 前缀分组。
+ *
+ * 这三句会原样写进 `rule_terms.source` 列，也会原样显示在管理界面上。改动它们
+ * 等于改动我们对外声称的依据——**不要为了好看而改写，要么引用准确，要么别引用**。
+ */
+export const BASELINE_SOURCES = {
+  xinhua: '新华社《新闻信息报道中的禁用词和慎用词》（2016 年 7 月修订）',
+  typo: '公文常见错别字表（收录标准：错误形式本身不成词）',
+  admission: '把关人入口准入基线（依据 docs/gatekeeper/plan.md 的三档定义）',
+} as const;
+
+/** ruleId 前缀 → 出处。新增前缀时必须在这里登记，否则灌库会拒绝。 */
+const SOURCE_BY_PREFIX: ReadonlyArray<readonly [string, string]> = [
+  ['AD-', BASELINE_SOURCES.admission],
+  ['PF-W-', BASELINE_SOURCES.typo],
+  ['PF-', BASELINE_SOURCES.xinhua],
+];
+
+/**
+ * 一条内置基线的出处。
+ *
+ * 认不出前缀就抛——**宁可启动失败，也不要往库里灌一条说不出出处的判定依据**。
+ * 这正是这套词表在评委面前唯一站得住的地方。
+ */
+export function baselineSourceFor(ruleId: string, override?: string): string {
+  if (override) return override;
+  const matched = SOURCE_BY_PREFIX.find(([prefix]) => ruleId.startsWith(prefix));
+  if (!matched) throw new Error(`no baseline source registered for rule ${ruleId}`);
+  return matched[1];
 }
 
 // ————————————————————————— 入口准入 —————————————————————————
@@ -158,6 +205,54 @@ const caution = (
   ...(suggestion ? { suggestion } : {}),
 });
 
+/**
+ * 错别字。
+ *
+ * 原本是 `PatternRule`，但那些正则全是**纯字面量**，改成字面匹配语义完全等价，
+ * 而字面词条能落库、能在界面上管；正则不能——让人从浏览器往服务端塞任意正则
+ * 等于开一个远程拒绝服务的口子（灾难性回溯）。这条边界正好和本文件与 index.ts
+ * 的「数据 vs 引擎」分法重合。
+ */
+const typo = (ruleId: string, wrong: string, right: string): TermRule => ({
+  ruleId,
+  term: wrong,
+  category: 'typo',
+  action: 'flag',
+  title: `错别字：${wrong}`,
+  detail: `应为「${right}」。`,
+  suggestion: right,
+});
+
+/**
+ * 公文里高频的错别字。
+ *
+ * **收录标准只有一条：错误形式本身不是一个词。** 这样才不会误伤——
+ * 「布署」不成词，写出来必错；而「必须 / 必需」「其他 / 其它」都是真词，
+ * 要靠上下文判断，属于 L2，不放这里。
+ */
+const MISSPELLINGS: readonly TermRule[] = (
+  [
+    ['布署', '部署'],
+    ['峻工', '竣工'],
+    ['凑和', '凑合'],
+    ['座落', '坐落'],
+    ['渡假', '度假'],
+    ['帐蓬', '帐篷'],
+    ['再接再励', '再接再厉'],
+    ['迫不急待', '迫不及待'],
+    ['穿流不息', '川流不息'],
+    ['相形见拙', '相形见绌'],
+    ['一如继往', '一如既往'],
+    ['名负其实', '名副其实'],
+    ['谈笑风声', '谈笑风生'],
+    ['走头无路', '走投无路'],
+    ['蓄势代发', '蓄势待发'],
+    ['再所不惜', '在所不惜'],
+  ] as const
+).map(([wrong, right], index) =>
+  typo(`PF-W-${String(index + 10).padStart(2, '0')}`, wrong, right),
+);
+
 export const TERM_RULES: readonly TermRule[] = [
   // —— 会议与领导活动表述 ——
   banned('PF-T-01', '隆重召开', '新华社规范：一般性会议不冠以「隆重」。', '召开'),
@@ -264,45 +359,49 @@ export const TERM_RULES: readonly TermRule[] = [
     detail: '应为「中共XX县委书记」，不写「中共XX县县委书记」。',
     suggestion: '县委书记',
   },
+
+  // —— 一校：错别字（原 PATTERN_RULES 里的纯字面量条目，改为字面匹配后可落库管理）——
+  typo('PF-W-01', '按装', '安装'),
+  typo('PF-W-02', '重覆', '重复'),
+  // 「渡过 / 度过」原本是 PF-W-03 一条正则 `/渡过难关|渡过危机/` 管两个词。
+  // 落库要求一行一条（rule_id 是主键），而一行一个词才买得到单独停用、单独改
+  // 档位、单独查改动史。
+  //
+  // **没有让 PF-W-03 留下来只指其中一个** —— 那会让一个编号的含义从「两个搭配」
+  // 悄悄收窄成「一个词」，而这套词表刚刚立下的规矩正是「一个编号永远只指一样
+  // 东西」。这批 PF-* 编号到落库为止一直是只写不读的（Annotation 没有 ruleId，
+  // 预检留痕存的是 category），从这一版起才第一次有对外意义——所以现在是唯一
+  // 一次能把规矩立干净、且不欠任何历史债的机会。
+  {
+    ...typo('PF-W-05', '渡过难关', '度过难关'),
+    title: '用词：渡过 / 度过',
+    detail: '与时间、阶段搭配用「度过」；「渡」用于渡水、渡船。',
+    suggestion: '度过',
+  },
+  {
+    ...typo('PF-W-06', '渡过危机', '度过危机'),
+    title: '用词：渡过 / 度过',
+    detail: '与时间、阶段搭配用「度过」；「渡」用于渡水、渡船。',
+    suggestion: '度过',
+  },
+  ...MISSPELLINGS,
 ];
 
-// ————————————————————————— 一校：错别字 / 标点 / 格式 —————————————————————————
-
 /**
- * 公文里高频的错别字。
+ * 退休的编号：**不复用**。
  *
- * **收录标准只有一条：错误形式本身不是一个词。** 这样才不会误伤——
- * 「布署」不成词，写出来必错；而「必须 / 必需」「其他 / 其它」都是真词，
- * 要靠上下文判断，属于 L2，不放这里。
+ * 一个编号在历史上指过什么，就永远只能指那个。改动日志与 `rule_terms.rule_id`
+ * 都以它为锚，复用等于让同一个锚指向两样东西。
+ *
+ * `RulesetStore.nextCustomRuleId()` 对自定义词条做的是同一件事（查改动日志，
+ * 跳过用过的号）；这里是把同一条规矩用在基线上。
+ *
+ * - `PF-W-03` —— 曾是 `/渡过难关|渡过危机/`，一条正则管两个词。落库时拆成
+ *   `PF-W-05` 与 `PF-W-06`，本号退休。
  */
-const MISSPELLINGS: readonly PatternRule[] = (
-  [
-    ['布署', '部署'],
-    ['峻工', '竣工'],
-    ['凑和', '凑合'],
-    ['座落', '坐落'],
-    ['渡假', '度假'],
-    ['帐蓬', '帐篷'],
-    ['再接再励', '再接再厉'],
-    ['迫不急待', '迫不及待'],
-    ['穿流不息', '川流不息'],
-    ['相形见拙', '相形见绌'],
-    ['一如继往', '一如既往'],
-    ['名负其实', '名副其实'],
-    ['谈笑风声', '谈笑风生'],
-    ['走头无路', '走投无路'],
-    ['蓄势代发', '蓄势待发'],
-    ['再所不惜', '在所不惜'],
-  ] as const
-).map(([wrong, right], index) => ({
-  ruleId: `PF-W-${String(index + 10).padStart(2, '0')}`,
-  pattern: new RegExp(wrong, 'g'),
-  category: 'typo' as const,
-  action: 'flag' as const,
-  title: `错别字：${wrong}`,
-  detail: `应为「${right}」。`,
-  suggestion: right,
-}));
+export const RETIRED_RULE_IDS: readonly string[] = ['PF-W-03'];
+
+// ————————————————————————— 一校：标点 / 格式 —————————————————————————
 
 /**
  * 一校那一档（plan §七：「L1 全自动」）。
@@ -346,34 +445,9 @@ export const PATTERN_RULES: readonly PatternRule[] = [
     detail: '中文语境应使用全角括号（）。',
   },
 
-  // —— 错别字与用词 ——
-  {
-    ruleId: 'PF-W-01',
-    pattern: /按装/g,
-    category: 'typo',
-    action: 'flag',
-    title: '用词：按装',
-    detail: '应为「安装」。',
-    suggestion: '安装',
-  },
-  {
-    ruleId: 'PF-W-02',
-    pattern: /重覆/g,
-    category: 'typo',
-    action: 'flag',
-    title: '用词：重覆',
-    detail: '应为「重复」。',
-    suggestion: '重复',
-  },
-  {
-    ruleId: 'PF-W-03',
-    pattern: /渡过难关|渡过危机/g,
-    category: 'typo',
-    action: 'flag',
-    title: '用词：渡过 / 度过',
-    detail: '与时间、阶段搭配用「度过」；「渡」用于渡水、渡船。',
-    suggestion: '度过',
-  },
+  // —— 用词 ——
+  // 纯字面量的错别字条目已迁到 TERM_RULES（可落库管理）。这里只留真正需要正则
+  // 的那一条：叠字数不出字面量。
   {
     ruleId: 'PF-W-04',
     pattern: /([一-鿿])\1{2,}/g,
@@ -382,8 +456,6 @@ export const PATTERN_RULES: readonly PatternRule[] = [
     title: '用词：同一字连续重复',
     detail: '同一汉字连续出现三次以上，通常是误输入。',
   },
-  ...MISSPELLINGS,
-
   // —— 格式 ——
   {
     ruleId: 'PF-F-01',

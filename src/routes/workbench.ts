@@ -67,6 +67,7 @@ import { readSessionUser } from '../lib/session.js';
 import { UpstreamError } from '../lib/upstream.js';
 import { requireAuth, type AuthEnv } from '../middleware/auth.js';
 import { generateBroadcastArtifacts } from '../model/broadcast.js';
+import { activeRuleset } from '../rules/active.js';
 import { runAdmission, runPreflight } from '../rules/index.js';
 import { renderWorkbench } from '../views/workbench-view.js';
 import { ModelTraceError } from './gateway.js';
@@ -244,11 +245,10 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
     .map((artifact) => {
       const own = segments.filter((segment) => segment.artifactId === artifact.id);
       const sentences = own.length > 0 ? own.map((segment) => segment.text) : splitSentences(artifact.content);
-      const { annotations } = runPreflight({
-        artifactId: artifact.id,
-        sentences,
-        sourceText: manuscript.sourceText,
-      });
+      const { annotations } = runPreflight(
+        { artifactId: artifact.id, sentences, sourceText: manuscript.sourceText },
+        activeRuleset(),
+      );
       return { artifact, segments: own, annotations };
     });
 
@@ -265,7 +265,9 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
     manuscript,
     stage: stageOf(manuscript.status),
     statusLabel: statusLabels[manuscript.status],
-    admission: getWorkflowRepository().getAdmissionResult(manuscriptId) ?? runAdmission(manuscript),
+    admission:
+      getWorkflowRepository().getAdmissionResult(manuscriptId) ??
+      runAdmission(manuscript, activeRuleset()),
     artifacts: artifactViews,
     preflight: summarize(allAnnotations),
     ...(share === undefined ? {} : { aiShare: share }),
@@ -314,6 +316,11 @@ function preparePreflight(manuscriptId: string): PreparedPreflightMutation[] | u
   const aggregate = repository.getAggregate(manuscriptId);
   if (!aggregate) return undefined;
 
+  // 一次预检里的每个产物必须按**同一版**词表判。逐个产物各读一次，遇上正好
+  // 落在中间的一次改词表，同一篇稿子的两份产物会按两版判——留痕里那个版本号
+  // 就指不回真正用过的那一份了。
+  const ruleset = activeRuleset();
+
   return aggregate.artifacts
     .filter((item) => item.kind !== 'source')
     .map((artifact) => {
@@ -322,11 +329,10 @@ function preparePreflight(manuscriptId: string): PreparedPreflightMutation[] | u
         own.length > 0
           ? own.map((segment) => segment.text)
           : splitSentences(artifact.content);
-      const checked = runPreflight({
-        artifactId: artifact.id,
-        sentences,
-        sourceText: aggregate.manuscript.sourceText,
-      });
+      const checked = runPreflight(
+        { artifactId: artifact.id, sentences, sourceText: aggregate.manuscript.sourceText },
+        ruleset,
+      );
       const label = checked.annotations.find(
         (annotation) => annotation.category === 'ai-label' && annotation.suggestion,
       );
@@ -356,6 +362,7 @@ function preparePreflight(manuscriptId: string): PreparedPreflightMutation[] | u
           kind: artifact.kind,
           ...checked.summary,
           rules: checked.annotations.map((annotation) => annotation.category),
+          rulesetVersion: ruleset.version,
           proofreadPasses: checked.annotations.map((annotation) => annotation.proofreadPass),
           autoFixed: label ? ['ai-label'] : [],
         },
@@ -403,7 +410,8 @@ workbenchRoutes.post('/api/workbench', async (c) => {
     return c.json({ error: 'role_not_allowed', message: '当前账号不能新建稿件。' }, 403);
   }
   const repository = getWorkflowRepository();
-  const admission = runAdmission(parsed.data);
+  const ruleset = activeRuleset();
+  const admission = runAdmission(parsed.data, ruleset);
   const actor = workflowActorLabel(user, 'editor');
   const manuscript = repository.createManuscript(parsed.data, { label: actor, userId: user.id });
   repository.saveAdmissionResult(manuscript.id, admission);
@@ -418,6 +426,9 @@ workbenchRoutes.post('/api/workbench', async (c) => {
       hits: admission.hits.map((hit) => hit.ruleId),
       offDutyUse: admission.offDutyUse ?? false,
       modelInvoked: admission.decision !== 'blocked',
+      // 词表可变之后，光记 ruleId 不够：三个月后回看，那条规则可能已经被改过。
+      // 版本号加上改动日志才能把「当时按哪一版判的」原样重建出来。
+      rulesetVersion: ruleset.version,
     },
   });
 
@@ -456,11 +467,14 @@ workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
         event.kind === 'artifact-created' && event.data.artifactId === item.artifact.id,
     );
     const original = asText(created?.data.content) || item.artifact.content;
-    const { annotations } = runPreflight({
-      artifactId: item.artifact.id,
-      sentences: splitSentences(original),
-      sourceText: view.manuscript.sourceText,
-    });
+    const { annotations } = runPreflight(
+      {
+        artifactId: item.artifact.id,
+        sentences: splitSentences(original),
+        sourceText: view.manuscript.sourceText,
+      },
+      activeRuleset(),
+    );
     return { kind: item.artifact.kind, content: original, annotations };
   });
 

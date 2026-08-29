@@ -153,7 +153,8 @@ AI 参与度与产物级来源始终由服务端持有的句级来源派生：
 
 返回 `manuscript`、`artifacts`、`segments`、`reviews`、`trace`。`segments` 先按产物顺序、
 再按 `ordinal` 排列，覆盖该稿件的全部产物；追溯图谱和 AI 参与度都从这里取数。
-所有已登录系统角色均可读取；`station-leader` 仅有此类读取能力，不进入状态机。
+所有已登录系统角色均可读取；`station-leader` 不进入状态机，除读取外只持有判定依据的写权限
+（`rules:write`，见下文）。
 
 ## 保存审核决定
 
@@ -241,3 +242,69 @@ AI 参与度与产物级来源始终由服务端持有的句级来源派生：
 ```
 
 连接建立时先收到 `status`，空闲期间每 15 秒收到 `ping`。
+
+## 判定依据（词表）
+
+主链在用的那份词表。⚠️ 与 `/api/policy` 无关——后者作用在遗留 AuditGate 规格上、内存态、
+进程重启即失，且不作用于入口准入与输出预检。
+
+`rules:read` 归全部系统角色，`rules:write` 只归 `station-leader`；写操作被拒返回
+`403 role_not_allowed`。
+
+`GET /api/rules`
+
+```json
+{
+  "version": 7,
+  "rules": [
+    {
+      "ruleId": "PF-T-01",
+      "scope": "preflight",
+      "term": "隆重召开",
+      "source": "新华社《新闻信息报道中的禁用词和慎用词》（2016 年 7 月修订）",
+      "origin": "builtin",
+      "enabled": true,
+      "category": "banned-term",
+      "action": "block"
+    }
+  ],
+  "engineRules": [{ "ruleId": "PF-N-01..09", "label": "当事人姓名保护" }],
+  "canWrite": true
+}
+```
+
+`version` 是词表整体的版本号，每次写操作 +1，并写进准入 (`rule-hit`) 与预检留痕的
+`rulesetVersion`。**判定依据可变之后，光记 `ruleId` 不够**：那条规则可能已经被改过档位或
+词面，版本号加上改动日志才能把当时那一版原样重建出来。
+
+`engineRules` 是不落库、只能改代码的那部分判定逻辑（正则、共现规则、一致性比对、L2 判断），
+只读返回，供界面列全——看不见会让人以为词表就是判定的全部。
+
+`GET /api/rules/changes?ruleId=`（可选筛一条）返回改动日志，只增不改也删不掉。
+
+`POST /api/rules`
+
+```json
+{
+  "scope": "admission",
+  "term": "重大项目开工",
+  "admissionBucket": "reason",
+  "source": "本台选题管理办法（2026 年修订）第七条",
+  "reason": "开工报道要先确认口径"
+}
+```
+
+`scope=admission` 必须给 `admissionBucket`（`block` 硬拦 / `reason` 要理由 /
+`off-duty` 公器私用）；`scope=preflight` 必须给 `category` 与 `action`
+（`block` / `redact` / `flag`）。**`source` 与 `reason` 都必填**（各不少于 4 字）——
+没有出处的判定依据不该存在，说不清理由的改动不该发生。词面重复返回
+`409 rule_already_exists`。
+
+`PATCH /api/rules/:ruleId` 改字段或启停（`enabled`），`DELETE /api/rules/:ruleId` 删除，
+两者的请求体都必须带 `reason`。内置基线（`origin=builtin`）**删不掉、词面与出处也改不了**，
+返回 `409 builtin_rule_immutable`；要它不生效请停用，停用同样留痕。
+
+往硬拦档放词时服务端会自检：命中「这看起来是题材不是操作指令」或「这个词已经在要理由档」
+时返回 `409 block_bucket_confirmation_required`。**这不是禁止**——带 `"acknowledge": true`
+重发即可通过，警示原文会写进该条改动记录的 `acknowledgedWarning`。收窄这一档的理由见
+`src/rules/terms.ts` 顶部：任何题材都可能是新闻，按题材硬拦会把正常选题拦死。

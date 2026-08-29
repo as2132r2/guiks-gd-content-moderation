@@ -40,6 +40,7 @@ export function renderWorkbench(options: { demoToolsEnabled: boolean }): string 
   // 页面不另抄一份——矩阵哪天收紧 audit:read，入口自动跟着消失。
   const auditReadRoles = systemRoles.filter((role) => rolePermissions[role].includes('audit:read'));
   const demoTools = options.demoToolsEnabled;
+  const rulesReadRoles = systemRoles.filter((role) => rolePermissions[role].includes('rules:read'));
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -853,6 +854,7 @@ ${demoTools ? `  <button class="btn present-launch" id="present-open" type="butt
     <span class="visually-hidden" id="role-switch-status" aria-live="polite"></span>
   </div>
   <a class="topbar-link" id="monitor-link" href="/monitor" hidden>全流程监控</a>
+  <a class="topbar-link" id="rules-link" href="/rules" hidden>判定依据</a>
   ${renderThemeControl()}
   <div class="account"><span class="account-name" id="account-name">—</span><button class="logout-btn" id="logout-btn">退出</button></div>
 </header>
@@ -936,6 +938,7 @@ ${demoTools ? `<div class="present-modal" id="present-modal" hidden>
   };
   // 能读留痕的角色，由服务端按权限矩阵注入——页面不自己判断谁配看全台数据。
   var AUDIT_READ_ROLES = ${JSON.stringify(auditReadRoles)};
+  var RULES_READ_ROLES = ${JSON.stringify(rulesReadRoles)};
   var ORIGIN_LABEL = { 'ai':'AI 生成', 'ai-edited':'AI 生成·人改过', 'human':'人新写', 'source':'原文引用' };
   var ORIGIN_COLOR = { 'ai':'var(--ai)', 'ai-edited':'var(--ai-edited)', 'human':'var(--human)', 'source':'var(--source)' };
   var ACTION_LABEL = { 'block':'拦下不让播', 'redact':'标红待复核', 'flag':'放行留痕' };
@@ -1044,6 +1047,10 @@ ${demoTools ? `<div class="present-modal" id="present-modal" hidden>
     // 角色，却正是这块看板的主要读者。
     $('monitor-link').hidden = !(user.roles || []).some(function (role) {
       return AUDIT_READ_ROLES.indexOf(role) !== -1;
+    });
+    // 判定依据同理：读给所有系统角色，写只给台领导（服务端把关，这里只管入口显隐）。
+    $('rules-link').hidden = !(user.roles || []).some(function (role) {
+      return RULES_READ_ROLES.indexOf(role) !== -1;
     });
     $('new-btn').hidden = roles.indexOf('editor') === -1;
     if (DEMO_TOOLS) $('seed-btn').hidden = true;
