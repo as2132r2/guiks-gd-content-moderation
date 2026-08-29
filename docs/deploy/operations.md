@@ -30,6 +30,11 @@ node -e "console.log('base64:' + require('crypto').randomBytes(32).toString('bas
 
 ## 二、部署
 
+> ⚠️ **线上实例不跑 Docker。** 它是 Node + systemd + Nginx，发布走
+> `releases/<sha>` + `current` 软链，手册是
+> [DEPLOYMENT-TENCENT-CLOUD.html](../DEPLOYMENT-TENCENT-CLOUD.html)。
+> 下面这套 compose 是本地与自建部署用的；两者的环境变量、播种与清理命令共用。
+
 ```bash
 docker compose up -d --build
 curl -f http://localhost:3300/readyz     # 期望 {"status":"ready"}
@@ -143,83 +148,127 @@ npm run reset:demo -- --yes --accounts   # 连试用账号一起清
 ### 为什么要切
 
 `APP_MODE=demo` 会额外挂上六组遗留路由（[index.ts](../../src/index.ts) 里的
-`if (config.appMode === 'demo')`），**它们一个 `requireAuth` 都没有**。公网跑 demo，
+`if (config.appMode === 'demo')`）。它们是 AuditGate 时代的本地工具，公网跑 demo
 等于把这一排接口连同真实模型额度一起开在外面：
 
 | 端点 | demo | production |
 | --- | --- | --- |
-| `/policy`、`/api/policy`、`/api/policy/presets` | 无凭据 200 | 404 |
-| `PUT /api/policy`、`POST /api/policy/preset` | 无凭据可写 | 404 |
-| `/runtime`、`/api/usage`、`/report`、`/target/info` | 无凭据 200 | 404 |
-| `POST /api/runtime/chat`、`POST /target/chat`、`POST /api/redteam/run` | **无凭据即可烧真实模型额度** | 404 |
-| `POST /api/demo/reset`、`POST /api/demo/seed` | 无凭据即可清空整库 | 404 |
-| `POST /api/monitor/start` | 无凭据 200 | 404 |
+| `/policy`、`/api/policy`、`/api/policy/presets` | 挂着 | 404 |
+| `PUT /api/policy`、`POST /api/policy/preset` | 挂着 | 404 |
+| `/runtime`、`/api/usage`、`/report`、`/target/info` | 挂着 | 404 |
+| `POST /api/runtime/chat`、`POST /target/chat`、`POST /api/redteam/run` | **每次调用烧真实模型额度** | 404 |
+| `POST /api/demo/reset`、`POST /api/demo/seed` | 一键清空整库 | 404 |
+| `POST /api/monitor/start` | 挂着 | 404 |
 
-对照：`/api/monitor/overview` 与 `/workbench` 两种模式下都要登录，它们本来就是对的。
+它们现在也要登录并持有 `audit:read`，但**不挂载是比鉴权更强的一道**，两道都要。
+对照：`/api/monitor/overview`、`/api/rules`、`/api/fixtures` 两种模式都挂着且都要登录。
 
-这也是 [CLAUDE.md](../../CLAUDE.md) 硬约束 6「真实模型不裸奔」的落地方式——
-靶场、红队和 runtime 要么等鉴权，要么在生产构建里根本不存在。这里选的是后者。
+这也是 [CLAUDE.md](../../CLAUDE.md) 硬约束 6「真实模型不裸奔」的落地方式。
 
-### 切换步骤
+### 先认清这台机器怎么部署的
+
+⚠️ **线上实例不跑 Docker。** 它是 Node + systemd + Nginx，应用只监听
+`127.0.0.1:3300`，公网由 Nginx 转发。完整部署手册是
+[DEPLOYMENT-TENCENT-CLOUD.html](../DEPLOYMENT-TENCENT-CLOUD.html)，本节只讲**切模式**这一件事。
+
+| | 值 |
+| --- | --- |
+| 发布目录 | `/opt/guiks-gd-content-moderation/releases/<sha>`，`current` 软链原子切换 |
+| 数据库 | `/var/lib/guiks-gd-content-moderation/app.db` |
+| 配置 | `/etc/guiks-gd-content-moderation/app.env`（`root:guiks`、0640，**含真实模型 Key**） |
+| 服务 | `systemctl … guiks-gd-content-moderation` |
+
+**切模式只动 `app.env` 和一次重启，不动代码。** 如果同时要升级版本（线上落后于
+`main` 时通常如此），按部署手册第 5 节先发布再切，或发布完一起重启——两件事分开想，
+一起做。
+
+用 `docker compose` 自建的部署看本节最后一小节。
+
+### 切换步骤（systemd）
 
 **库里的数据全部保留**——稿件、留痕、责任链、监控看板的按人归并，一样不少。
-下面按 compose 部署写；源码部署把 `docker compose exec app node dist/xxx.js`
-换成 `npm run xxx:prod` 即可。
 
 ```bash
-# 0. 停服并备份（compose 用的是命名卷，拷贝方式见第六节「备份」）
-docker compose down
-
-# 1. 改 .env：APP_MODE=production，并按第一节生成两个【不同】的强密钥
-#    APP_MODE=production
-#    SESSION_SECRET=base64:...
-#    GATEWAY_TOKEN=base64:...
-
-# 2. 起服。此时 /readyz 返 503（account: missing），是对的，见下一小节
-docker compose up -d --build
-
-# 3. 播种。它会把试用账号就地转正，并补齐缺的稿件；临时走 mock，
-#    手册里的数字才对得上
-docker compose exec -e ALLOW_MOCK_UPSTREAM=true app node dist/seed-demo.js
-
-# 4. 验收
-curl -s http://127.0.0.1:3300/readyz          # 期望 {"status":"ready"}
+# 0. 备份。不可逆操作前的唯一一次机会
+REAL=$(readlink -f /opt/guiks-gd-content-moderation/current)
+sudo install -d -o guiks -g guiks -m 0750 /var/lib/guiks-gd-content-moderation/backups
+sudo -u guiks node -e "
+const D=require('$REAL/node_modules/better-sqlite3');
+new D('/var/lib/guiks-gd-content-moderation/app.db',{readonly:true})
+  .backup('/var/lib/guiks-gd-content-moderation/backups/app-'+Date.now()+'.db')
+  .then(()=>process.exit(0));"
 ```
 
-第 3 步的预期输出：
+```bash
+# 1. 就地生成两个密钥。跑两次，两个值必须不同
+node -e "console.log('base64:'+require('crypto').randomBytes(32).toString('base64'))"
+```
+
+```bash
+# 2. 改配置。用 sudoedit，别把密钥写进命令行——那会落进 shell history
+sudoedit /etc/guiks-gd-content-moderation/app.env
+```
+
+改这四项，其余（模型档、DATABASE_PATH、PORT）不动：
+
+```
+APP_MODE=production
+ALLOW_MOCK_UPSTREAM=false
+SESSION_SECRET=base64:...        # 第 1 步生成的第一个
+GATEWAY_TOKEN=base64:...         # 第 1 步生成的第二个，必须与上一行不同
+```
+
+```bash
+# 3. 重启
+sudo systemctl restart guiks-gd-content-moderation
+sudo systemctl status guiks-gd-content-moderation --no-pager
+curl -s http://127.0.0.1:3300/readyz
+```
+
+```bash
+# 4. 播种。它把试用账号就地转正并补齐缺的稿件；临时走 mock，手册里的数字才对得上
+REAL=$(readlink -f /opt/guiks-gd-content-moderation/current)
+sudo -u guiks bash -c "set -a; . /etc/guiks-gd-content-moderation/app.env; set +a; \
+  UPSTREAM_PROFILES_JSON= UPSTREAM_URL= ALLOW_MOCK_UPSTREAM=true \
+  node $REAL/dist/seed-demo.js"
+```
+
+第 4 步的预期输出：
 
 ```
 账号：新建 0，已存在 1，转正 4（原为 demo 账号，保留 user id 与历史归并）
 稿件：待播 0，已存在 15（只增不删，不动库里已有的数据）
 ```
 
+三个环境变量覆盖只作用于这一个进程，`app.env` 不动，服务重启后照常用真实模型。
+
 **没有「清库」这一步。** `APP_MODE=production` 拒绝 demo 账号登录
-（[auth.ts](../../src/routes/auth.ts)），所以那 4 个内置账号必须处理掉——但处理方式是
+（[auth.ts](../../src/routes/auth.ts)），所以那四个内置账号必须处理掉——但处理方式是
 **就地转正**（[repository.ts](../../src/db/repository.ts) 的 `promoteDemoUserToProduction`），
 不是删掉重建。`users.id` 保住，指向它的 `actor_user_id` 就不会被
 `ON DELETE SET NULL` 置空，历史一条不掉。
 
-> **早期版本这里是「删掉重建」，所以旧文档要求先 `reset:demo` 清库。**
-> 现在不需要了。真想推倒重来是另一件事，见第四节。
+> 早期版本这里是「删掉重建」，所以旧文档要求先 `reset-demo` 清库。现在不需要了。
+> 真想推倒重来是另一件事，见第四节。
 
-**为什么播种要走 mock。** 第三节那组数字（15 篇 / 已签发 10 / 留痕 315 条 /
-AI 参与度 95.0%）是确定性 mock 的结果。走真实模型播出来对不上，还要花钱。
-`ALLOW_MOCK_UPSTREAM=true` 只加在那一条命令上，`.env` 不动。
+**转正会让所有人重新登录一次。** `session_version` 加一，加上 `SESSION_SECRET`
+本来就换了，demo 模式下签发的会话立即失效——这是有意的。
 
-**转正会让所有人重新登录一次。** `session_version` 加一，demo 模式下签发的
-会话立即失效——这是有意的，demo 会话不该跨进生产继续用。
+### `/readyz` 可能会有一段 `account: missing`
 
-### 播种之前 `/readyz` 会返 503
+`APP_MODE=production` 下 `/readyz` 多查一项：库里必须有**至少一个启用的非 demo 账号**
+（`hasEnabledProductionUser()`）。所以：
 
-切过去之后、播种之前，库里只有 demo 账号，`hasEnabledProductionUser()` 是 false：
+- **库在 demo 下播种过**（线上就是这种）——`chenxue` 本来就是以生产账号建的，
+  重启后立刻 `ready`，没有窗口
+- **库从没播种过**——重启到播种之间会返 503，`checks.account` 是 `missing`：
 
 ```json
-{"status":"not-ready","checks":{"database":true,"model":"mock","gatewayAuth":"configured","authentication":"configured","account":"missing"}}
+{"status":"not-ready","checks":{"database":true,"model":"configured","gatewayAuth":"configured","authentication":"configured","account":"missing"}}
 ```
 
-**这是设计如此，不是切炸了。** compose 的 healthcheck 会把容器标成 unhealthy，
-但 `restart: unless-stopped` 不会因此重启（没有 autoheal），播完种自动恢复 `ready`。
-如果部署链路上还有别的东西盯着 healthcheck 调流量，把第 2–4 步连着做完，别留窗口。
+后者是正常中间态，播完种自动恢复。**别在这个窗口里回滚**——回滚不会让它变好，
+播种才会。要缩掉这个窗口就把第 3、4 步连着做。
 
 ### 切完会变的东西
 
@@ -229,23 +278,22 @@ AI 参与度 95.0%）是确定性 mock 的结果。走真实模型播出来对�
 | 工作台「演示模式」「演示准备」按钮 | 有 | **无**——两者第一步都是清空整库 |
 | `?present=1` 进引导演示外壳 | 生效 | 不生效 |
 | 六组遗留路由 | 挂着 | 404 |
-| 进程监听地址 | `0.0.0.0` | `127.0.0.1`（[index.ts](../../src/index.ts)），**必须有反向代理** |
+| 进程监听地址 | `0.0.0.0:3300` | `127.0.0.1:3300`（[index.ts](../../src/index.ts)）——本来就有 Nginx 在前面，这一条是多加的一道 |
 | `SEED_DEMO_USERS` | 生效 | **被忽略**（[config.ts](../../src/config.ts)） |
 | demo 账号（`is_demo=1`） | 可登 | **一律拒登**，口令对也不行 |
-| `/readyz` | 不查账号 | 库里没有启用的非 demo 账号就 503 |
-| 换 `SESSION_SECRET`、账号转正 | — | 全部在线会话立即失效，所有人要重登一次 |
+| `ALLOW_MOCK_UPSTREAM=false` 且没配模型 | — | `/readyz` 503，fail closed |
+| 会话 | — | 全部失效，所有人重登一次 |
 
 **不变的**：**库里的数据一条不少**——稿件、留痕、责任链、句级来源、AI 参与度，
 以及监控看板按人归并的那一栏，切换前后逐字相同。试用者自己建的稿子也在。
 
 [user-manual.md](user-manual.md) 同样一个字都不用改。五个试用账号的用户名、
 显示名、口令（`SEED_PASSWORD`，默认 `gatekeeper-demo`）、15 篇稿件走位、
-「填入示例通稿」按钮、`/`、`/login`、`/workbench`、`/monitor`、`/console` 全部照旧。
+「填入示例通稿」按钮、`/`、`/login`、`/workbench`、`/monitor`、`/rules`、`/console` 全部照旧。
 手册不用出第二版——账号名当初就是为此钉死的（见 [demo-dataset.ts](../../src/demo-dataset.ts) 顶部注释）。
 
 演示夹具那两个按钮的消失也不影响手册：它从头到尾没让试用者点过引导演示。
-要做展台路演，另起一个 demo 实例（`docker compose up` 缺省就是 demo），
-**不要在生产实例上跑**——「重建三组样例」清的是生产库。
+要做展台路演，另起一个 demo 实例，**不要在生产实例上跑**——「重建三组样例」清的是生产库。
 
 ### 验收清单
 
@@ -258,18 +306,20 @@ for p in /policy /api/policy /api/policy/presets /runtime /api/usage /report /ta
 done
 ```
 
-挂着但要登录的三个，**期望 401 / 401 / 302**：
+挂着但要登录的几个，**期望 401 / 401 / 401 / 302**：
 
 ```bash
-curl -s -o /dev/null -w 'fixtures  %{http_code}\n' http://127.0.0.1:3300/api/fixtures
+for p in /api/fixtures /api/rules /api/monitor/overview /workbench; do
+  printf '%-24s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3300$p")"
+done
 ```
 
-```bash
-curl -s -o /dev/null -w 'overview  %{http_code}\n' http://127.0.0.1:3300/api/monitor/overview
-```
+公网那一面也走一遍，确认 Nginx 后面没有漏：
 
 ```bash
-curl -s -o /dev/null -w 'workbench %{http_code}\n' http://127.0.0.1:3300/workbench
+for p in /policy /runtime /report /target/info /api/usage; do
+  printf '%-24s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "http://106.55.47.251$p")"
+done
 ```
 
 然后用 `zhangmin` / `gatekeeper-demo` 登一次，看三件事：
@@ -282,6 +332,30 @@ curl -s -o /dev/null -w 'workbench %{http_code}\n' http://127.0.0.1:3300/workben
 第 3 条是整个切换里最容易漏的：它的端点曾经和清库端点挂在同一组路由上，切到
 生产就 404，手册第二步直接撞墙。现在它在 [fixtures.ts](../../src/routes/fixtures.ts)，
 两种模式都挂，`test/production-routes.test.ts` 钉着这条不让它再退回去。
+
+### 回滚
+
+**切模式是可逆的**，把 `app.env` 的 `APP_MODE` 改回 `demo` 再重启即可，数据不受影响
+（会话会再失效一次）。版本回滚是另一件事：`current` 软链指回上一个 SHA 再重启，
+见部署手册第 5 节。
+
+### 用 docker compose 自建的部署
+
+同一套顺序，命令换成：
+
+```bash
+docker compose down
+```
+
+改 `.env`（`APP_MODE=production` 与两个强密钥），然后：
+
+```bash
+docker compose up -d --build
+```
+
+```bash
+docker compose exec -e ALLOW_MOCK_UPSTREAM=true app node dist/seed-demo.js
+```
 
 ## 六、常规运维
 
@@ -296,6 +370,16 @@ npm run seed:demo               # 再播一遍
 
 只想补上缺的、不动现有数据，就只跑第二条。
 
+systemd 部署上没有 `npm`，直接打 `dist/`。**必须经 `readlink -f` 解出真实路径**，
+否则经 `current` 软链调用时入口判定会失效（见第七节最后一行）：
+
+```bash
+REAL=$(readlink -f /opt/guiks-gd-content-moderation/current)
+sudo -u guiks bash -c "set -a; . /etc/guiks-gd-content-moderation/app.env; set +a; \
+  UPSTREAM_PROFILES_JSON= UPSTREAM_URL= ALLOW_MOCK_UPSTREAM=true \
+  node $REAL/dist/seed-demo.js"
+```
+
 ### 建一个非试用账号
 
 ```bash
@@ -303,7 +387,15 @@ npm run provision:user -- --username someone --display-name 某某 --roles edito
 # 口令从 stdin 读，不落命令行历史
 ```
 
+systemd 部署上：
+
+```bash
+sudo -u guiks node "$(readlink -f /opt/guiks-gd-content-moderation/current)/dist/provision-user.js" --username someone --display-name 某某 --roles editor
+```
+
 角色可选：`editor` / `department-head` / `supervising-leader` / `station-leader`。
+**只有 `station-leader` 能改判定依据与使用限制**，其余三个是只读
+（[permissions.ts](../../src/domain/permissions.ts)）。
 
 ### 备份
 
@@ -319,7 +411,7 @@ npm run provision:user -- --username someone --display-name 某某 --roles edito
 | --- | --- | --- |
 | 登录返 503 `authentication_unavailable` | `SESSION_SECRET` 不合规 | 按第一节重新生成，必须带 `base64:` 前缀 |
 | `/readyz` 返 503，`checks.model` 是 `missing` | 未配模型且未允许 mock | 配 `UPSTREAM_URL`，或设 `ALLOW_MOCK_UPSTREAM=true` |
-| `/readyz` 返 503，`checks.account` 是 `missing` | 生产库里还没有启用的非 demo 账号 | 跑一次 `seed:demo`，或 `provision:user` 建一个。切模式后这是正常中间态，见第五节 |
+| `/readyz` 返 503，`checks.account` 是 `missing` | 生产库里还没有启用的非 demo 账号 | 跑一次播种，或 `provision:user` 建一个。**在 demo 下播种过的库不会出现这条**（`chenxue` 本就是生产账号）；从没播过的库在切模式到播种之间会有这个窗口，是正常中间态，别回滚，见第五节 |
 | 播种报 `requires a persistent DATABASE_PATH` | 落到了 `:memory:` | 显式设 `DATABASE_PATH` |
 | 播种报 `login failed` | 账号口令与 `SEED_PASSWORD` 不一致 | 用 `--accounts` 清掉账号后重播，或改用正确口令 |
 | 播种报 `502 model_upstream_failed` | 未配模型且没开 mock | 这一次加 `ALLOW_MOCK_UPSTREAM=true`（只作用于该进程，`app.env` 不动） |
@@ -331,6 +423,7 @@ npm run provision:user -- --username someone --display-name 某某 --roles edito
 
 | 文档 | 内容 |
 | --- | --- |
+| [../DEPLOYMENT-TENCENT-CLOUD.html](../DEPLOYMENT-TENCENT-CLOUD.html) | **线上实例的部署手册**（Node + systemd + Nginx），发布与回滚流程 |
 | [user-manual.md](user-manual.md) | 试用手册，给使用者 |
 | [../demo/script.md](../demo/script.md) | 三分钟演示口播稿与操作清单 |
 | [../demo/runbook.md](../demo/runbook.md) | 演示前检查单与应急预案 |
