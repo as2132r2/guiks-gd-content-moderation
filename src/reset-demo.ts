@@ -13,9 +13,9 @@
  * 保留账号是默认行为：清数据是为了重播，重播不需要重建账号，
  * 而重建账号会把管理员改过的口令冲掉。
  */
-import { pathToFileURL } from 'node:url';
 
 import { config } from './config.js';
+import { isDirectRun } from './lib/entrypoint.js';
 import { closeWorkflowRepository, getWorkflowRepository } from './db/repository.js';
 import { SEED_ACCOUNTS } from './demo-dataset.js';
 
@@ -65,8 +65,7 @@ function main(): void {
   }
 }
 
-const entryPoint = process.argv[1];
-if (entryPoint && import.meta.url === pathToFileURL(entryPoint).href) {
+if (isDirectRun(import.meta.url)) {
   try {
     main();
   } catch (error: unknown) {
