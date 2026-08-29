@@ -9,6 +9,7 @@
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { config, isUpstreamModelAllowed, listUpstreamModels } from '../config.js';
 import {
   getWorkflowRepository,
   type PreparedPreflightMutation,
@@ -78,6 +79,7 @@ const createSchema = z.object({
 const transitionSchema = z.object({
   to: z.enum(manuscriptStatuses),
   role: z.enum(workflowRoles),
+  model: z.string().trim().min(1).max(100).optional(),
   reason: z.string().trim().min(1).max(2_000).optional(),
   countersignParty: z.string().trim().min(1).max(100).optional(),
   opinion: z.string().trim().min(1).max(2_000).optional(),
@@ -380,6 +382,11 @@ workbenchRoutes.get('/api/workbench', (c) =>
     : c.json({ error: 'role_not_allowed' }, 403),
 );
 
+/** Browser-safe model catalogue. Provider URLs and credentials never leave the server. */
+workbenchRoutes.get('/api/workbench-models', requireAuth, (c) =>
+  c.json({ defaultModel: config.upstreamModel, items: listUpstreamModels() }),
+);
+
 /**
  * 阶段① 素材入口 + 阶段② 入口准入, in one call.
  *
@@ -506,6 +513,7 @@ workbenchRoutes.get('/api/workbench/:id/contrast', (c) => {
 export interface AuthenticatedTransitionIntent {
   to: ManuscriptStatus;
   role: WorkflowRole;
+  model?: string;
   reason?: string;
   countersignParty?: string;
   opinion?: string;
@@ -513,7 +521,7 @@ export interface AuthenticatedTransitionIntent {
 
 type TransitionFailure = {
   ok: false;
-  status: 400 | 403 | 404 | 409 | 502 | 503;
+  status: 400 | 403 | 404 | 409 | 429 | 502 | 503;
   body: { error: string; message?: string };
 };
 
@@ -538,7 +546,7 @@ export async function executeAuthenticatedTransition(
       return { ok: false, status: 404, body: { error: 'manuscript_not_found' } };
     }
 
-    const { to, role, reason, countersignParty, opinion } = intent;
+    const { to, role, model, reason, countersignParty, opinion } = intent;
     const permission = requiredPermissionForTransition(manuscript.status, to);
     if (!mayActAs(user, role)) {
       return {
@@ -607,6 +615,17 @@ export async function executeAuthenticatedTransition(
     // one synchronous SQLite transaction for this edge.
     let generatedArtifacts: CreateArtifactInput[] | undefined;
     if (transition.from === 'admitted' && to === 'generated') {
+      const selectedModel = model ?? config.upstreamModel;
+      if (!isUpstreamModelAllowed(selectedModel)) {
+        return {
+          ok: false,
+          status: 400,
+          body: {
+            error: 'model_not_allowed',
+            message: '所选模型未配置或已停用，请刷新后重新选择。',
+          },
+        };
+      }
       let generated: Awaited<ReturnType<typeof generateBroadcastArtifacts>>;
       try {
         generated = await generateBroadcastArtifacts({
@@ -614,9 +633,20 @@ export async function executeAuthenticatedTransition(
           title: manuscript.title,
           sourceText: manuscript.sourceText,
           actor,
+          model: selectedModel,
         });
       } catch (error) {
         if (error instanceof UpstreamError) {
+          if (error.status === 429) {
+            return {
+              ok: false,
+              status: 429,
+              body: {
+                error: 'model_quota_unavailable',
+                message: '所选模型账户余额不足或无可用资源包，稿件状态未推进。请充值或切换其他模型。',
+              },
+            };
+          }
           return {
             ok: false,
             status: 502,

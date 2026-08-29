@@ -65,11 +65,13 @@ export async function generateBroadcastArtifacts(input: {
   title: string;
   sourceText: string;
   actor: string;
+  model?: string;
 }): Promise<GeneratedArtifact[]> {
   const out: GeneratedArtifact[] = [];
   for (const task of TASKS) {
     const { reply, telemetry } = await throughGateway(buildMessages(task, input.sourceText), {
       target: `把关人·生产层（${input.actor}）`,
+      ...(input.model ? { model: input.model } : {}),
       trace: {
         manuscriptId: input.manuscriptId,
         actor: input.actor,

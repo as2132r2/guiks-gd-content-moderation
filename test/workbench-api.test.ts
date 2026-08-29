@@ -1,5 +1,5 @@
-import { beforeAll, describe, expect, it } from 'vitest';
-import { config } from '../src/config.js';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { config, type UpstreamProfile } from '../src/config.js';
 import { getWorkflowRepository } from '../src/db/repository.js';
 import { app } from '../src/index.js';
 import { subscribe } from '../src/lib/bus.js';
@@ -137,6 +137,160 @@ describe('入口准入', () => {
 });
 
 describe('工作台主链', () => {
+  it('exposes only browser-safe model choices and renders the selector', async () => {
+    const response = await request('/api/workbench-models');
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      defaultModel: string;
+      items: Array<{ id: string; label: string; provider: string; mode: string }>;
+    };
+    expect(payload.items.length).toBeGreaterThan(0);
+    expect(payload.items.some((item) => item.id === payload.defaultModel)).toBe(true);
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain('upstreamKey');
+    expect(serialized).not.toContain('https://');
+
+    const html = await (await request('/')).text();
+    expect(html).toContain('id="model-select"');
+    expect(html).toContain('/api/workbench-models');
+  });
+
+  it('routes a generation through the model selected for this manuscript action', async () => {
+    const mutableConfig = config as unknown as {
+      upstreamModel: string;
+      upstreamProfiles: UpstreamProfile[];
+    };
+    const previous = {
+      upstreamModel: mutableConfig.upstreamModel,
+      upstreamProfiles: [...mutableConfig.upstreamProfiles],
+    };
+    mutableConfig.upstreamModel = 'deepseek-v4-flash';
+    mutableConfig.upstreamProfiles = [
+      {
+        model: 'deepseek-v4-flash',
+        label: 'DeepSeek V4 Flash',
+        provider: 'DeepSeek',
+        url: 'https://deepseek.example',
+        key: 'deepseek-test-key',
+        thinking: 'disabled',
+        timeoutMs: 45_000,
+      },
+      {
+        model: 'glm-5.3-flash',
+        label: 'GLM-5.3-Flash',
+        provider: '智谱 GLM',
+        url: 'https://glm.example/api/paas/v4',
+        key: 'glm-test-key',
+        thinking: 'provider-default',
+        timeoutMs: 120_000,
+      },
+    ];
+    const upstreamFetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      new Response(
+        JSON.stringify({
+          model: 'glm-5.3-flash',
+          choices: [{ message: { content: '模拟模型生成的稿件。' } }],
+          usage: { prompt_tokens: 20, completion_tokens: 8 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', upstreamFetch);
+
+    try {
+      const { body } = await create();
+      const response = await move(body.manuscript.id, {
+        to: 'generated',
+        role: 'editor',
+        model: 'glm-5.3-flash',
+      });
+      expect(response.status).toBe(200);
+
+      expect(upstreamFetch).toHaveBeenCalledTimes(2);
+      for (const [url, init] of upstreamFetch.mock.calls) {
+        expect(url).toBe('https://glm.example/api/paas/v4/chat/completions');
+        expect(JSON.parse(String(init?.body))).toMatchObject({ model: 'glm-5.3-flash' });
+      }
+      const after = await view(body.manuscript.id);
+      expect(after.artifacts.every((item) => item.artifact.model === 'glm-5.3-flash')).toBe(true);
+      expect(
+        after.trace
+          .filter((event) => event.kind === 'model-completed')
+          .every((event) => event.data.requestedModel === 'glm-5.3-flash'),
+      ).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      mutableConfig.upstreamModel = previous.upstreamModel;
+      mutableConfig.upstreamProfiles = previous.upstreamProfiles;
+    }
+  });
+
+  it('rejects a model outside the server allowlist', async () => {
+    const { body } = await create();
+    const response = await move(body.manuscript.id, {
+      to: 'generated',
+      role: 'editor',
+      model: 'unconfigured-model',
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'model_not_allowed' });
+    const after = await view(body.manuscript.id);
+    expect(after.manuscript.status).toBe('admitted');
+    expect(after.trace.filter((event) => event.kind.startsWith('model-'))).toEqual([]);
+  });
+
+  it('returns a clear retryable error when the selected model has no quota', async () => {
+    const mutableConfig = config as unknown as {
+      upstreamModel: string;
+      upstreamProfiles: UpstreamProfile[];
+    };
+    const previous = {
+      upstreamModel: mutableConfig.upstreamModel,
+      upstreamProfiles: [...mutableConfig.upstreamProfiles],
+    };
+    mutableConfig.upstreamModel = 'glm-5.3';
+    mutableConfig.upstreamProfiles = [
+      {
+        model: 'glm-5.3',
+        label: 'GLM-5.3',
+        provider: '智谱 GLM',
+        url: 'https://glm.example/api/paas/v4',
+        key: 'glm-test-key',
+        thinking: 'provider-default',
+        timeoutMs: 120_000,
+      },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"error":{"code":"1113"}}', { status: 429 })),
+    );
+
+    try {
+      const { body } = await create();
+      const response = await move(body.manuscript.id, {
+        to: 'generated',
+        role: 'editor',
+        model: 'glm-5.3',
+      });
+      expect(response.status).toBe(429);
+      expect(await response.json()).toMatchObject({
+        error: 'model_quota_unavailable',
+        message: expect.stringContaining('切换其他模型'),
+      });
+      const after = await view(body.manuscript.id);
+      expect(after.manuscript.status).toBe('admitted');
+      expect(after.artifacts).toEqual([]);
+      expect(after.trace.find((event) => event.kind === 'model-completed')?.data).toMatchObject({
+        outcome: 'error',
+        upstreamStatus: 429,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      mutableConfig.upstreamModel = previous.upstreamModel;
+      mutableConfig.upstreamProfiles = previous.upstreamProfiles;
+    }
+  });
+
   it('records a paired failure and keeps the manuscript retryable when the model is unavailable', async () => {
     const { body } = await create();
     const id = body.manuscript.id;

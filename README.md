@@ -57,12 +57,16 @@ docker compose up --build
 ```
 
 默认使用内置确定性 Mock，不需要 API Key。当前真实模型适配器使用 OpenAI-compatible
-Chat Completions；在 `.env` 设置统一的 `UPSTREAM_URL`、`UPSTREAM_KEY` 和
-`UPSTREAM_MODEL` 即可接入同协议代理，业务代码不得自行读取这些变量。Anthropic
-Messages/SSE 适配由轨道 A 接入后再启用。
+Chat Completions。单模型部署可继续设置 `UPSTREAM_URL`、`UPSTREAM_KEY`、`UPSTREAM_MODEL`；
+多模型部署使用 `UPSTREAM_PROFILES_JSON`，为每个模型独立配置 `model / label / provider /
+url / key / thinking / timeoutMs`，并让 `UPSTREAM_MODEL` 指向默认配置档。工作台会显示安全的
+模型列表，编辑可在每次生成前切换模型；URL 与 Key 始终只留在服务端。DeepSeek V4 的低延迟演示
+建议 `thinking=disabled`；GLM-5.3 / GLM-5.3-Flash 必须保留 `provider-default`，不能关闭思考。
+业务代码不得自行读取这些变量。Anthropic Messages/SSE 需要另行实现适配器。
 
-> 公网接入真实模型前，必须先合入轨道 C 的登录鉴权或在部署层统一保护所有业务路由。
-> `GATEWAY_TOKEN` 只保护原始 `/gateway/v1/messages` 接口，不能替代 Web 产品的用户鉴权。
+> 轨道 C 的登录鉴权与固定角色权限已经合入；production 仍必须配置强 `SESSION_SECRET`、
+> 独立 `GATEWAY_TOKEN` 和至少一个生产账号。`GATEWAY_TOKEN` 只保护原始
+> `/gateway/v1/messages` 接口，不能替代 Web 产品的用户鉴权。
 
 Docker 会以非 root 用户运行，并把 SQLite 数据保存在命名卷
 `moderation-data`。`docker compose down` 不会删除数据；只有明确执行
@@ -109,6 +113,7 @@ target）只在 demo 挂载，production 返回 404。HTTP `/gateway/v1/messages
 - `GET /readyz`：SQLite、模型与 production 身份/机器凭据就绪状态
 - `GET /api/meta`：无密钥的运行信息
 - `POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`：登录与签名会话
+- `GET /api/workbench-models`：工作台可选模型（仅返回名称、供应商与运行模式，不返回 URL / Key）
 - `GET/POST /api/manuscripts`：稿件列表与创建
 - `GET /api/manuscripts/:id`：稿件、产物、审核和追溯聚合
 - `POST /api/manuscripts/:id/artifacts`：保存播报稿或短视频文案

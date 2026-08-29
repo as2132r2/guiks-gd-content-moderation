@@ -4,7 +4,7 @@
 // — a naive, over-compliant target that provides value on benign asks and leaks
 // its planted secrets the moment a user pushes. Reliable on stage, needs no key.
 // Set UPSTREAM_URL to proxy a real OpenAI-compatible model instead.
-import { config, usingMockUpstream } from '../config.js';
+import { config, resolveUpstreamProfile, usingMockUpstream, type UpstreamProfile } from '../config.js';
 import { broadcastMockReply } from '../model/broadcast-mock.js';
 import { getScenario } from './scenarios.js';
 
@@ -29,6 +29,7 @@ export class UpstreamError extends Error {
   constructor(
     public readonly code:
       | 'mock_disabled'
+      | 'upstream_model_not_configured'
       | 'upstream_http_error'
       | 'upstream_invalid_response'
       | 'upstream_network_error'
@@ -81,20 +82,28 @@ export function parseOpenAiReply(
   };
 }
 
-/** Real OpenAI-compatible upstream (only used when UPSTREAM_URL is set). */
-async function realReply(messages: ChatMessage[], model: string): Promise<UpstreamReply> {
-  const base = config.upstreamUrl.replace(/\/$/, '');
+/** Real OpenAI-compatible upstream selected by its server-side model profile. */
+async function realReply(
+  messages: ChatMessage[],
+  model: string,
+  profile: UpstreamProfile,
+): Promise<UpstreamReply> {
+  const base = profile.url.replace(/\/$/, '');
   const url = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
+  const thinking =
+    profile.thinking === 'provider-default'
+      ? {}
+      : { thinking: { type: profile.thinking } };
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(config.upstreamKey ? { authorization: `Bearer ${config.upstreamKey}` } : {}),
+        ...(profile.key ? { authorization: `Bearer ${profile.key}` } : {}),
       },
-      body: JSON.stringify({ model, messages, stream: false }),
-      signal: AbortSignal.timeout(config.upstreamTimeoutMs),
+      body: JSON.stringify({ model, messages, stream: false, ...thinking }),
+      signal: AbortSignal.timeout(profile.timeoutMs),
     });
   } catch (error) {
     const name = error instanceof Error ? error.name : '';
@@ -116,8 +125,10 @@ export async function callUpstream(
   messages: ChatMessage[],
   model = config.upstreamModel,
 ): Promise<UpstreamReply> {
+  const profile = resolveUpstreamProfile(model);
+  if (!profile) throw new UpstreamError('upstream_model_not_configured');
   const inTokens = messages.reduce((n, m) => n + approxTokens(m.content), 0);
-  if (usingMockUpstream()) {
+  if (usingMockUpstream(model)) {
     if (!config.allowMockUpstream) throw new UpstreamError('mock_disabled');
     // 广电主链的生成请求先走稿件 mock；其余流量仍归当前 AuditGate 场景。
     const text = broadcastMockReply(messages) ?? getScenario().mockReply(messages);
@@ -134,5 +145,5 @@ export async function callUpstream(
 
   // A configured upstream is authoritative. Never turn its failure into a
   // successful-looking artifact: the caller must see and record the failure.
-  return realReply(messages, model);
+  return realReply(messages, model, profile);
 }

@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server';
 import { pathToFileURL } from 'node:url';
 import { Hono } from 'hono';
-import { config, requiresGatewayToken, usingMockUpstream } from './config.js';
+import { config, listUpstreamModels, requiresGatewayToken, usingMockUpstream } from './config.js';
 import { closeWorkflowRepository, getWorkflowRepository } from './db/repository.js';
 import { hasPermission } from './domain/permissions.js';
 import { readSessionUser } from './lib/session.js';
@@ -108,7 +108,7 @@ if (isMain) {
     // eslint-disable-next-line no-console
     console.log(
       `guiks-gd-content-moderation → http://localhost:${info.port}  ` +
-        `[上游: ${usingMockUpstream() ? '内置受控 mock' : config.upstreamUrl}]`,
+        `[上游模型: ${listUpstreamModels().map((item) => item.id).join(', ')}]`,
     );
   });
 

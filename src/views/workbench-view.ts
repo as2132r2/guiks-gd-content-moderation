@@ -163,6 +163,14 @@ export function renderWorkbench(): string {
   textarea.f { min-height:150px; line-height:1.7; }
 
   .actions-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+  .model-picker {
+    display:grid; grid-template-columns:minmax(160px,1fr) minmax(240px,2fr); gap:12px;
+    align-items:end; margin:12px 0; padding:12px 14px; border:1px solid var(--line-strong);
+    border-radius:10px; background:var(--panel-2);
+  }
+  .model-picker label { margin:0; }
+  .model-picker .model-note { font-size:12px; line-height:1.6; color:var(--muted); padding-bottom:2px; }
+  @media (max-width:720px) { .model-picker { grid-template-columns:1fr; } }
   .hint { font-size:12px; color:var(--faint); }
   .err { color:var(--block); font-size:13px; margin-top:10px; }
 
@@ -923,6 +931,7 @@ export function renderWorkbench(): string {
 
   var state = {
     list:[], view:null, user:null, role:null, currentId:null, prevShare:null, editing:null,
+    models:[], selectedModel:'', modelDefault:'', modelsError:'',
     editDrafts:{}, appliedSuggestions:{}, activeAnnotation:null,
     error:'', contrast:null, showContrast:false,
     present:query.get('present') === '1', display:initialDisplay, setupDisplay:'projector',
@@ -1010,6 +1019,20 @@ export function renderWorkbench(): string {
       recoverPresentationMain();
       renderList();
       checkPresentationReadiness();
+    });
+  }
+
+  function loadModels() {
+    return api('/api/workbench-models').then(function (data) {
+      state.models = data.items || [];
+      state.modelDefault = data.defaultModel || '';
+      if (!state.models.some(function (item) { return item.id === state.selectedModel; })) {
+        state.selectedModel = state.modelDefault || (state.models[0] && state.models[0].id) || '';
+      }
+      state.modelsError = '';
+    }).catch(function (error) {
+      state.models = [];
+      state.modelsError = error.message;
     });
   }
 
@@ -2099,6 +2122,19 @@ export function renderWorkbench(): string {
         '<textarea class="f" id="reason" style="min-height:76px" placeholder="例：县应急管理局已授权发布，见 8 月 27 日通报"></textarea></label>'
       : '';
 
+    var modelBox = view.manuscript.status === 'admitted' && mine.some(function (t) { return t.to === 'generated'; })
+      ? '<div class="model-picker">' +
+          '<label class="f"><span>本次生成模型</span><select class="f" id="model-select"' + (state.models.length ? '' : ' disabled') + '>' +
+            state.models.map(function (item) {
+              return '<option value="' + esc(item.id) + '"' + (item.id === state.selectedModel ? ' selected' : '') + '>' +
+                esc(item.label) + ' · ' + esc(item.provider) + '</option>';
+            }).join('') +
+          '</select></label>' +
+          '<div class="model-note">模型按单次生成选择；模型名、token 与耗时会进入统一网关留痕。' +
+            (state.modelsError ? '<br><span class="err">模型列表加载失败：' + esc(state.modelsError) + '</span>' : '') + '</div>' +
+        '</div>'
+      : '';
+
     var countersignBox = view.manuscript.status === 'countersign'
       ? '<div class="cs-fields">' +
           '<label class="f"><span>会签方</span><input class="f" id="countersign-party" maxlength="100" placeholder="例：县应急管理局"></label>' +
@@ -2108,7 +2144,7 @@ export function renderWorkbench(): string {
 
     if (!state.present) {
       return '<div class="card"><h2 class="hd" style="margin-top:0">下一步 · ' + esc(ROLE_LABEL[state.role]) + '</h2>' +
-        countersignBox + legacyReasonBox +
+        modelBox + countersignBox + legacyReasonBox +
         '<div class="actions-bar">' + mine.map(function (transition) { return actionButton(transition, transition.kind !== 'return'); }).join('') + '</div>' +
         (view.manuscript.status === 'revision' && !view.revisionReady
           ? '<div class="hint" style="margin-top:10px">请先修改并保存至少一处内容，再重新预检。</div>'
@@ -2118,7 +2154,7 @@ export function renderWorkbench(): string {
     }
 
     return '<div class="card present-action-card"><h2 class="hd" style="margin-top:0">推荐下一步 · ' + esc(ROLE_LABEL[state.role]) + '</h2>' +
-      countersignBox + primaryReasonBox +
+      modelBox + countersignBox + primaryReasonBox +
       '<div class="actions-bar">' + primaryButtons + '</div>' +
       (view.manuscript.status === 'revision' && !view.revisionReady
         ? '<div class="hint" style="margin-top:10px">先在下方修改并保存至少一处内容，重新预检才会启用。</div>'
@@ -2241,6 +2277,17 @@ export function renderWorkbench(): string {
     }
     state.error = '';
     var body = { to: to, role: state.role };
+    if (to === 'generated') {
+      var modelField = $('model-select');
+      var selectedModel = modelField ? modelField.value : state.selectedModel;
+      if (!selectedModel) {
+        state.error = '没有可用的生成模型，请检查服务端模型配置。';
+        renderPanel();
+        return;
+      }
+      state.selectedModel = selectedModel;
+      body.model = selectedModel;
+    }
     if (reason) body.reason = reason;
     if (state.view && state.view.manuscript.status === 'countersign' && to === 'final-review') {
       var partyField = $('countersign-party');
@@ -2622,6 +2669,11 @@ export function renderWorkbench(): string {
     state.editDrafts[field.getAttribute('data-draft-artifact')] = field.value;
   });
 
+  document.addEventListener('change', function (event) {
+    var model = event.target && event.target.closest ? event.target.closest('#model-select') : null;
+    if (model) state.selectedModel = model.value;
+  });
+
   document.addEventListener('fullscreenchange', function () {
     var btn = $('present-fullscreen');
     if (btn) btn.textContent = document.fullscreenElement ? '退出全屏' : '全屏';
@@ -2641,7 +2693,7 @@ export function renderWorkbench(): string {
 
   api('/api/auth/me').then(function (data) {
     applyUser(data.user);
-    return Promise.all([loadDemoFixtures(), loadList()]);
+    return Promise.all([loadDemoFixtures(), loadList(), loadModels()]);
   }).then(function () {
     if (state.present && state.presentationMainId) return openManuscript(state.presentationMainId);
     render();
