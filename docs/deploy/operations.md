@@ -49,7 +49,7 @@ npm run seed:demo:prod     # 生产构建（先 npm run build）
 
 它做两件事，**都是只增不删**：
 
-1. **建 5 个账号**（`zhangmin` / `lijianguo` / `wangzhiyuan` / `stationadmin` / `chenxue`），口令取 `SEED_PASSWORD`；已存在就跳过
+1. **建 5 个账号**（`zhangmin` / `lijianguo` / `wangzhiyuan` / `stationadmin` / `chenxue`），口令取 `SEED_PASSWORD`；已存在就跳过。**生产模式下遇到 demo 账号会就地转正**（保留 `users.id`，见第五节）
 2. **补齐 15 篇稿件**——前 7 篇是教学样本，覆盖准入三档、主链各阶段与一次退回；后 8 篇是本底数据。按标题判重，已播过的跳过
 
 预期输出：
@@ -111,6 +111,9 @@ npm run seed:demo:prod     # 生产构建（先 npm run build）
 ### 两个设计决定
 
 **账号已存在就跳过，不覆盖口令。** 重复播种不该把管理员改过的密码冲掉。
+唯一的例外是生产模式下的 demo 账号——它登不进去，留着没有意义，所以**就地转正**：
+换口令、翻 `is_demo`、`session_version` 加一，但 `users.id` 不动。
+**不动 id 是关键**，指向它的留痕才不会被 `ON DELETE SET NULL` 置空。
 
 **稿件通过真实 API 产生，不直接写库。** 稿件要经过准入、生成、预检、三审才会有留痕、句级来源和 AI 参与度。绕开路由直接插表，播出来的数据就和用户实际操作产生的不一样——**演示夹具一旦和真实流程不一致，就失去了它的全部意义**。
 
@@ -127,8 +130,13 @@ npm run reset:demo -- --yes --accounts   # 连试用账号一起清
 
 保留账号是默认行为：清数据通常是为了重播，而重建账号会把管理员改过的口令冲掉。
 
-> 删账号不会带走历史。留痕里的 `actor_user_id` 是 `ON DELETE SET NULL`，
-> 那条记录会显示「（无署名）」而不是消失——**责任链不能因为账号注销就断掉**。
+> 删账号不会带走历史，但会带走**归并**。留痕里的 `actor_user_id` 是
+> `ON DELETE SET NULL`：单篇稿件的责任链读的是留痕里的人名文本，**账号注销后
+> 照样显示是谁放行的**；塌掉的是监控看板「内容生产者」那一栏，它按
+> `actor_user_id` 分组，置空后全归进「（无署名）」一行。
+>
+> 也就是说：注销账号之后，说得清「这篇稿子谁签的」，说不清「这个人一共干了多少」。
+> **切部署模式不必付这个代价**——那条路走的是就地转正，见第五节。
 
 ## 五、从 demo 切到 production
 
@@ -154,7 +162,8 @@ npm run reset:demo -- --yes --accounts   # 连试用账号一起清
 
 ### 切换步骤
 
-**顺序不能反。** 下面按 compose 部署写；源码部署把 `docker compose exec app node dist/xxx.js`
+**库里的数据全部保留**——稿件、留痕、责任链、监控看板的按人归并，一样不少。
+下面按 compose 部署写；源码部署把 `docker compose exec app node dist/xxx.js`
 换成 `npm run xxx:prod` 即可。
 
 ```bash
@@ -169,25 +178,36 @@ docker compose down
 # 2. 起服。此时 /readyz 返 503（account: missing），是对的，见下一小节
 docker compose up -d --build
 
-# 3. 先清。清的是稿件，账号留着（下一步会自动重建）
-docker compose exec app node dist/reset-demo.js --yes
-
-# 4. 再播。临时走 mock，手册里的数字才对得上
+# 3. 播种。它会把试用账号就地转正，并补齐缺的稿件；临时走 mock，
+#    手册里的数字才对得上
 docker compose exec -e ALLOW_MOCK_UPSTREAM=true app node dist/seed-demo.js
 
-# 5. 验收
+# 4. 验收
 curl -s http://127.0.0.1:3300/readyz          # 期望 {"status":"ready"}
 ```
 
-**为什么必须先清后播。** `seed:demo` 在生产模式下遇到 demo 账号（`is_demo=1`）会
-**删掉重建**（[seed-demo.ts](../../src/seed-demo.ts) 的 `ensureAccounts`）——生产下这种账号
-一律拒登，留着没有意义。但留痕的 `actor_user_id` 是 `ON DELETE SET NULL`：
-**先播种的话，库里原有稿件的责任链会集体变成「（无署名）」。** 先清干净，就没有留痕
-可以被孤儿化。
+第 3 步的预期输出：
+
+```
+账号：新建 0，已存在 1，转正 4（原为 demo 账号，保留 user id 与历史归并）
+稿件：待播 0，已存在 15（只增不删，不动库里已有的数据）
+```
+
+**没有「清库」这一步。** `APP_MODE=production` 拒绝 demo 账号登录
+（[auth.ts](../../src/routes/auth.ts)），所以那 4 个内置账号必须处理掉——但处理方式是
+**就地转正**（[repository.ts](../../src/db/repository.ts) 的 `promoteDemoUserToProduction`），
+不是删掉重建。`users.id` 保住，指向它的 `actor_user_id` 就不会被
+`ON DELETE SET NULL` 置空，历史一条不掉。
+
+> **早期版本这里是「删掉重建」，所以旧文档要求先 `reset:demo` 清库。**
+> 现在不需要了。真想推倒重来是另一件事，见第四节。
 
 **为什么播种要走 mock。** 第三节那组数字（15 篇 / 已签发 10 / 留痕 315 条 /
 AI 参与度 95.0%）是确定性 mock 的结果。走真实模型播出来对不上，还要花钱。
 `ALLOW_MOCK_UPSTREAM=true` 只加在那一条命令上，`.env` 不动。
+
+**转正会让所有人重新登录一次。** `session_version` 加一，demo 模式下签发的
+会话立即失效——这是有意的，demo 会话不该跨进生产继续用。
 
 ### 播种之前 `/readyz` 会返 503
 
@@ -213,9 +233,12 @@ AI 参与度 95.0%）是确定性 mock 的结果。走真实模型播出来对�
 | `SEED_DEMO_USERS` | 生效 | **被忽略**（[config.ts](../../src/config.ts)） |
 | demo 账号（`is_demo=1`） | 可登 | **一律拒登**，口令对也不行 |
 | `/readyz` | 不查账号 | 库里没有启用的非 demo 账号就 503 |
-| 换 `SESSION_SECRET` | — | 全部在线会话立即失效，所有人要重登 |
+| 换 `SESSION_SECRET`、账号转正 | — | 全部在线会话立即失效，所有人要重登一次 |
 
-**不变的**：[user-manual.md](user-manual.md) 一个字都不用改。五个试用账号的用户名、
+**不变的**：**库里的数据一条不少**——稿件、留痕、责任链、句级来源、AI 参与度，
+以及监控看板按人归并的那一栏，切换前后逐字相同。试用者自己建的稿子也在。
+
+[user-manual.md](user-manual.md) 同样一个字都不用改。五个试用账号的用户名、
 显示名、口令（`SEED_PASSWORD`，默认 `gatekeeper-demo`）、15 篇稿件走位、
 「填入示例通稿」按钮、`/`、`/login`、`/workbench`、`/monitor`、`/console` 全部照旧。
 手册不用出第二版——账号名当初就是为此钉死的（见 [demo-dataset.ts](../../src/demo-dataset.ts) 顶部注释）。
@@ -226,25 +249,39 @@ AI 参与度 95.0%）是确定性 mock 的结果。走真实模型播出来对�
 
 ### 验收清单
 
+遗留路由与清库端点，**期望全部 404**：
+
 ```bash
 B=http://127.0.0.1:3300
-for p in /policy /api/policy /api/policy/presets /runtime /api/usage /report          /target/info /api/monitor/start /api/redteam/run          /api/demo/reset /api/demo/seed; do
-  printf '%-24s %s
-' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "$B$p")"   # 期望 404
+for p in /policy /api/policy /api/policy/presets /runtime /api/usage /report /target/info /api/monitor/start /api/redteam/run /api/demo/reset /api/demo/seed; do
+  printf '%-24s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "$B$p")"
 done
-curl -s -o /dev/null -w '/api/fixtures         %{http_code}
-' "$B/api/fixtures"                # 期望 401
-curl -s -o /dev/null -w '/api/monitor/overview %{http_code}
-' "$B/api/monitor/overview"        # 期望 401
-curl -s -o /dev/null -w '/workbench            %{http_code}
-' "$B/workbench"                   # 期望 302
 ```
 
-再用 `zhangmin` / `gatekeeper-demo` 登一次，按手册第 2 步点「填入示例通稿」——
-填进来 213 字的通稿就说明这条路是通的。**这一步是整个切换里最容易漏的**：
-它的端点曾经和清库端点挂在同一组路由上，切到生产就 404，手册第二步直接撞墙。
-现在它在 [fixtures.ts](../../src/routes/fixtures.ts)，两种模式都挂，`test/production-routes.test.ts`
-钉着这条不让它再退回去。
+挂着但要登录的三个，**期望 401 / 401 / 302**：
+
+```bash
+curl -s -o /dev/null -w 'fixtures  %{http_code}\n' http://127.0.0.1:3300/api/fixtures
+```
+
+```bash
+curl -s -o /dev/null -w 'overview  %{http_code}\n' http://127.0.0.1:3300/api/monitor/overview
+```
+
+```bash
+curl -s -o /dev/null -w 'workbench %{http_code}\n' http://127.0.0.1:3300/workbench
+```
+
+然后用 `zhangmin` / `gatekeeper-demo` 登一次，看三件事：
+
+1. **左栏稿件数和切换前一样**——切换不删数据，少一篇就是出事了
+2. **`/monitor` 的「内容生产者」还是原来那几个人**，没有多出「（无署名）」一行；
+   有的话说明账号被删掉重建了，不是转正
+3. 按手册第 2 步点**「填入示例通稿」**，填进来 213 字的通稿
+
+第 3 条是整个切换里最容易漏的：它的端点曾经和清库端点挂在同一组路由上，切到
+生产就 404，手册第二步直接撞墙。现在它在 [fixtures.ts](../../src/routes/fixtures.ts)，
+两种模式都挂，`test/production-routes.test.ts` 钉着这条不让它再退回去。
 
 ## 六、常规运维
 
