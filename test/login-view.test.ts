@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { renderLogin } from '../src/views/login-view.js';
 
+describe('login page wording', () => {
+  it('不写「县级」——产品面向融媒体中心，不限行政层级', () => {
+    const html = renderLogin({ demoLoginEnabled: true });
+    expect(html).not.toContain('县级');
+    expect(html).not.toMatch(/COUNTY/i);
+    expect(html).toContain('融媒体中心 · 稿件生产与监理');
+  });
+});
+
 describe('login redirect target', () => {
   it('keeps a same-origin path', () => {
     expect(renderLogin({ demoLoginEnabled: false, next: '/workbench' })).toContain(

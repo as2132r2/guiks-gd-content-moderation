@@ -188,14 +188,14 @@
 
 | # | 功能点 | 状态 | 负责人 | 证据 / 前置 |
 | --- | --- | --- | --- | --- |
-| 6.14 | 跨稿件聚合 API | ✅ | Leo + William | `GET /api/monitor/overview`（**挂 `requireAuth`**——横着看全台比单稿件端点更敏感）；SQL 在 [oversight.ts](../../src/db/oversight.ts) |
+| 6.14 | 跨稿件聚合 API | ✅ | Leo + William | `GET /api/monitor/overview`（**挂 `requireAuth` + `requireAuditRead`**——横着看全台比单稿件端点更敏感，与遗留审计面取齐）；SQL 在 [oversight.ts](../../src/db/oversight.ts) |
 | 6.15 | 时间维度（日 / 周 / 环节停留时长） | ✅ | Leo + William | 按自然日建稿量 + 各环节平均停留（从 status-changed 留痕成对推算） |
 | 6.16 | AI 参与度维度（可下钻到句） | ✅ | Leo + William | 全台来源构成 + 按稿件下钻，点稿件名跳 `/workbench#<id>` 看句级 |
 | 6.17 | 审核维度：各级退回率 / 通过率 | ✅ | Leo + William | 各级通过 / 退回数与退回率，≥30% 标黄 |
 | 6.18 | 规则命中维度（哪条规则最常命中） | ✅ | Leo + William | JSON1 展开 `trace_events.data_json` 的 `rules[]`，不另存表 |
 | 6.19 | **报道方向 / 题材维度** | ✅ | Leo + William | migration `0005` 加 `coverage_topic`（可空），编辑投料时手选。**未分类 ≠ 其他**；自动分类要过模型，归赛后 |
 | 6.20 | **内容生产者维度** | ✅ | Leo + William | 按 `actor_user_id` 归并——**认人不认角色**，一人多岗只算一个人头。建稿 / 改稿 / 审批 / 退回四栏 |
-| 6.21 | 监控看板界面（多维分析模板） | ✅ | Leo + William | `/monitor`。**追溯图谱答「这篇怎么走的」，看板答「这个台最近在怎么写稿」** |
+| 6.21 | 监控看板界面（多维分析模板） | ✅ | Leo + William | `/monitor`，入口在工作台顶栏（只对持有 `audit:read` 的角色显示）。**追溯图谱答「这篇怎么走的」，看板答「这个台最近在怎么写稿」** |
 
 ### 本块三个待定（要拍板才能往下做）
 
@@ -220,7 +220,7 @@
 | 7.5 | Docker + compose | ✅ | Leo | 本地实测 healthy，`/workbench` 可开 |
 | 7.6 | CI（typecheck + 测试 + 构建 + 容器冒烟） | ✅ | Leo | [ci.yml](../../.github/workflows) |
 | 7.7 | 自动化测试 | ✅ | 全体 | Vitest 全量回归 + GitHub Actions。合并轨道 C 后实测 **33 文件 / 242 用例**全绿（8/29 11:34） |
-| 7.8 | 首页 `/` 指向工作台 | ✅ | William | `/` = 工作台，`/workbench` 保留别名，遗留控制台移至 `/console` |
+| 7.8 | 首页 `/` 是产品介绍页 | ✅ | William | `/` = 公开介绍页（[landing-view.ts](../../src/views/landing-view.ts)，醒目「进入试用」+ 试用账号），工作台收敛到 `/workbench`，遗留控制台在 `/console` |
 | 7.9 | 红队 probe 改写为广电（诱导导向 / 编造事实 / 未标识） | ✅ | 轨道 A | 12 发已覆盖导向、事实、标识、可追溯、版权 |
 | 7.10 | 评分五维改名重算（导向/事实/标识/可追溯/版权） | ✅ | 轨道 A | `computeScorecard()` 已按五个广电维度重算权重与说明 |
 | 7.11 | 遗留四页（console/policy/runtime/report）处置 | ⬜ | 轨道 B | 2238 行死重，讲广电时一个都不用 |
@@ -345,7 +345,7 @@
 | **P3** | 留痕断点补齐 | 6.11–6.13 | Leo | 赛后 |
 | **P3** | 分析维度补全 | 6.18–6.20 | Leo | 赛后 |
 
-**P0 全部清空**：6.7 追溯图谱、7.8 首页、5.9 校次契约均已合并进 `main`。
+**P0 全部清空**：6.7 追溯图谱、7.8 首页（现为产品介绍页）、5.9 校次契约均已合并进 `main`。
 剩下的都是 P1 及以下，**三条轨道无阻塞，可全速并行**。
 
 **8/29 20:00 代码冻结前，P0 和 P1 必须全绿。** P2 做不完就不做，别为了 P2 动主链。

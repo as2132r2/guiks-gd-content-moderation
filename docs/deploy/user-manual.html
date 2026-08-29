@@ -293,7 +293,7 @@ footer {
 
 <h2 id="s2">二、登录</h2>
 
-<p>打开站点地址，用下面任一账号登录。<strong>密码都是 <code>gatekeeper-demo</code></strong>。</p>
+<p>打开站点地址先看到<strong>产品介绍页</strong>（不用登录），点右上角或正文里的 <strong>「进入试用」</strong>，再用下面任一账号登录。<strong>密码都是 <code>gatekeeper-demo</code></strong>。</p>
 
 <div class="scroll">
 <table>
@@ -312,15 +312,16 @@ footer {
   <p><strong>张敏一人多岗不是偷懒设计。</strong> 融媒体中心常常只有两三个人，一人多岗是实况。合并的是人，不是责任——<strong>每一次审批仍然分别留痕</strong>。</p>
 </div>
 
-<p>两个页面：</p>
+<p>三个页面：</p>
 <ul>
-  <li><strong>稿件工作台</strong> —— 干活的地方</li>
-  <li><strong>全流程监控</strong>（<code>/monitor</code>）—— 看全局态势的地方</li>
+  <li><code>/</code> <strong>产品介绍页</strong> —— 公开，不用登录。「进入试用」按钮和试用账号都写在上面</li>
+  <li><code>/workbench</code> <strong>稿件工作台</strong> —— 干活的地方，登录后直接落在这里</li>
+  <li><code>/monitor</code> <strong>全流程监控</strong> —— 看全局态势的地方，从工作台顶栏右上角的「全流程监控」进去</li>
 </ul>
 
 <h2 id="s3">三、十来分钟走一遍（推荐路径）</h2>
 
-<p>用 <code>zhangmin</code> 登录。左栏已经有 15 篇稿件：<strong>上面 7 篇是给你练手的</strong>，下面 8 篇是铺在过去几天的本底数据，用来让监控看板有分布可看，不用管它们。</p>
+<p>用 <code>zhangmin</code> 登录，进 <code>/workbench</code>。左栏已经有 15 篇稿件：<strong>上面 7 篇是给你练手的</strong>，下面 8 篇是铺在过去几天的本底数据，用来让监控看板有分布可看，不用管它们。</p>
 
 <section class="step" id="s3-1">
   <div class="step-head"><span class="step-num">1</span><h3>看入口准入的三档 <span class="step-time">· 2 分钟</span></h3></div>
@@ -406,7 +407,7 @@ footer {
 <section class="step" id="s3-7">
   <div class="step-head"><span class="step-num">7</span><h3>看全局态势 <span class="step-time">· 1 分钟</span></h3></div>
   <p>前六步看的是<strong>一篇稿子怎么走的</strong>，监控看板看的是<strong>这个台最近在怎么写稿</strong>——两件事。</p>
-  <p>打开<strong>全流程监控</strong>（<code>/monitor</code>，五个账号都进得去；<code>stationadmin</code> 只看不批，拿它看这一屏最顺手）。试用环境里已经有 15 篇稿件铺在过去七天，所以每一栏都有分布可看：</p>
+  <p>点工作台顶栏右上角的<strong>「全流程监控」</strong>（<code>/monitor</code>，五个账号都进得去；<code>stationadmin</code> 只看不批，拿它看这一屏最顺手）。试用环境里已经有 15 篇稿件铺在过去七天，所以每一栏都有分布可看：</p>
   <div class="scroll">
   <table>
     <thead><tr><th>看板上的栏目</th><th>它回答什么</th><th>试用环境里大概是什么样</th></tr></thead>
@@ -442,6 +443,8 @@ footer {
 </div>
 
 <p><strong>验证越权拦得住</strong>：用 <code>lijianguo</code>（只有复审权）登录，去点终审——它推不动，页面会告诉你这一步该谁做。</p>
+
+<p><strong>看全局态势</strong>：点工作台顶栏右上角的<strong>「全流程监控」</strong>。那里有报道方向分布、各级退回率、规则命中排行、<strong>按人统计的生产量</strong>，以及<strong>按日的签发时 AI 参与度趋势</strong>。</p>
 
 <h2 id="s5">五、常见问题</h2>
 
