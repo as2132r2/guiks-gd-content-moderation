@@ -24,9 +24,12 @@ describe('AuditGate end-to-end (in-process)', () => {
   });
 
   it('serves the console and state', async () => {
+    // 根路径是公开的产品介绍页；干活的工作台在 /workbench，未登录才跳登录。
     const root = await app.request('/');
-    expect(root.status).toBe(302);
-    expect(root.headers.get('location')).toBe('/login?next=/');
+    expect(root.status).toBe(200);
+    const workbench = await app.request('/workbench');
+    expect(workbench.status).toBe(302);
+    expect(workbench.headers.get('location')).toBe('/login?next=/workbench');
     const state = (await (await request('/api/state')).json()) as {
       audits: unknown[];
       findings: unknown[];

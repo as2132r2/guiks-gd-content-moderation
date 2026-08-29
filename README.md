@@ -45,7 +45,8 @@ cp .env.example .env
 npm run dev
 ```
 
-打开 <http://localhost:3300>，未登录会跳转到 `/login`。demo/test 模式会幂等创建四个演示账号；
+打开 <http://localhost:3300> 是产品介绍页（公开，无需登录），点「进入试用」进 `/workbench`，
+未登录会跳转到 `/login`。demo/test 模式会幂等创建四个演示账号；
 默认密码为 `gatekeeper-demo`，也可以在登录页一键进入。`zhangmin`（张敏）持有全部三个流程角色，
 可在同一工作台切换本次行使身份；`lijianguo`、`wangzhiyuan` 分别只有主任和分管领导角色，
 `stationadmin` 是只读台领导账号。production 不创建这些已知密码账号，也禁止一键登录。

@@ -150,7 +150,7 @@ describe('工作台主链', () => {
     expect(serialized).not.toContain('upstreamKey');
     expect(serialized).not.toContain('https://');
 
-    const html = await (await request('/')).text();
+    const html = await (await request('/workbench')).text();
     expect(html).toContain('id="model-select"');
     expect(html).toContain('/api/workbench-models');
   });
@@ -782,10 +782,10 @@ describe('工作台主链', () => {
     expect(contrast.wouldShip).toEqual([]);
   });
 
-  it('serves the workbench at the root path, not the legacy console', async () => {
-    const root = await request('/');
-    expect(root.status).toBe(200);
-    const html = await root.text();
+  it('serves the workbench at /workbench, not at the root path', async () => {
+    const workbench = await request('/workbench');
+    expect(workbench.status).toBe(200);
+    const html = await workbench.text();
     expect(html).toContain('把关人 · 稿件工作台');
     expect(html).not.toContain('AuditGate');
     expect(html).toContain('id="countersign-party"');
@@ -810,7 +810,7 @@ describe('工作台主链', () => {
   });
 
   it('ships an explicit guided presentation mode without changing the API surface', async () => {
-    const response = await request('/?present=1&display=projector');
+    const response = await request('/workbench?present=1&display=projector');
     expect(response.status).toBe(200);
     const html = await response.text();
 

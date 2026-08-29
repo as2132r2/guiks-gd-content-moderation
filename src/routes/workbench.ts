@@ -365,10 +365,8 @@ function preparePreflight(manuscriptId: string): PreparedPreflightMutation[] | u
 
 export const workbenchRoutes = new Hono<AuthEnv>();
 
-// 根路径就是工作台。/workbench 保留为别名，旧链接和书签不会断。
-workbenchRoutes.get('/', async (c) =>
-  (await readSessionUser(c)) ? c.html(renderWorkbench()) : c.redirect('/login?next=/'),
-);
+// 根路径是产品介绍页（src/routes/landing.ts）。工作台只在 /workbench——
+// 访客点进来先看懂这是什么，再决定要不要登录。
 workbenchRoutes.get('/workbench', async (c) =>
   (await readSessionUser(c))
     ? c.html(renderWorkbench())
