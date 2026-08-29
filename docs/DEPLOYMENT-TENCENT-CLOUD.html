@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>腾讯云原生部署运行手册｜广电内容把关人</title>
+  <style>
+    body{max-width:980px;margin:40px auto;padding:0 22px;font:15px/1.7 system-ui,"Microsoft YaHei",sans-serif;color:#172033;background:#f7f9fc}article{background:#fff;padding:36px;border-radius:14px;box-shadow:0 2px 16px #18305812}h1,h2{color:#102a43}h2{margin-top:34px;border-bottom:1px solid #e6edf5;padding-bottom:8px}code,pre{font-family:ui-monospace,Consolas,monospace}code{background:#eef3f8;padding:2px 5px;border-radius:4px}pre{background:#102a43;color:#eaf2f8;padding:16px;border-radius:8px;overflow:auto}.warn{border-left:4px solid #d97706;background:#fff7ed;padding:12px 16px}.ok{border-left:4px solid #15803d;background:#f0fdf4;padding:12px 16px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #dce5ef;padding:9px;text-align:left}th{background:#eef3f8}</style>
+</head>
+<body><article>
+  <h1>腾讯云原生部署运行手册</h1>
+  <p>适用项目：<code>guiks-gd-content-moderation</code>。采用 Node.js + systemd + Nginx，不运行 Docker。应用只监听本机 <code>127.0.0.1:3300</code>，公网由 Nginx 转发。</p>
+  <div class="warn"><strong>当前是比赛临时公开 Demo：</strong>使用 HTTP 80 和真实模型，不承载真实业务数据。比赛结束后应停服或改为 Mock；若转为正式业务，必须启用域名 HTTPS 并完成适用的备案与合规流程。</div>
+  <h2>0. 已部署实例快照（2026-08-29）</h2>
+  <table><tr><th>项目</th><th>实际值</th></tr><tr><td>服务器</td><td>腾讯云 CVM，公网地址 <code>106.55.47.251</code></td></tr><tr><td>系统与规格</td><td>Ubuntu 24.04.4 LTS；2 vCPU、约 2 GB 内存；40 GB 系统盘（部署时约 30 GB 可用）</td></tr><tr><td>公网入口</td><td><code>http://106.55.47.251/</code>（Nginx TCP 80）</td></tr><tr><td>应用入口</td><td><code>guiks-gd-content-moderation.service</code>，Node.js v22.23.2，应用仅监听 <code>127.0.0.1:3300</code></td></tr><tr><td>当前发布</td><td><code>3f749a4-demo</code>（远程 main 的 <code>3f749a4</code>，附加 HOST 回环绑定）</td></tr><tr><td>数据与配置</td><td>SQLite：<code>/var/lib/guiks-gd-content-moderation/app.db</code>；配置：<code>/etc/guiks-gd-content-moderation/app.env</code>（root:guiks、0640）</td></tr><tr><td>运行模式</td><td><code>APP_MODE=demo</code>；DeepSeek V4 Flash、GLM-5.3、GLM-5.3-Flash 均已完成最小调用验证</td></tr></table>
+  <h2>1. 资源与网络基线</h2>
+  <table><tr><th>项目</th><th>生产建议</th></tr><tr><td>实例</td><td>CVM，2 vCPU / 4 GB RAM；50 GB 系统盘 + 50–100 GB 独立数据盘</td></tr><tr><td>系统</td><td>Ubuntu 24.04 LTS；创建无登录权限的 <code>guiks</code> 服务账号</td></tr><tr><td>安全组入站</td><td>TCP 80、443 对公网；TCP 22 仅运维固定 IP/VPN；不放通 3300</td></tr><tr><td>安全组出站</td><td>DNS、NTP、HTTPS（供系统更新、DeepSeek/GLM API、证书服务）</td></tr><tr><td>持久化</td><td><code>/var/lib/guiks-gd-content-moderation/app.db</code> 位于独立数据盘</td></tr></table>
+  <h2>2. 服务器初始化</h2>
+  <pre>sudo apt-get update
+sudo apt-get install -y nginx curl ca-certificates
+# 安装受支持的 Node.js 22；部署前以 node --version 确认。
+sudo useradd --system --home /opt/guiks-gd-content-moderation --shell /usr/sbin/nologin guiks
+sudo install -d -o guiks -g guiks -m 0750 /opt/guiks-gd-content-moderation/releases
+sudo install -d -o guiks -g guiks -m 0750 /var/lib/guiks-gd-content-moderation
+sudo install -d -o root -g guiks -m 0750 /etc/guiks-gd-content-moderation</pre>
+  <p>应用构建在 CI 或受控发布机执行：<code>npm ci</code>、<code>npm run check</code>、<code>npm run build</code>、<code>npm prune --omit=dev</code>。只上传 <code>dist/</code>、生产 <code>node_modules/</code> 和必要的包清单，使用 Git SHA 作为发布目录名。</p>
+  <h2>3. 密钥、模型与账号</h2>
+  <p>从 <code>deploy/app.env.example</code> 复制到服务器 <code>/etc/guiks-gd-content-moderation/app.env</code>，以 <code>root:guiks</code>、<code>0640</code> 保存。该文件包含模型 Key，不可上传仓库、不可写入 systemd unit、不可回显到日志。</p>
+  <div class="ok">生产必须分别生成 <code>SESSION_SECRET</code> 与 <code>GATEWAY_TOKEN</code>，均为不同的 <code>base64:</code> + 至少 32 随机字节。设置 <code>APP_MODE=production</code>、<code>ALLOW_MOCK_UPSTREAM=false</code>，并配置至少一个真实模型档。</div>
+  <p>多模型通过 <code>UPSTREAM_PROFILES_JSON</code> 注入。DeepSeek 使用 <code>thinking=disabled</code>；GLM-5.3 / GLM-5.3-Flash 必须使用 <code>thinking=provider-default</code>。应用不会把 URL 或 Key 返回给浏览器。</p>
+  <p>首次启动后创建生产账号：<code>sudo -u guiks /usr/bin/node /opt/guiks-gd-content-moderation/current/dist/provision-user.js --username news-editor --display-name "生产编辑" --roles editor</code>。使用交互隐藏输入；不可用 <code>--password</code>。</p>
+  <h2>4. systemd 与 Nginx</h2>
+  <p>将仓库中的 <code>deploy/guiks-gd-content-moderation.service</code> 复制到 <code>/etc/systemd/system/</code>；将 Nginx 模板替换域名和证书路径后放到 <code>/etc/nginx/sites-available/</code> 并启用。执行 <code>nginx -t</code> 后 reload。证书可由腾讯云 SSL 控制台或 ACME 获取，续期必须纳入运维日历。</p>
+  <pre>sudo systemctl daemon-reload
+sudo systemctl enable --now guiks-gd-content-moderation
+curl --fail http://127.0.0.1:3300/readyz
+sudo nginx -t && sudo systemctl reload nginx
+curl --fail https://YOUR_DOMAIN/readyz</pre>
+  <h2>5. 发布、验证与回滚</h2>
+  <ol><li>检查工作树、测试和构建通过。</li><li>先执行 SQLite 逻辑备份，再创建云盘快照。</li><li>上传新 SHA 到 <code>releases/&lt;sha&gt;</code>，用原子软链接更新 <code>current</code>。</li><li>重启 systemd，检查 <code>/readyz</code>、HTTPS 登录、一个授权工作流与模型调用。</li><li>异常时将 <code>current</code> 指回上一个 SHA、重启服务；数据问题再按备份或快照恢复。</li></ol>
+  <h2>6. 备份与监控</h2>
+  <p>每日执行 SQLite 一致性逻辑备份并上传 COS，保留至少 30 天；云盘自动快照保留 7–14 天。告警项：<code>/readyz</code> 非 200、systemd 服务失败、磁盘大于 80%、内存压力、连续 5xx、模型 429/502 与证书到期。</p>
+  <h2>7. 当前 Demo 运维要点</h2>
+  <ul><li>安全组仅需公开 TCP 80；TCP 3300 不公开，SSH 22 应限制为运维 IP。</li><li>服务检查：<code>sudo systemctl status guiks-gd-content-moderation</code>；就绪检查：<code>curl http://127.0.0.1:3300/readyz</code>。</li><li>当前公开 Demo 使用真实模型，任何登录用户的生成都可能消耗模型额度；比赛结束后应停用服务或设置 <code>ALLOW_MOCK_UPSTREAM=true</code> 后重启服务。</li><li>禁止将 <code>app.env</code>、SSH 私钥、模型 Key、网关 Token 或管理员密码提交到仓库、截图或日志。</li></ul>
+</article></body></html>

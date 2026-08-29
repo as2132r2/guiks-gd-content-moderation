@@ -108,13 +108,23 @@ if (config.appMode === 'demo') {
 const entryPoint = process.argv[1];
 const isMain = entryPoint !== undefined && import.meta.url === pathToFileURL(entryPoint).href;
 if (isMain) {
-  const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
+  // The production process lives behind a local reverse proxy. Binding it to
+  // loopback makes an accidental security-group rule unable to expose the
+  // application or machine gateway directly on port 3300.
+  const server = serve(
+    {
+      fetch: app.fetch,
+      port: config.port,
+      hostname: process.env.HOST ?? (config.appMode === 'production' ? '127.0.0.1' : undefined),
+    },
+    (info) => {
     // eslint-disable-next-line no-console
     console.log(
       `guiks-gd-content-moderation → http://localhost:${info.port}  ` +
         `[上游模型: ${listUpstreamModels().map((item) => item.id).join(', ')}]`,
     );
-  });
+    },
+  );
 
   let shuttingDown = false;
   const shutdown = () => {

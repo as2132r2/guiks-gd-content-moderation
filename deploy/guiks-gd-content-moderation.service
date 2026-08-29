@@ -1,0 +1,26 @@
+[Unit]
+Description=Guiks GD Content Moderation
+Documentation=https://github.com/REPLACE_WITH_ORGANIZATION/guiks-gd-content-moderation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=guiks
+Group=guiks
+WorkingDirectory=/opt/guiks-gd-content-moderation/current
+EnvironmentFile=/etc/guiks-gd-content-moderation/app.env
+# Preserve the release symlink for index.ts's direct-execution guard.
+ExecStart=/usr/bin/node --preserve-symlinks-main /opt/guiks-gd-content-moderation/current/dist/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/guiks-gd-content-moderation
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
