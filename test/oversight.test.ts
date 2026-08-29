@@ -163,6 +163,54 @@ describe('全流程监控聚合', () => {
     expect(anonymous.status).toBe(401);
   });
 
+  it('groups by 报道方向 and keeps 未分类 distinct from 其他', async () => {
+    await post('/api/demo/reset');
+    await post('/api/demo/seed');
+
+    const data = await overview();
+    // 三组样例分别是 民生 / 其他 / 文化教育。
+    expect(find(data.topics, 'livelihood')).toBe(1);
+    expect(find(data.topics, 'other')).toBe(1);
+    expect(find(data.topics, 'culture')).toBe(1);
+
+    // 未填的键是 null，不能被折进「其他」——老稿件在这个字段之前建的。
+    const unclassified = data.topics.find((row) => row.key === null);
+    expect(unclassified).toBeUndefined();
+  });
+
+  it('attributes work to people, not roles', async () => {
+    await post('/api/demo/reset');
+    await walkOne();
+
+    const data = await overview();
+    // 张敏一个人走完了编辑、主任、分管领导三步（角色可合并），
+    // 但按 actor_user_id 归并后只能是一个人头，不是三个。
+    const named = data.producers.filter((row) => row.userId !== null);
+    expect(named).toHaveLength(1);
+
+    const person = named[0]!;
+    expect(person.displayName).toBeTruthy();
+    expect(person.created).toBe(1);
+    expect(person.revised).toBe(1);
+    expect(person.reviewed).toBeGreaterThanOrEqual(3);
+    expect(person.returned).toBe(0);
+  });
+
+  it('trends signed AI 参与度 by day, and says so when a day signed nothing', async () => {
+    await post('/api/demo/reset');
+    await post('/api/demo/seed');
+    await walkOne();
+
+    const data = await overview();
+    expect(data.trend.length).toBeGreaterThan(0);
+
+    const signedDay = data.trend.find((row) => row.signedAiShare !== null);
+    expect(signedDay).toBeDefined();
+    // 改过一句，所以签发时不该是 100%——那正是这条线要暴露的东西。
+    expect(signedDay!.signedAiShare).toBeLessThan(1);
+    expect(signedDay!.manuscripts).toBeGreaterThan(0);
+  });
+
   it('serves the board with no external resource', async () => {
     const response = await app.request('/monitor');
     expect(response.status).toBe(200);

@@ -1382,6 +1382,14 @@ export function renderWorkbench(): string {
         '<option value="novel">文学作品</option>' +
         '<option value="other">其他</option>' +
       '</select></label>' +
+      '<label class="f"><span>报道方向</span><select class="f" id="nf-topic">' +
+        '<option value="politics">时政</option>' +
+        '<option value="livelihood">民生</option>' +
+        '<option value="economy">经济</option>' +
+        '<option value="agriculture">三农</option>' +
+        '<option value="culture">文化教育</option>' +
+        '<option value="other">其他</option>' +
+      '</select></label>' +
       '<label class="f"><span>正文</span><textarea class="f" id="nf-text" placeholder="把通稿全文粘到这里…"></textarea></label>' +
       '<div class="actions-bar">' +
         '<button class="btn primary" id="nf-submit">提交入口准入</button>' +
@@ -2241,6 +2249,7 @@ export function renderWorkbench(): string {
     var payload = {
       title: $('nf-title').value.trim(),
       sourceType: $('nf-type').value,
+      coverageTopic: $('nf-topic') ? $('nf-topic').value : undefined,
       sourceText: $('nf-text').value.trim()
     };
     if (!payload.title || !payload.sourceText) {
@@ -2579,7 +2588,8 @@ export function renderWorkbench(): string {
     if (target.closest('#new-btn')) { showNew(); return; }
     if (target.closest('#nf-sample')) {
       api('/api/demo/fixtures').then(function (data) {
-        var t = $('nf-title'), y = $('nf-type'), x = $('nf-text');
+        var t = $('nf-title'), y = $('nf-type'), x = $('nf-text'), k = $('nf-topic');
+        if (k && data.mainNotice.coverageTopic) k.value = data.mainNotice.coverageTopic;
         if (t) t.value = data.mainNotice.title;
         if (y) y.value = data.mainNotice.sourceType;
         if (x) x.value = data.mainNotice.sourceText;

@@ -10,7 +10,7 @@ describe('track C migration and account repository', () => {
   let database: DatabaseHandle | undefined;
   afterEach(() => database?.close());
 
-  it('replays 0001 through 0004 from an empty database', () => {
+  it('replays every migration from an empty database', () => {
     const sqlite = new BetterSqlite3(':memory:');
     migrateDatabase(sqlite);
     const ids = sqlite
@@ -21,6 +21,7 @@ describe('track C migration and account repository', () => {
       '0002_sentence_origin',
       '0003_track_c_accounts',
       '0004_track_a_workflow',
+      '0005_coverage_topic',
     ]);
     expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'users'").get()).toBeTruthy();
     const userColumns = sqlite.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
