@@ -29,7 +29,7 @@ const find = (list: Array<{ key: string; count: number }>, key: string) =>
 
 /** 走一份稿件到签发，顺带改两句，让每个维度都有料。 */
 async function walkOne() {
-  const fixtures = (await (await request('/api/demo/fixtures')).json()) as {
+  const fixtures = (await (await request('/api/fixtures')).json()) as {
     mainNotice: { title: string; sourceType: string; sourceText: string };
   };
   const created = (await (await post('/api/workbench', fixtures.mainNotice)).json()) as {
@@ -298,7 +298,7 @@ describe('工作台顶栏的监控入口', () => {
   };
 
   it('puts a link to the board in the topbar, hidden until the account is known', () => {
-    const html = renderWorkbench();
+    const html = renderWorkbench({ demoToolsEnabled: true });
 
     expect(html).toContain(
       '<a class="topbar-link" id="monitor-link" href="/monitor" hidden>全流程监控</a>',
@@ -307,16 +307,16 @@ describe('工作台顶栏的监控入口', () => {
   });
 
   it('derives the allow-list from the permission matrix instead of copying it', () => {
-    expect(allowList(renderWorkbench())).toEqual(
+    expect(allowList(renderWorkbench({ demoToolsEnabled: true }))).toEqual(
       systemRoles.filter((role) => rolePermissions[role].includes('audit:read')),
     );
     // 台领导没有任何流程角色，却正是这块看板的主要读者。
-    expect(allowList(renderWorkbench())).toContain('station-leader');
+    expect(allowList(renderWorkbench({ demoToolsEnabled: true }))).toContain('station-leader');
   });
 
   it('hides the entry from a role the matrix stops granting audit:read', async () => {
     await withoutAuditRead('station-leader', async () => {
-      expect(allowList(renderWorkbench())).not.toContain('station-leader');
+      expect(allowList(renderWorkbench({ demoToolsEnabled: true }))).not.toContain('station-leader');
     });
   });
 });

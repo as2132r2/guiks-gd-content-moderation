@@ -4,6 +4,11 @@
  * ⚠️ **只在 `APP_MODE=demo` 下挂载**（见 [index.ts](../index.ts)）。
  * 清空整库的端点不该存在于生产构建里。
  *
+ * **这个文件里只放会清空整库的端点**，所以前缀 `/api/demo/*` 与它一一对应：
+ * 生产下这个前缀底下什么都不存在。只读的取素材接口在
+ * [fixtures.ts](fixtures.ts)，两种模式都挂。往这里加端点前先问一句——
+ * 它在生产下消失是不是正确的？不是就别放这儿。
+ *
  * 为什么不在这里播种一篇「已签发」的样例：走完整条链需要生成、预检与六次
  * 流转，那套副作用内联在 [workbench.ts](workbench.ts) 的 transition handler
  * 里。把它抽出来复用会和轨道 A 正在进行的状态机改造撞车，而重复实现一份
@@ -16,7 +21,7 @@ import type { ContentSourceType } from '../domain/contracts.js';
 import { mayPerformAs, workflowActorLabel } from '../domain/permissions.js';
 import { requireAuth, type AuthEnv } from '../middleware/auth.js';
 import { runAdmission } from '../rules/index.js';
-import { DEMO_FIXTURES, MAIN_NOTICE, type DemoFixture } from './demo-fixtures.js';
+import { DEMO_FIXTURES, type DemoFixture } from './demo-fixtures.js';
 import { admissionStatusOf } from './workbench.js';
 
 export const demoRoutes = new Hono<AuthEnv>();
@@ -89,8 +94,3 @@ demoRoutes.post('/api/demo/seed', (c) => {
     .reverse();
   return c.json({ deleted, created });
 });
-
-/** 表单「填入示例」按钮取主通稿正文，免去现场粘贴 200 字。 */
-demoRoutes.get('/api/demo/fixtures', (c) =>
-  c.json({ mainNotice: MAIN_NOTICE, cases: DEMO_FIXTURES }),
-);

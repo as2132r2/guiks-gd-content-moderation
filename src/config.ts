@@ -82,6 +82,13 @@ export const gatewayTokenReadyFor = (
 
 export const demoLoginEnabledFor = (mode: 'demo' | 'production'): boolean => mode === 'demo';
 
+/**
+ * 演示夹具工具（重置、播种、引导演示外壳）。**这一组会清空整库**，所以它
+ * 和清库端点一样只存在于 demo 构建里——生产库被一个按钮清光，试用者手上
+ * 的稿件连同责任链就没了。只读的示例素材不在此列，两种模式都给。
+ */
+export const demoToolsEnabledFor = (mode: 'demo' | 'production'): boolean => mode === 'demo';
+
 const appMode = appModeEnv();
 const configuredSessionSecret = process.env.SESSION_SECRET?.trim() ?? '';
 const configuredGatewayToken = process.env.GATEWAY_TOKEN?.trim() ?? '';
@@ -213,6 +220,7 @@ export const config = {
   sessionSecretReady: sessionSecretReadyFor(appMode, configuredSessionSecret),
   sessionHours: 8,
   demoLoginEnabled: demoLoginEnabledFor(appMode),
+  demoToolsEnabled: demoToolsEnabledFor(appMode),
   seedDemoUsers:
     appMode !== 'production' && booleanEnv('SEED_DEMO_USERS', appMode === 'demo'),
   demoSeedPassword: process.env.DEMO_SEED_PASSWORD?.trim() || 'gatekeeper-demo',

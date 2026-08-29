@@ -17,7 +17,7 @@ import {
 const pages = [
   ['landing', renderLanding],
   ['login', () => renderLogin({ demoLoginEnabled: false })],
-  ['workbench', renderWorkbench],
+  ['workbench', () => renderWorkbench({ demoToolsEnabled: true })],
   ['oversight', renderOversight],
 ] as const;
 
@@ -69,8 +69,8 @@ describe('shared theme shell', () => {
   it('elevates the complete topbar stacking context above filtered page surfaces', () => {
     expect(themeStyles).toMatch(/header\.topbar \{ position:relative; z-index:10; \}/);
     expect(renderLanding()).toContain('position:sticky; top:0; z-index:5');
-    expect(renderWorkbench()).toContain('position:sticky; top:0; z-index:40');
-    expect(renderWorkbench()).toContain('z-index:100; display:grid; place-items:center');
+    expect(renderWorkbench({ demoToolsEnabled: true })).toContain('position:sticky; top:0; z-index:40');
+    expect(renderWorkbench({ demoToolsEnabled: true })).toContain('z-index:100; display:grid; place-items:center');
   });
 
   it('closes the theme popover without stealing focus on an outside pointer action', () => {
@@ -138,7 +138,7 @@ describe('shared theme shell', () => {
     expect(shouldKeepWorkbenchPanel(previous, { manuscript: { id: 'm-1' }, stage: 'trace' }, 'sse')).toBe(false);
     expect(shouldKeepWorkbenchPanel(previous, { manuscript: { id: 'm-2' }, stage: 'review' }, 'sse')).toBe(false);
     expect(shouldKeepWorkbenchPanel(previous, { manuscript: { id: 'm-1' }, stage: 'review' }, 'api')).toBe(false);
-    const html = renderWorkbench();
+    const html = renderWorkbench({ demoToolsEnabled: true });
     expect(html).toContain('id="trace-replay"');
     expect(html).toContain("window.matchMedia('(prefers-reduced-motion: reduce)').matches");
     expect(html).toContain("previous.manuscript.id !== view.manuscript.id || previous.stage !== view.stage");

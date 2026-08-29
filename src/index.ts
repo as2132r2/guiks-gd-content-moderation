@@ -18,6 +18,7 @@ import { redteamRoutes } from './routes/redteam.js';
 import { reportRoutes } from './routes/report.js';
 import { runtimeRoutes } from './routes/runtime.js';
 import { demoRoutes } from './routes/demo.js';
+import { fixtureRoutes } from './routes/fixtures.js';
 import { targetRoutes } from './routes/target.js';
 import { workbenchRoutes } from './routes/workbench.js';
 import { renderConsole } from './views/console.js';
@@ -91,6 +92,8 @@ app.route('/', manuscriptRoutes);
 app.route('/', authRoutes);
 app.route('/', workbenchRoutes);
 app.route('/', oversightRoutes);
+// 只读的示例素材两种模式都要——手册第 2 步就让人点「填入示例通稿」。
+app.route('/', fixtureRoutes);
 // 清空整库的端点不该存在于生产构建里。
 if (config.appMode === 'demo') {
   app.route('/', demoRoutes);
