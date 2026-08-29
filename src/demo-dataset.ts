@@ -52,6 +52,12 @@ export const SEED_ACCOUNTS: readonly SeedAccount[] = [
     roles: ['station-leader'],
     purpose: '只看不批。用来看全流程监控看板，进不了审批流程。',
   },
+  {
+    username: 'chenxue',
+    displayName: '陈雪',
+    roles: ['editor'],
+    purpose: '只有编辑权。一线记者的日常身份——写得了稿，推不动审批。',
+  },
 ];
 
 export interface SeedManuscript {
@@ -71,14 +77,40 @@ export interface SeedManuscript {
   bounce?: boolean;
   /** 「要理由」那一档要填的选题依据。 */
   reason?: string;
+  /**
+   * 谁来走这一篇。
+   * `solo` = 张敏一人多岗走到底；`team` = 编辑 / 部门主任 / 分管领导三个人分头做。
+   *
+   * 两种都要有：一人多岗是融媒体中心的实况，三人分工是监控看板
+   * 「认人不认角色」那一栏的样本——全用一个人，那一栏就只有一行。
+   */
+  crew?: 'solo' | 'team';
+  /** 由谁建稿。默认张敏；写 `chenxue` 让生产量那一栏有第二个建稿人。 */
+  author?: 'zhangmin' | 'chenxue';
+  /**
+   * 整条时间线往前挪几天。0 = 今天。
+   *
+   * **只挪日期，不挪时长**（[repository.ts](db/repository.ts) `shiftManuscriptHistory`
+   * 是整体平移）。播种一口气跑完，不挪的话所有稿件都落在同一天，
+   * 监控看板的按日趋势就只有一个点——一个点画不出趋势。
+   */
+  dayOffset?: number;
   note: string;
 }
 
 /**
- * 七篇稿件，覆盖准入三档、主链各阶段与一次退回。
+ * 稿件夹具，分两组。
  *
+ * **前七篇是教学样本**，全部落在今天，覆盖准入三档、主链各阶段与一次退回。
  * 为什么不是「全部走到已发布」：**试用者需要有活可干**。停在预检的那篇留给
  * 他改稿，停在待复审的那篇留给他审批——一进来就全是终态，只能看不能试。
+ *
+ * **后八篇是本底数据**，`dayOffset` 铺在过去六天里，全部已发布。它们不参与
+ * 教学，只为一件事：**让监控看板不是一条竖线**。按日趋势要有多个点、生产量
+ * 要有多个人、报道方向要有分布——只有七篇同一天同一个人的稿子，那三栏都是空的。
+ *
+ * 本底稿件全部已发布且时间靠前，工作台左栏按 `updated_at` 倒序，所以它们沉在
+ * 底下，不会把教学样本挤下去。
  */
 export const SEED_MANUSCRIPTS: readonly SeedManuscript[] = [
   {
@@ -95,7 +127,8 @@ export const SEED_MANUSCRIPTS: readonly SeedManuscript[] = [
     ].join('\n'),
     stopAt: 'published',
     revise: true,
-    note: '已发布。追溯图谱、对照组、监控看板的主要数据来源。',
+    crew: 'solo',
+    note: '已发布。追溯图谱、对照组、监控看板的主要数据来源。张敏一人走到底。',
   },
   {
     label: '退回重走样本',
@@ -112,7 +145,8 @@ export const SEED_MANUSCRIPTS: readonly SeedManuscript[] = [
     stopAt: 'published',
     revise: true,
     bounce: true,
-    note: '经历过一次复审退回，走了两轮。看板的退回率靠它才有非零样本。',
+    crew: 'team',
+    note: '经历过一次复审退回，走了两轮。退回率与三人责任链靠它。',
   },
   {
     label: '待你改稿',
@@ -173,6 +207,167 @@ export const SEED_MANUSCRIPTS: readonly SeedManuscript[] = [
     stopAt: 'admission',
     note: '不违法但不是业务用途。放行并留痕，另标非业务用途。',
   },
+];
+
+/**
+ * 本底数据。⚠️ 同样是模拟脱敏素材。
+ *
+ * 挑选原则：**只补看板缺的维度，不补故事。** 这八篇没有一篇是演示要讲的，
+ * 它们存在的全部理由是让「按日趋势」「生产量」「报道方向」三栏有分布。
+ * 所以正文写得短——够切出句子、够跑一遍预检就行，不必好看。
+ */
+const BACKGROUND_MANUSCRIPTS: readonly SeedManuscript[] = [
+  {
+    label: '本底 · 时政',
+    title: '全市党建工作推进会召开',
+    sourceType: 'public-relations',
+    coverageTopic: 'politics',
+    sourceText: [
+      '8月21日，全市党建工作推进会召开。会议总结上半年基层党建工作，部署下半年重点任务。',
+      '',
+      '今年以来，全市新建党群服务中心 36 个，培训基层党务工作者 1200 人次，村级组织换届工作全部完成。',
+      '',
+      '会议要求，各级党组织要把责任压实到岗到人。',
+    ].join('\n'),
+    stopAt: 'published',
+    revise: true,
+    crew: 'team',
+    dayOffset: 6,
+    note: '本底数据。补时政方向。',
+  },
+  {
+    label: '本底 · 民生',
+    title: '城区供水管网改造工程完工',
+    sourceType: 'notice',
+    coverageTopic: 'livelihood',
+    sourceText: [
+      '8月22日，城区供水管网改造工程全部完工并通水。本次改造更换老旧管网 42 公里，涉及 8 个社区。',
+      '',
+      '改造后城区供水压力明显提升，惠及居民 2.6万户。',
+      '',
+      '有关部门将持续做好运行维护。',
+    ].join('\n'),
+    stopAt: 'published',
+    crew: 'team',
+    bounce: true,
+    dayOffset: 5,
+    note: '本底数据。第二个退回样本，让退回率不是只由一篇决定。',
+  },
+  {
+    label: '本底 · 经济',
+    title: '前七月全市规上工业增加值发布',
+    sourceType: 'public-relations',
+    coverageTopic: 'economy',
+    sourceText: [
+      '8月22日，市统计局发布前七月全市经济运行情况。全市规模以上工业增加值同比增长 6.8%。',
+      '',
+      '其中装备制造业增长 9.2%，新材料产业增长 11.4%，成为拉动增长的主要力量。',
+      '',
+      '市统计局有关负责人表示，全市经济运行总体平稳。',
+    ].join('\n'),
+    stopAt: 'published',
+    revise: true,
+    crew: 'solo',
+    author: 'chenxue',
+    dayOffset: 5,
+    note: '本底数据。陈雪建稿，让生产量那一栏有第二个人。',
+  },
+  {
+    label: '本底 · 三农',
+    title: '全市秋粮收购工作启动',
+    sourceType: 'notice',
+    coverageTopic: 'agriculture',
+    sourceText: [
+      '8月23日，全市秋粮收购工作启动。今年全市设置收购网点 78 个，预计收购秋粮 21万吨。',
+      '',
+      '各收购网点已完成设备检修和人员培训，收购价格按国家政策执行。',
+      '',
+      '市粮食和物资储备局提醒农户及时了解收购信息。',
+    ].join('\n'),
+    stopAt: 'published',
+    crew: 'team',
+    author: 'chenxue',
+    dayOffset: 4,
+    note: '本底数据。补三农方向。',
+  },
+  {
+    label: '本底 · 文化教育',
+    title: '市图书馆新馆正式开馆',
+    sourceType: 'public-relations',
+    coverageTopic: 'culture',
+    sourceText: [
+      '8月24日，市图书馆新馆正式开馆。新馆建筑面积 1.8万平方米，设阅览座席 1600 个。',
+      '',
+      '新馆藏书 86万册，配套建设少儿阅读区、数字体验区和城市书房。',
+      '',
+      '新馆实行免费开放，每周开放七天。',
+    ].join('\n'),
+    stopAt: 'published',
+    revise: true,
+    crew: 'team',
+    dayOffset: 3,
+    note: '本底数据。补文化教育方向。',
+  },
+  {
+    label: '本底 · 要理由后走完',
+    title: '全市环境污染问题整改情况通报',
+    sourceType: 'notice',
+    coverageTopic: 'politics',
+    sourceText: [
+      '8月24日，全市生态环境保护工作推进会通报环境污染问题整改情况。截至目前，已完成整改 47 项。',
+      '',
+      '会议通报，剩余 6 项正按序时进度推进，将于年底前全部完成。',
+      '',
+      '会议要求，各县区要举一反三，建立长效机制。',
+    ].join('\n'),
+    stopAt: 'published',
+    crew: 'team',
+    reason: '市生态环境局当日发布的整改通报，按台里选题会安排公开报道。',
+    dayOffset: 3,
+    note: '本底数据。**这一篇很重要**：证明「要理由」不是死路——补了依据照样走到签发。',
+  },
+  {
+    label: '本底 · 民生',
+    title: '城乡公交一体化新线路开通',
+    sourceType: 'notice',
+    coverageTopic: 'livelihood',
+    sourceText: [
+      '8月26日，城乡公交一体化 3 条新线路开通运营，覆盖 11 个行政村。',
+      '',
+      '新线路投放新能源公交车 24 台，首末班时间为 6 时至 19 时。',
+      '',
+      '市交通运输局将根据客流情况适时优化班次。',
+    ].join('\n'),
+    stopAt: 'published',
+    revise: true,
+    crew: 'solo',
+    author: 'chenxue',
+    dayOffset: 2,
+    note: '本底数据。',
+  },
+  {
+    label: '本底 · 经济',
+    title: '全市重点招商引资项目集中签约',
+    sourceType: 'public-relations',
+    coverageTopic: 'economy',
+    sourceText: [
+      '8月27日，全市重点招商引资项目集中签约活动举行。本次签约项目 16 个，协议总投资 58亿元。',
+      '',
+      '签约项目集中在先进制造、现代农业、文旅康养三个领域。',
+      '',
+      '市投资促进局将建立项目跟踪服务机制。',
+    ].join('\n'),
+    stopAt: 'published',
+    crew: 'team',
+    dayOffset: 1,
+    note: '本底数据。',
+  },
+];
+
+/** 播种实际使用的全集：教学样本在前，本底数据在后。 */
+export const ALL_SEED_MANUSCRIPTS: readonly SeedManuscript[] = [
+  ...SEED_MANUSCRIPTS,
+  ...BACKGROUND_MANUSCRIPTS,
 ];
 
 /** 改稿时替换掉的那一句（末句收尾话，本身不命中任何规则）。 */

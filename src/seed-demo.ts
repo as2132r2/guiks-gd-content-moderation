@@ -19,10 +19,10 @@ import { pathToFileURL } from 'node:url';
 import { config } from './config.js';
 import { closeWorkflowRepository, getWorkflowRepository } from './db/repository.js';
 import {
+  ALL_SEED_MANUSCRIPTS,
   BOUNCE_REASON,
   REVISED_CLOSING,
   SEED_ACCOUNTS,
-  SEED_MANUSCRIPTS,
   type SeedManuscript,
 } from './demo-dataset.js';
 import { app } from './index.js';
@@ -114,7 +114,21 @@ function ensureAccounts(password: string): AccountOutcome {
   return outcome;
 }
 
-async function walk(call: Caller, seed: SeedManuscript): Promise<string> {
+/**
+ * 一篇稿件用到的三个操作者。
+ *
+ * `solo` 时三个指向同一个人（张敏一人多岗），`team` 时分给三个账号。
+ * **分开不是为了好看**——监控看板的生产量那一栏按 `actor_user_id` 归并，
+ * 全用一个账号播种，那一栏就只有一行，「认人不认角色」这句话在界面上看不出来。
+ */
+interface Crew {
+  editor: Caller;
+  head: Caller;
+  leader: Caller;
+}
+
+async function walk(crew: Crew, seed: SeedManuscript): Promise<string> {
+  const call = crew.editor;
   const created = (await call('/api/workbench', 'POST', {
     title: seed.title,
     sourceType: seed.sourceType,
@@ -124,8 +138,10 @@ async function walk(call: Caller, seed: SeedManuscript): Promise<string> {
   const id = created.manuscript.id;
   if (seed.stopAt === 'admission') return id;
 
-  const move = (to: string, role: string, reason?: string) =>
-    call(`/api/workbench/${id}/transition`, 'POST', { to, role, ...(reason ? { reason } : {}) });
+  const move = (to: string, role: string, reason?: string) => {
+    const as = role === 'department-head' ? crew.head : role === 'supervising-leader' ? crew.leader : call;
+    return as(`/api/workbench/${id}/transition`, 'POST', { to, role, ...(reason ? { reason } : {}) });
+  };
 
   // 「要理由」那一档要先补依据才走得动。
   if (created.manuscript.status === 'admission-reason-required') {
@@ -196,15 +212,29 @@ export async function seedDemoData(password: string): Promise<void> {
   const removed = getWorkflowRepository().deleteAllManuscripts();
   if (removed > 0) log(`清空旧稿件 ${removed} 篇`);
 
-  // 张敏持有全部三个流程角色，一个会话就能走完整条链。
-  const call = callerFor(await login('zhangmin', password));
+  // 张敏持有全部三个流程角色，一个会话就能走完整条链；另外三个各司其职。
+  const zhangmin = callerFor(await login('zhangmin', password));
+  const chenxue = callerFor(await login('chenxue', password));
+  const lijianguo = callerFor(await login('lijianguo', password));
+  const wangzhiyuan = callerFor(await login('wangzhiyuan', password));
 
-  for (const seed of SEED_MANUSCRIPTS) {
-    await walk(call, seed);
+  const repository = getWorkflowRepository();
+  for (const seed of ALL_SEED_MANUSCRIPTS) {
+    const editor = seed.author === 'chenxue' ? chenxue : zhangmin;
+    // 独走只有张敏能做——三个流程角色她一个人全有。陈雪只是编辑，
+    // 标了 solo 也得有人接审批，落回三人分工。
+    const solo = seed.crew !== 'team' && seed.author !== 'chenxue';
+    const crew: Crew = solo
+      ? { editor, head: editor, leader: editor }
+      : { editor, head: lijianguo, leader: wangzhiyuan };
+
+    const id = await walk(crew, seed);
+    // 走完再挪日期：挪的是整条时间线，篇内间隔不动（见 shiftManuscriptHistory）。
+    if (seed.dayOffset) repository.shiftManuscriptHistory(id, seed.dayOffset);
     log(`  ✓ ${seed.label}　${seed.title}`);
   }
 
-  const overview = (await call('/api/monitor/overview')) as {
+  const overview = (await zhangmin('/api/monitor/overview')) as {
     totals: { manuscripts: number; signed: number; traceEvents: number };
     overallAiShare: number | null;
   };

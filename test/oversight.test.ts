@@ -214,6 +214,33 @@ describe('全流程监控聚合', () => {
     expect(signedDay!.manuscripts).toBeGreaterThan(0);
   });
 
+  it('counts each rule once, not once per position in the rules array', async () => {
+    await post('/api/demo/reset');
+    await walkOne();
+
+    const data = await overview();
+    expect(data.ruleHits.length).toBeGreaterThan(0);
+
+    // 这条断言看着平淡，挡的是一个具体的坑：`json_each` 自带 `key` 列（数组
+    // 下标），SQL 里写 `GROUP BY key` 会被解析成按下标分组，同一条规则出现在
+    // rules[1] 和 rules[3] 就变成两行，排行榜的名次跟着错。
+    const keys = data.ruleHits.map((row) => row.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('leaves machine-written traces out of 内容生产者', async () => {
+    await post('/api/demo/reset');
+    await walkOne();
+
+    const data = await overview();
+    // 自动补 AI 标识时系统也会重写句级来源、也记 segments-recorded。
+    // 那不是人的改稿量，这张表里不该有它。
+    expect(data.producers.every((row) => row.displayName !== '（无署名）')).toBe(true);
+
+    const total = data.producers.reduce((sum, row) => sum + row.revised, 0);
+    expect(total).toBe(1); // walkOne 只有一次人工改稿
+  });
+
   it('serves the board with no external resource', async () => {
     const response = await request('/monitor');
     expect(response.status).toBe(200);
