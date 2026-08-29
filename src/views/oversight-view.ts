@@ -104,7 +104,7 @@ export function renderOversight(): string {
   <div class="nav">
     <span class="stamp" id="stamp"></span>
     <button id="refresh">刷新</button>
-    <a href="/">回工作台</a>
+    <a href="/workbench">回工作台</a>
   </div>
 </header>
 
