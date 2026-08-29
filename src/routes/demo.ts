@@ -33,6 +33,7 @@ function createFixture(
     {
       title: fixture.title,
       sourceType: fixture.sourceType as ContentSourceType,
+      coverageTopic: fixture.coverageTopic,
       sourceText: fixture.sourceText,
     },
     actor,

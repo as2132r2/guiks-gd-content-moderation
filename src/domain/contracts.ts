@@ -14,6 +14,35 @@ export const contentSourceTypes = [
 ] as const;
 export type ContentSourceType = (typeof contentSourceTypes)[number];
 
+/**
+ * 报道方向（题材）。
+ *
+ * **和 `ContentSourceType` 不是一回事**：后者说的是「素材是什么形态」
+ * （通知 / 通稿 / 脚本），前者说的是「这条报道属于哪个口」。
+ * 全流程监控要按口分析用量与退回率，靠素材类型分不出来。
+ *
+ * 由编辑在投料时手选（requirements 第六节待定②）。自动分类要过模型，
+ * 归赛后——手选一步到位，也更符合「判断留给人」。
+ */
+export const coverageTopics = [
+  'politics',
+  'livelihood',
+  'economy',
+  'agriculture',
+  'culture',
+  'other',
+] as const;
+export type CoverageTopic = (typeof coverageTopics)[number];
+
+export const coverageTopicLabels: Readonly<Record<CoverageTopic, string>> = {
+  politics: '时政',
+  livelihood: '民生',
+  economy: '经济',
+  agriculture: '三农',
+  culture: '文化教育',
+  other: '其他',
+};
+
 export const manuscriptStatuses = [
   'draft',
   'admission-blocked',
@@ -120,6 +149,8 @@ export interface Manuscript {
   id: string;
   title: string;
   sourceType: ContentSourceType;
+  /** 报道方向。老稿件没有这个字段，所以可空——未分类不等于「其他」。 */
+  coverageTopic?: CoverageTopic;
   sourceText: string;
   status: ManuscriptStatus;
   /** 当前三审三校轮次；复核修改完成并重新预检时递增。 */
@@ -197,6 +228,7 @@ export interface ManuscriptAggregate {
 export interface CreateManuscriptInput {
   title: string;
   sourceType: ContentSourceType;
+  coverageTopic?: CoverageTopic;
   sourceText: string;
 }
 

@@ -132,6 +132,10 @@ export function renderOversight(): string {
     'ai-label':'AI 生成内容标识','judgment':'导向与事实判断','party-name':'当事人姓名'
   };
   var ADMISSION = { 'blocked':'硬拦','reason-required':'要理由','admitted-logged':'仅留痕' };
+  var TOPIC = {
+    'politics':'时政','livelihood':'民生','economy':'经济',
+    'agriculture':'三农','culture':'文化教育','other':'其他'
+  };
 
   function esc(v) {
     return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -210,6 +214,13 @@ export function renderOversight(): string {
            function (k) { return k === 'banned-term' ? 'block' : (k === 'inconsistency' ? 'warn' : 'info'); }) +
       '<p class="note">从留痕里实时展开，没有另存一份表——另存一份迟早和留痕对不上。</p></div>';
 
+    // 报道方向（6.19）
+    out += '<div class="card"><h2 class="hd">报道方向</h2>' +
+      bars(d.topics, function (k) { return k ? (TOPIC[k] || k) : '未分类'; },
+           function (k) { return k ? '' : 'info'; }) +
+      '<p class="note">由编辑投料时手选。<strong>未分类不等于「其他」</strong>——' +
+      '老稿件在这个字段之前建的。自动分类要过模型，归赛后。</p></div>';
+
     // 审核维度
     out += '<div class="card"><h2 class="hd">各级审核与退回率</h2>';
     out += d.reviews.length === 0 ? '<div class="empty">还没有审核记录。</div>' :
@@ -254,6 +265,37 @@ export function renderOversight(): string {
 
     out += '</div>'; // grid
 
+    // 内容生产者（6.20）
+    out += '<section><h2 class="hd">内容生产者</h2>';
+    out += d.producers.length === 0 ? '<div class="empty">还没有可归属的操作。</div>' :
+      '<div class="card scroll"><table><thead><tr><th>人</th>' +
+      '<th style="text-align:right">建稿</th><th style="text-align:right">改稿</th>' +
+      '<th style="text-align:right">审批</th><th style="text-align:right">其中退回</th>' +
+      '</tr></thead><tbody>' +
+      d.producers.map(function (r) {
+        return '<tr><td>' + esc(r.displayName) + '</td>' +
+          '<td class="num">' + r.created + '</td><td class="num">' + r.revised + '</td>' +
+          '<td class="num">' + r.reviewed + '</td><td class="num">' + r.returned + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    out += '<p class="note"><strong>认人不认角色</strong>——按 actor_user_id 归并。' +
+      '角色是「以什么身份行使」，人才是责任主体；一人多岗时按角色分会把同一个人拆成三个。</p></section>';
+
+    // 趋势
+    out += '<section><h2 class="hd">按日趋势</h2>';
+    out += d.trend.length === 0 ? '<div class="empty">还没有数据。</div>' :
+      '<div class="card scroll"><table><thead><tr><th>日期</th>' +
+      '<th style="text-align:right">建稿</th><th style="text-align:right">当日签发的平均 AI 参与度</th>' +
+      '</tr></thead><tbody>' +
+      d.trend.map(function (r) {
+        var hot = r.signedAiShare != null && r.signedAiShare >= 0.9;
+        return '<tr><td>' + esc(r.day) + '</td><td class="num">' + r.manuscripts + '</td>' +
+          '<td class="num">' + (r.signedAiShare == null ? '<span class="empty">当日无签发</span>' :
+            '<span class="pill ' + (hot ? 'hot' : 'ok') + '">' + pct(r.signedAiShare) + '</span>') +
+          '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    out += '<p class="note">这条线是给台领导看的：<strong>如果签发时的 AI 参与度长期贴着 100%，' +
+      '说明三审三校在走过场。</strong></p></section>';
+
     // 按稿件下钻
     out += '<section><h2 class="hd">按稿件下钻（AI 参与度）</h2>';
     out += d.shares.length === 0 ? '<div class="empty">还没有稿件。</div>' :
@@ -276,11 +318,10 @@ export function renderOversight(): string {
     out += '<p class="note">点稿件名到工作台看它的句级来源与责任链。签发时仍接近 100% 的，值得看一眼——那说明三审三校可能没人真看过。</p></section>';
 
     // 诚实说明缺什么
-    out += '<section><h2 class="hd">这一版还没有的维度</h2><div class="gap">' +
-      '<b>报道方向 / 题材</b>——需要新增字段。<code>source_type</code> 是素材类型（通知 / 通稿 / 脚本），' +
-      '不是时政 / 民生 / 经济这种报道方向。<br>' +
-      '<b>内容生产者</b>——需要最轻量的用户标识。现在留痕里的 actor 存的是角色，不是人。' +
-      '与「不做权限体系」的边界有冲突，尚待拍板。<br>' +
+    out += '<section><h2 class="hd">这一版还没有的</h2><div class="gap">' +
+      '<b>报道方向靠手选</b>——不是从通稿自动分类。自动分类要过模型，' +
+      '而且分错了会污染统计，归赛后。<br>' +
+      '<b>停留时长只在演示环境有意义</b>——这里的流转是连点出来的，不代表真实工时。<br>' +
       '宁可少一个维度，也不让看板显示一个编出来的维度。</div></section>';
 
     return out;
@@ -294,7 +335,15 @@ export function renderOversight(): string {
   }
 
   function load() {
-    fetch('/api/monitor/overview').then(function (r) { return r.json(); }).then(function (d) {
+    fetch('/api/monitor/overview').then(function (r) {
+      // 未登录时后端返 401，正文是错误体不是快照——直接拿去渲染会炸在 reduce 上。
+      if (r.status === 401) {
+        location.href = '/login?next=' + encodeURIComponent(location.pathname);
+        throw new Error('请先登录');
+      }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (d) {
       document.getElementById('root').innerHTML = render(d);
       document.getElementById('stamp').textContent = '取数 ' + clock(d.generatedAt);
     }).catch(function (e) {

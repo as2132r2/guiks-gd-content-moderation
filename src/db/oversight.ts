@@ -9,9 +9,8 @@
  *    [ai-share.ts](../domain/ai-share.ts) 的 `aiShareWeights` 算——公式只能有一处定义。
  * 2. **规则命中从留痕里捞**，不另存一份表。`trace_events.data_json` 已经记着
  *    `rules[]`，用 JSON1 展开即可；另存一份迟早和留痕对不上。
- * 3. **报道方向（6.19）与内容生产者（6.20）不在这里。** 前者要新增字段，
- *    后者要最轻量用户标识且与「不做权限体系」的边界有冲突，都还没定。
- *    宁可少一个维度，不可让看板显示一个编出来的维度。
+ * 3. **认人不认角色。** 生产者维度按 `actor_user_id` 归并——角色是「以什么身份
+ *    行使」，人才是责任主体。一人多岗时按角色分会把同一个人拆成三个。
  */
 import type BetterSqlite3 from 'better-sqlite3';
 import { aiShareWeights } from '../domain/ai-share.js';
@@ -54,6 +53,23 @@ export interface ModelUsage {
   models: CountRow[];
 }
 
+export interface ProducerRow {
+  /** 稳定真源；用户被删时为 null。 */
+  userId: string | null;
+  displayName: string;
+  created: number;
+  revised: number;
+  reviewed: number;
+  returned: number;
+}
+
+export interface TrendPoint {
+  day: string;
+  manuscripts: number;
+  /** 当日签发稿件的平均 AI 参与度；当天没有签发则为 null。 */
+  signedAiShare: number | null;
+}
+
 export interface OversightSnapshot {
   generatedAt: number;
   totals: {
@@ -74,6 +90,11 @@ export interface OversightSnapshot {
   reviews: ReviewCell[];
   admissions: CountRow[];
   ruleHits: CountRow[];
+  /** 报道方向（6.19）。未填的归 `null` 键，前端显示「未分类」——不等于「其他」。 */
+  topics: CountRow[];
+  /** 内容生产者（6.20）。按 actor_user_id 归并，认人不认角色。 */
+  producers: ProducerRow[];
+  trend: TrendPoint[];
   model: ModelUsage;
 }
 
@@ -207,6 +228,100 @@ export function buildOversight(db: BetterSqlite3.Database): OversightSnapshot {
       GROUP BY key ORDER BY count DESC`,
   );
 
+  const topics = rows<{ key: string; count: number }>(
+    db,
+    'SELECT coverage_topic AS key, COUNT(*) AS count FROM manuscripts GROUP BY key ORDER BY count DESC',
+  );
+
+  // 生产者：建稿 / 改稿来自留痕，审批与退回来自审核记录，都按 actor_user_id 归并。
+  const producerRows = rows<{
+    userId: string | null;
+    displayName: string | null;
+    created: number;
+    revised: number;
+  }>(
+    db,
+    `SELECT t.actor_user_id AS userId, u.display_name AS displayName,
+            SUM(CASE WHEN t.kind = 'manuscript-created' THEN 1 ELSE 0 END) AS created,
+            SUM(CASE WHEN t.kind = 'segments-recorded' THEN 1 ELSE 0 END) AS revised
+       FROM trace_events t
+       LEFT JOIN users u ON u.id = t.actor_user_id
+      WHERE t.kind IN ('manuscript-created', 'segments-recorded')
+      GROUP BY t.actor_user_id`,
+  );
+  const reviewerRows = rows<{
+    userId: string | null;
+    displayName: string | null;
+    reviewed: number;
+    returned: number;
+  }>(
+    db,
+    `SELECT r.actor_user_id AS userId, u.display_name AS displayName,
+            COUNT(*) AS reviewed,
+            SUM(CASE WHEN r.decision IN ('changes-requested', 'rejected') THEN 1 ELSE 0 END) AS returned
+       FROM review_records r
+       LEFT JOIN users u ON u.id = r.actor_user_id
+      GROUP BY r.actor_user_id`,
+  );
+  const producerMap = new Map<string, ProducerRow>();
+  const producerKey = (id: string | null) => id ?? '__unattributed__';
+  const upsert = (userId: string | null, displayName: string | null): ProducerRow => {
+    const key = producerKey(userId);
+    let entry = producerMap.get(key);
+    if (!entry) {
+      entry = {
+        userId,
+        displayName: displayName ?? (userId ? '（账号已删除）' : '（无署名）'),
+        created: 0,
+        revised: 0,
+        reviewed: 0,
+        returned: 0,
+      };
+      producerMap.set(key, entry);
+    }
+    if (displayName) entry.displayName = displayName;
+    return entry;
+  };
+  for (const row of producerRows) {
+    const entry = upsert(row.userId, row.displayName);
+    entry.created += row.created;
+    entry.revised += row.revised;
+  }
+  for (const row of reviewerRows) {
+    const entry = upsert(row.userId, row.displayName);
+    entry.reviewed += row.reviewed;
+    entry.returned += row.returned;
+  }
+  const producers = [...producerMap.values()].sort(
+    (a, b) => b.created + b.revised + b.reviewed - (a.created + a.revised + a.reviewed),
+  );
+
+  // 趋势：当日建稿量，以及当日签发稿件的平均 AI 参与度。
+  const signedByDay = rows<{ day: string; manuscriptId: string }>(
+    db,
+    `SELECT date(created_at / 1000, 'unixepoch', 'localtime') AS day,
+            manuscript_id AS manuscriptId
+       FROM trace_events WHERE kind = 'signed'`,
+  );
+  const shareById = new Map(shares.map((row) => [row.id, row.aiShare]));
+  const trendAcc = new Map<string, { total: number; n: number }>();
+  for (const row of signedByDay) {
+    const share = shareById.get(row.manuscriptId);
+    if (share == null) continue;
+    const entry = trendAcc.get(row.day) ?? { total: 0, n: 0 };
+    entry.total += share;
+    entry.n += 1;
+    trendAcc.set(row.day, entry);
+  }
+  const trend: TrendPoint[] = daily.map((row) => {
+    const signed = trendAcc.get(row.key);
+    return {
+      day: row.key,
+      manuscripts: row.count,
+      signedAiShare: signed ? Math.round((signed.total / signed.n) * 10_000) / 10_000 : null,
+    };
+  });
+
   const usage = db
     .prepare(
       `SELECT COUNT(*) AS calls,
@@ -244,6 +359,9 @@ export function buildOversight(db: BetterSqlite3.Database): OversightSnapshot {
     reviews,
     admissions,
     ruleHits,
+    topics,
+    producers,
+    trend,
     model: { ...usage, averageLatencyMs: Math.round(usage.averageLatencyMs), models },
   };
 }

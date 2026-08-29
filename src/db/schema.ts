@@ -23,6 +23,7 @@ export const manuscripts = sqliteTable(
     id: text('id').primaryKey(),
     title: text('title').notNull(),
     sourceType: text('source_type').notNull(),
+    coverageTopic: text('coverage_topic'),
     sourceText: text('source_text').notNull(),
     status: text('status').notNull(),
     reviewRound: integer('review_round').notNull().default(1),

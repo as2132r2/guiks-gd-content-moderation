@@ -59,6 +59,19 @@ const parseJsonObject = (value: string): JsonObject => {
 };
 
 
+type ManuscriptRow = typeof manuscripts.$inferSelect;
+
+/**
+ * `coverage_topic` 是 manuscripts 上第一个可空列。契约里它是可选字段，
+ * 而 SQLite 给的是 null —— 直接强转会让 null 冒充 CoverageTopic 漏到 API 上。
+ */
+const toManuscript = (row: ManuscriptRow): Manuscript => ({
+  ...(row as Manuscript),
+  ...(row.coverageTopic
+    ? { coverageTopic: row.coverageTopic as NonNullable<Manuscript['coverageTopic']> }
+    : {}),
+});
+
 type ArtifactRow = typeof contentArtifacts.$inferSelect;
 type SegmentRow = typeof sentenceSegments.$inferSelect;
 type UserRow = typeof users.$inferSelect;
@@ -556,6 +569,7 @@ export class WorkflowRepository {
       id: randomUUID(),
       title: input.title,
       sourceType: input.sourceType,
+      ...(input.coverageTopic ? { coverageTopic: input.coverageTopic } : {}),
       sourceText: input.sourceText,
       status: 'draft',
       reviewRound: 1,
@@ -573,7 +587,10 @@ export class WorkflowRepository {
           actorType: 'human',
           actor: actor?.label ?? 'editor',
           actorUserId: actor?.userId ?? null,
-          dataJson: JSON.stringify({ sourceType: manuscript.sourceType }),
+          dataJson: JSON.stringify({
+            sourceType: manuscript.sourceType,
+            coverageTopic: manuscript.coverageTopic ?? null,
+          }),
           createdAt: now,
         })
         .run();
@@ -587,13 +604,13 @@ export class WorkflowRepository {
       .from(manuscripts)
       .orderBy(desc(manuscripts.updatedAt))
       .limit(Math.min(Math.max(limit, 1), 100))
-      .all() as Manuscript[];
+      .all()
+      .map(toManuscript);
   }
 
   findManuscript(id: string): Manuscript | undefined {
-    return this.database.orm.select().from(manuscripts).where(eq(manuscripts.id, id)).get() as
-      | Manuscript
-      | undefined;
+    const row = this.database.orm.select().from(manuscripts).where(eq(manuscripts.id, id)).get();
+    return row ? toManuscript(row) : undefined;
   }
 
   /** 固化入口准入结论，历史稿件不再随词表变化而改判。 */
@@ -1137,7 +1154,7 @@ export class WorkflowRepository {
         .get();
       if (!row) return { outcome: 'manuscript-not-found' } as const;
 
-      const current = row as Manuscript;
+      const current = toManuscript(row as ManuscriptRow);
       if (current.status !== input.expectedFrom) {
         return { outcome: 'status-conflict', manuscript: current } as const;
       }
@@ -1225,7 +1242,7 @@ export class WorkflowRepository {
           .where(eq(manuscripts.id, input.manuscriptId))
           .get();
         return latest
-          ? ({ outcome: 'status-conflict', manuscript: latest as Manuscript } as const)
+          ? ({ outcome: 'status-conflict', manuscript: toManuscript(latest as ManuscriptRow) } as const)
           : ({ outcome: 'manuscript-not-found' } as const);
       }
 

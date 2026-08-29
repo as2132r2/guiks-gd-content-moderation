@@ -122,6 +122,15 @@ export const migrations: Migration[] = [
       );
     `,
   },
+  {
+    id: '0005_coverage_topic',
+    sql: `
+      -- 报道方向（6.19）。可空：既有稿件没填过，未分类不等于「其他」。
+      ALTER TABLE manuscripts ADD COLUMN coverage_topic TEXT;
+      CREATE INDEX IF NOT EXISTS manuscripts_coverage_topic_idx
+        ON manuscripts(coverage_topic);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

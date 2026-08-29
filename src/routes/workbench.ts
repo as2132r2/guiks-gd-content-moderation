@@ -18,6 +18,7 @@ import { computeAiShare } from '../domain/ai-share.js';
 import type { UserAccount } from '../domain/auth.js';
 import {
   contentSourceTypes,
+  coverageTopics,
   manuscriptStatuses,
   type ContentArtifact,
   type CreateArtifactInput,
@@ -73,6 +74,7 @@ import { ModelTraceError } from './gateway.js';
 const createSchema = z.object({
   title: z.string().trim().min(1).max(200),
   sourceType: z.enum(contentSourceTypes),
+  coverageTopic: z.enum(coverageTopics).optional(),
   sourceText: z.string().trim().min(1).max(500_000),
 });
 
