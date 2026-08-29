@@ -70,15 +70,39 @@ function callerFor(session: Session) {
 
 type Caller = ReturnType<typeof callerFor>;
 
-/** 建账号。已存在就跳过——重复播种不该覆盖别人改过的口令。 */
-function ensureAccounts(password: string): { created: number; existing: number } {
+export interface AccountOutcome {
+  created: number;
+  existing: number;
+  /** 被 demo 账号占了名字、已重建的。 */
+  replaced: number;
+}
+
+/**
+ * 建账号。已存在就跳过——重复播种不该覆盖别人改过的口令。
+ *
+ * **除非它是 demo 账号。** 只要这个库被 `APP_MODE=demo` 跑过一次，
+ * `ensureDemoUsers()` 就会用同样的用户名建出 `is_demo=1` 的账号；而生产登录
+ * 明确拒绝 demo 账号（[auth.ts](routes/auth.ts)）。跳过它们的话，播种会在
+ * 后面登录时挂掉，还报「用户名或密码不正确」——错得让人查不到方向。
+ * 所以在生产模式下直接重建：一个登不进去的账号留着没有意义。
+ */
+function ensureAccounts(password: string): AccountOutcome {
   const repository = getWorkflowRepository();
-  let created = 0;
-  let existing = 0;
+  const outcome: AccountOutcome = { created: 0, existing: 0, replaced: 0 };
+
   for (const account of SEED_ACCOUNTS) {
-    if (repository.findStoredUserByUsername(account.username)) {
-      existing += 1;
+    const stored = repository.findStoredUserByUsername(account.username);
+    const unusableHere = stored && config.appMode === 'production' && stored.isDemo;
+
+    if (stored && !unusableHere) {
+      outcome.existing += 1;
       continue;
+    }
+    if (unusableHere) {
+      repository.deleteUserByUsername(account.username);
+      outcome.replaced += 1;
+    } else {
+      outcome.created += 1;
     }
     repository.provisionProductionUser({
       username: account.username,
@@ -86,9 +110,8 @@ function ensureAccounts(password: string): { created: number; existing: number }
       password,
       roles: account.roles,
     });
-    created += 1;
   }
-  return { created, existing };
+  return outcome;
 }
 
 async function walk(call: Caller, seed: SeedManuscript): Promise<string> {
@@ -165,7 +188,10 @@ export async function seedDemoData(password: string): Promise<void> {
   }
 
   const accounts = ensureAccounts(password);
-  log(`账号：新建 ${accounts.created}，已存在 ${accounts.existing}`);
+  log(
+    `账号：新建 ${accounts.created}，已存在 ${accounts.existing}` +
+      (accounts.replaced > 0 ? `，重建 ${accounts.replaced}（原为 demo 账号，生产下登不进去）` : ''),
+  );
 
   const removed = getWorkflowRepository().deleteAllManuscripts();
   if (removed > 0) log(`清空旧稿件 ${removed} 篇`);
