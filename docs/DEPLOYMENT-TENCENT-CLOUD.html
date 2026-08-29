@@ -12,7 +12,7 @@
   <p>适用项目：<code>guiks-gd-content-moderation</code>。采用 Node.js + systemd + Nginx，不运行 Docker。应用只监听本机 <code>127.0.0.1:3300</code>，公网由 Nginx 转发。</p>
   <div class="warn"><strong>当前是比赛临时公开 Demo：</strong>使用 HTTP 80 和真实模型，不承载真实业务数据。比赛结束后应停服或改为 Mock；若转为正式业务，必须启用域名 HTTPS 并完成适用的备案与合规流程。</div>
   <h2>0. 已部署实例快照（2026-08-29）</h2>
-  <table><tr><th>项目</th><th>实际值</th></tr><tr><td>服务器</td><td>腾讯云 CVM，公网地址 <code>106.55.47.251</code></td></tr><tr><td>系统与规格</td><td>Ubuntu 24.04.4 LTS；2 vCPU、约 2 GB 内存；40 GB 系统盘（部署时约 30 GB 可用）</td></tr><tr><td>公网入口</td><td><code>http://106.55.47.251/</code>（Nginx TCP 80）</td></tr><tr><td>应用入口</td><td><code>guiks-gd-content-moderation.service</code>，Node.js v22.23.2，应用仅监听 <code>127.0.0.1:3300</code></td></tr><tr><td>当前发布</td><td><code>3f749a4-demo</code>（远程 main 的 <code>3f749a4</code>，附加 HOST 回环绑定）</td></tr><tr><td>数据与配置</td><td>SQLite：<code>/var/lib/guiks-gd-content-moderation/app.db</code>；配置：<code>/etc/guiks-gd-content-moderation/app.env</code>（root:guiks、0640）</td></tr><tr><td>运行模式</td><td><code>APP_MODE=demo</code>；DeepSeek V4 Flash、GLM-5.3、GLM-5.3-Flash 均已完成最小调用验证</td></tr></table>
+  <table><tr><th>项目</th><th>实际值</th></tr><tr><td>服务器</td><td>腾讯云 CVM，公网地址 <code>106.55.47.251</code></td></tr><tr><td>系统与规格</td><td>Ubuntu 24.04.4 LTS；2 vCPU、约 2 GB 内存；40 GB 系统盘（部署时约 30 GB 可用）</td></tr><tr><td>公网入口</td><td><code>http://106.55.47.251/</code>（Nginx TCP 80）</td></tr><tr><td>应用入口</td><td><code>guiks-gd-content-moderation.service</code>，Node.js v22.23.2，应用仅监听 <code>127.0.0.1:3300</code></td></tr><tr><td>当前发布</td><td><code>c7b84fc</code>（远程 main，2026-08-29 16:32 部署）。上一版 <code>d5cf02e</code> 保留在 <code>releases/</code> 作回滚点</td></tr><tr><td>数据与配置</td><td>SQLite：<code>/var/lib/guiks-gd-content-moderation/app.db</code>；配置：<code>/etc/guiks-gd-content-moderation/app.env</code>（root:guiks、0640）</td></tr><tr><td>运行模式</td><td><code>APP_MODE=demo</code>；DeepSeek V4 Flash、GLM-5.3、GLM-5.3-Flash 均已完成最小调用验证</td></tr><tr><td>试用数据</td><td>已播种：15 篇稿件 / 已签发 10 / 留痕 315 条 / 全台 AI 参与度 95.0%；5 个试用账号，口令 <code>gatekeeper-demo</code>。<strong>用内置确定性 mock 播的，没有消耗模型额度</strong></td></tr></table>
   <h2>1. 资源与网络基线</h2>
   <table><tr><th>项目</th><th>生产建议</th></tr><tr><td>实例</td><td>CVM，2 vCPU / 4 GB RAM；50 GB 系统盘 + 50–100 GB 独立数据盘</td></tr><tr><td>系统</td><td>Ubuntu 24.04 LTS；创建无登录权限的 <code>guiks</code> 服务账号</td></tr><tr><td>安全组入站</td><td>TCP 80、443 对公网；TCP 22 仅运维固定 IP/VPN；不放通 3300</td></tr><tr><td>安全组出站</td><td>DNS、NTP、HTTPS（供系统更新、DeepSeek/GLM API、证书服务）</td></tr><tr><td>持久化</td><td><code>/var/lib/guiks-gd-content-moderation/app.db</code> 位于独立数据盘</td></tr></table>
   <h2>2. 服务器初始化</h2>
@@ -26,6 +26,7 @@ sudo install -d -o root -g guiks -m 0750 /etc/guiks-gd-content-moderation</pre>
   <p>应用构建在 CI 或受控发布机执行：<code>npm ci</code>、<code>npm run check</code>、<code>npm run build</code>、<code>npm prune --omit=dev</code>。只上传 <code>dist/</code>、生产 <code>node_modules/</code> 和必要的包清单，使用 Git SHA 作为发布目录名。</p>
   <h2>3. 密钥、模型与账号</h2>
   <p>从 <code>deploy/app.env.example</code> 复制到服务器 <code>/etc/guiks-gd-content-moderation/app.env</code>，以 <code>root:guiks</code>、<code>0640</code> 保存。该文件包含模型 Key，不可上传仓库、不可写入 systemd unit、不可回显到日志。</p>
+  <div class="warn"><strong>含空格的值必须加单引号。</strong><code>UPSTREAM_PROFILES_JSON</code> 是一行 JSON，写成 <code>KEY={...}</code> 不加引号时 systemd 能解析，但任何用 <code>source</code> 读这个文件的运维脚本都会拿到被空格截断的值，报 <code>UPSTREAM_PROFILES_JSON must be valid JSON</code> 直接崩。正确写法：<code>UPSTREAM_PROFILES_JSON='[{...}]'</code>。</div>
   <div class="ok">生产必须分别生成 <code>SESSION_SECRET</code> 与 <code>GATEWAY_TOKEN</code>，均为不同的 <code>base64:</code> + 至少 32 随机字节。设置 <code>APP_MODE=production</code>、<code>ALLOW_MOCK_UPSTREAM=false</code>，并配置至少一个真实模型档。</div>
   <p>多模型通过 <code>UPSTREAM_PROFILES_JSON</code> 注入。DeepSeek 使用 <code>thinking=disabled</code>；GLM-5.3 / GLM-5.3-Flash 必须使用 <code>thinking=provider-default</code>。应用不会把 URL 或 Key 返回给浏览器。</p>
   <p>首次启动后创建生产账号：<code>sudo -u guiks /usr/bin/node /opt/guiks-gd-content-moderation/current/dist/provision-user.js --username news-editor --display-name "生产编辑" --roles editor</code>。使用交互隐藏输入；不可用 <code>--password</code>。</p>
@@ -36,6 +37,29 @@ sudo systemctl enable --now guiks-gd-content-moderation
 curl --fail http://127.0.0.1:3300/readyz
 sudo nginx -t && sudo systemctl reload nginx
 curl --fail https://YOUR_DOMAIN/readyz</pre>
+  <h2>4.5 播种与清理试用数据</h2>
+  <p>部署完代码，库还是空的。<strong>播种脚本就是全部</strong>，不需要另外准备什么。</p>
+  <pre>REAL=$(readlink -f /opt/guiks-gd-content-moderation/current)
+sudo -u guiks bash -c "set -a; . /etc/guiks-gd-content-moderation/app.env; set +a;   UPSTREAM_PROFILES_JSON= UPSTREAM_URL= ALLOW_MOCK_UPSTREAM=true   node $REAL/dist/seed-demo.js"</pre>
+  <p>三个环境变量覆盖<strong>只作用于这一个进程</strong>，<code>app.env</code> 不动，服务重启后照常用真实模型。</p>
+  <div class="ok"><strong>为什么播种走 mock。</strong>内置 mock 是确定性的，同一份通稿永远得到同一个结果——试用手册里写的每个数字才对得上。
+  真实模型的输出不可复现，手册第 3、4 步那几个教学点（禁用词被拦、数字与原通稿不一致）就不保证出现。
+  <strong>真实模型的能力留给试用者现场新建稿件去验证</strong>，那才是真调用。</div>
+  <div class="warn"><strong>播种只增不删。</strong>按标题判重，已播过的跳过，试用者自己建的稿子一概不动；重复跑一次是空操作。
+  要推倒重来必须显式清理：<code>node $REAL/dist/reset-demo.js --yes</code>（删全部稿件与留痕，账号保留）。
+  <strong>播种和删除是两件事</strong>——试用者建的稿子和播种数据在同一个库里，播种顺手清库，别人试到一半的东西就没了。</div>
+  <p>预期输出的最后一行：<code>完成：全库稿件 15 篇，已签发 10，留痕 315 条，全台 AI 参与度 95.0%</code>。
+  这是空库首播的结果；库里本来有数据，这一行自然更大——<strong>它报的是全库现状，不是这次播了多少</strong>。</p>
+  <p>清理或播种<strong>之前先备份</strong>：</p>
+  <pre>sudo -u guiks node -e "
+const D=require('$REAL/node_modules/better-sqlite3');
+new D('/var/lib/guiks-gd-content-moderation/app.db',{readonly:true})
+  .backup('/var/lib/guiks-gd-content-moderation/backups/app-'+Date.now()+'.db')
+  .then(()=>process.exit(0));"</pre>
+  <p>账号五个（<code>zhangmin</code> / <code>lijianguo</code> / <code>wangzhiyuan</code> / <code>stationadmin</code> / <code>chenxue</code>），
+  口令取 <code>SEED_PASSWORD</code>，默认 <code>gatekeeper-demo</code>，已存在就跳过、不覆盖改过的口令。
+  详见 <code>docs/deploy/operations.md</code> 与 <code>docs/deploy/user-manual.md</code>。</p>
+
   <h2>5. 发布、验证与回滚</h2>
   <ol><li>检查工作树、测试和构建通过。</li><li>先执行 SQLite 逻辑备份，再创建云盘快照。</li><li>上传新 SHA 到 <code>releases/&lt;sha&gt;</code>，用原子软链接更新 <code>current</code>。</li><li>重启 systemd，检查 <code>/readyz</code>、HTTPS 登录、一个授权工作流与模型调用。</li><li>异常时将 <code>current</code> 指回上一个 SHA、重启服务；数据问题再按备份或快照恢复。</li></ol>
   <h2>6. 备份与监控</h2>
