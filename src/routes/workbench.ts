@@ -15,6 +15,7 @@ import {
   type PreparedPreflightMutation,
 } from '../db/repository.js';
 import { computeAiShare } from '../domain/ai-share.js';
+import { diffGeneration, type GenerationDelta, type IssueScan } from '../domain/generation-delta.js';
 import type { UserAccount } from '../domain/auth.js';
 import {
   contentSourceTypes,
@@ -162,6 +163,12 @@ export interface WorkbenchView {
   signOff?: SignOff;
   /** UI hint only; the route repeats the authoritative server-side check. */
   contentEditable: boolean;
+  /**
+   * 生成前后的问题增减，供第 ③ 屏回答「这次生成可信吗」。
+   *
+   * 还没有产物时不存在——那时没有「前后」可比。
+   */
+  generationDelta?: GenerationDelta;
 }
 
 function hasRevisionAfterLatestReturn(
@@ -240,6 +247,10 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
 
   const { manuscript, artifacts, segments, reviews, trace } = aggregate;
 
+  // 同一次 buildView 里所有判定都按同一版词表，否则同屏两个数会对不上。
+  const ruleset = activeRuleset();
+  const productScans: IssueScan[] = [];
+
   const artifactViews: ArtifactView[] = artifacts
     .filter((artifact) => artifact.kind !== 'source')
     .map((artifact) => {
@@ -247,10 +258,32 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
       const sentences = own.length > 0 ? own.map((segment) => segment.text) : splitSentences(artifact.content);
       const { annotations } = runPreflight(
         { artifactId: artifact.id, sentences, sourceText: manuscript.sourceText },
-        activeRuleset(),
+        ruleset,
       );
+      productScans.push({ annotations, sentences });
       return { artifact, segments: own, annotations };
     });
+
+  /**
+   * 原通稿自己也过一遍同一套规则，好算出 AI 改掉了什么、又埋了什么。
+   *
+   * `sourceText` 传它自己：一致性比对那一类因此恒为空——那一类的语义是「拿产物
+   * 比原通稿」，原通稿自比没有意义，`SOURCE_EXCLUDED` 里再排除一次。
+   */
+  const sourceSentences = splitSentences(manuscript.sourceText);
+  const sourceScan: IssueScan = {
+    annotations: runPreflight(
+      {
+        artifactId: `${manuscript.id}-source`,
+        sentences: sourceSentences,
+        sourceText: manuscript.sourceText,
+      },
+      ruleset,
+    ).annotations,
+    sentences: sourceSentences,
+  };
+  const generationDelta =
+    artifactViews.length > 0 ? diffGeneration(sourceScan, productScans) : undefined;
 
   const allAnnotations = artifactViews.flatMap((view) => view.annotations);
   const actions = Object.fromEntries(
@@ -266,8 +299,7 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
     stage: stageOf(manuscript.status),
     statusLabel: statusLabels[manuscript.status],
     admission:
-      getWorkflowRepository().getAdmissionResult(manuscriptId) ??
-      runAdmission(manuscript, activeRuleset()),
+      getWorkflowRepository().getAdmissionResult(manuscriptId) ?? runAdmission(manuscript, ruleset),
     artifacts: artifactViews,
     preflight: summarize(allAnnotations),
     ...(share === undefined ? {} : { aiShare: share }),
@@ -278,6 +310,7 @@ function buildView(manuscriptId: string): WorkbenchView | undefined {
     ...(owner ? { waitingOn: owner } : {}),
     revisionReady: manuscript.status === 'revision' && hasRevisionAfterLatestReturn(reviews, trace),
     provenance: readProvenance(trace),
+    ...(generationDelta ? { generationDelta } : {}),
     contentEditable: mayMutateManuscriptContent(
       manuscript.status,
       'workbench-artifact-revise',
