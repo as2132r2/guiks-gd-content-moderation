@@ -230,6 +230,17 @@ ${themeBootstrap}<style>${themeStyles}
   .an-redact { background:var(--warn-soft);  border-bottom:2px solid var(--warn); }
   .an-flag   { background:var(--info-soft);  border-bottom:2px dotted var(--info); }
 
+  .delta { margin-bottom:12px; }
+  .delta .rows { display:flex; flex-direction:column; gap:7px; margin-top:10px; }
+  .delta .row { display:grid; grid-template-columns:auto 1fr; gap:10px; align-items:baseline; font-size:13px; }
+  .delta .tag { font-size:11.5px; padding:2px 9px; border-radius:999px; white-space:nowrap; background:var(--panel-3); color:var(--muted); }
+  .delta .tag.alarm { background:var(--block-soft); color:var(--block); font-weight:600; }
+  .delta .tag.ok { background:var(--accent-soft); color:var(--accent-deep); }
+  .delta .items { display:flex; gap:6px; flex-wrap:wrap; }
+  .delta .item { font-size:12.5px; padding:2px 8px; border-radius:6px; background:var(--panel-2); border:1px solid var(--line); }
+  .delta .item.alarm { border-color:var(--block); color:var(--block); }
+  .delta .item .why { color:var(--faint); }
+  .delta .none { font-size:12.5px; color:var(--faint); }
   .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--faint); margin-bottom:10px; }
   .legend i { display:inline-block; width:10px; height:3px; border-radius:2px; margin-right:5px; vertical-align:middle; }
 
@@ -1559,6 +1570,8 @@ ${demoTools ? `<div class="present-modal" id="present-modal" hidden>
         '</div></div>';
     }
 
+    out += generationDeltaPanel(view);
+
     out += '<div class="legend">' +
       Object.keys(ORIGIN_LABEL).map(function (key) {
         return '<span><i style="background:' + ORIGIN_COLOR[key] + '"></i>' + ORIGIN_LABEL[key] + '</span>';
@@ -1581,6 +1594,50 @@ ${demoTools ? `<div class="present-modal" id="present-modal" hidden>
           : all.map(annotationBlock).join(''));
     }
     return out;
+  }
+
+  /**
+   * 第 ③ 屏：这次生成，AI 动掉了什么、又埋了什么。
+   *
+   * **主角是「新引入」那一行，不是「已不存在」那一行。** 模型最典型的失手是编一个
+   * 原通稿里没有的数字或人名，那些会落在这里。
+   *
+   * 措辞上刻意不写「AI 已修正 N 处」——那暗示编辑可以少看一点，正好和「判断留给
+   * 人」相反。所以说的是「产物里已不存在」这个事实，后面跟一句仍需逐条确认。
+   */
+  function generationDeltaPanel(view) {
+    var d = view.generationDelta;
+    if (!d) return '';
+
+    function items(list, alarm) {
+      return '<span class="items">' + list.map(function (issue) {
+        return '<span class="item' + (alarm ? ' alarm' : '') + '">' + esc(issue.text) +
+          (issue.count > 1 ? ' ×' + issue.count : '') +
+          '<span class="why"> · ' + esc(CATEGORY_LABEL[issue.category] || issue.category) + '</span></span>';
+      }).join('') + '</span>';
+    }
+    function row(tag, tone, list, empty) {
+      return '<div class="row"><span class="tag ' + tone + '">' + tag + '</span>' +
+        (list.length ? items(list, tone === 'alarm') : '<span class="none">' + empty + '</span>') +
+        '</div>';
+    }
+
+    var alarm = d.introduced.length > 0;
+    return '<div class="card delta"><h3>这次生成动了什么</h3>' +
+      '<p>' + (alarm
+        ? '<strong>AI 引入了原通稿里没有的问题。</strong>编造的数字与人名就是从这里冒出来的——' +
+          '往下走之前先核这一行。'
+        : '原通稿的问题在产物里都不存在了，AI 也没有引入新的。' +
+          '<strong>这不代表可以少看</strong>——下一步的预检仍要逐条确认。') + '</p>' +
+      '<div class="rows">' +
+        row('AI 新引入', alarm ? 'alarm' : 'ok', d.introduced, '没有。产物里的问题原通稿里都有。') +
+        row('产物里已不存在', 'ok', d.resolved, '原通稿本身没有可修的问题。') +
+        row('原通稿带过来的', '', d.carried, '没有遗留。') +
+      '</div>' +
+      '<p class="hint" style="margin-top:10px">' +
+      '比的是同一套词表在原通稿与产物上的命中差。「缺少 AI 生成内容标识」不计入——' +
+      '模型不会自己加，预检会自动补，把必然项算成 AI 的过错没有意义。</p>' +
+      '</div>';
   }
 
   var KIND_LABEL = { 'broadcast-script':'播报稿', 'short-video-copy':'短视频文案', 'source':'原文' };

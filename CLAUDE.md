@@ -83,6 +83,10 @@ npm run provision:user           # 建账号（production 部署用）
 - **AI 参与度追溯图谱已落地**：`tracePanel` 在 [src/views/workbench-view.ts](src/views/workbench-view.ts)，
   五块内容——签发卡、AI 参与度折线、句级来源图谱、责任链、规则命中。折线画的是稿件级比例，从留痕重建。
 - **首页是产品介绍页**：`/` 是公开、不含任何稿件数据的产品说明页（[src/routes/landing.ts](src/routes/landing.ts) + [src/views/landing-view.ts](src/views/landing-view.ts)），「进入试用」指向 `/workbench`；**工作台已从 `/` 收敛到 `/workbench`**，未登录由它自己转 `/login`。遗留 AuditGate 控制台在 `/console`。
+- **第 ③ 屏「这次生成动了什么」已落地**：原通稿与产物过同一套词表，取命中差 —— [src/domain/generation-delta.ts](src/domain/generation-delta.ts) 是纯函数（只吃 `Annotation[]` 与句子，不依赖 `src/rules/`，避免 domain 反向依赖），`buildView` 组装成 `WorkbenchView.generationDelta`。
+  与第 ④ 屏的分工：**③ 说变化（要不要往下走），④ 说逐条处置（能不能发）**，不这么划 ④ 会被架空。
+  **主角是 `introduced` 那一行**——编造的数字与虚构人名从这里冒出来；`resolved` 只是背景。文案刻意不写「AI 已修正 N 处」（那暗示可以少看，与「判断留给人」相反）。
+  两侧排除的类目**不对称，是故意的**：原通稿侧排 `ai-label`（它不是 AI 写的）与 `inconsistency`（自比恒空）；产物侧只排 `ai-label`，**必须留下 `inconsistency`**，那正是幻觉的出口。
 - **全流程监控看板已落地**：`/monitor` 页面在 [src/views/oversight-view.ts](src/views/oversight-view.ts)，聚合端点 `GET /api/monitor/overview` 在 [src/routes/oversight.ts](src/routes/oversight.ts)，跨稿件 SQL 在 [src/db/oversight.ts](src/db/oversight.ts)。与工作台第 ⑥ 屏的分工：**追溯图谱答「这一篇稿子怎么走的」，监控看板答「这个台最近在怎么写稿」**。页面与端点都要 `audit:read`，与 `/api/state` 取齐。⚠️ 别和遗留的 `/api/monitor/start`（[src/routes/monitor.ts](src/routes/monitor.ts)，AuditGate 时代的内存态播种）搞混。
 - **试用数据集与用户手册已落地**：数据定义在 [src/demo-dataset.ts](src/demo-dataset.ts)（**全部模拟/脱敏素材**，人名地名数字均为虚构），执行器是 [src/seed-demo.ts](src/seed-demo.ts)，手册在 [docs/deploy/user-manual.md](docs/deploy/user-manual.md)（另有同名 `.html` 一份，含监控一节与可粘贴素材）。试用账号的用户名与显示名必须与 `ensureDemoUsers`（[src/db/repository.ts](src/db/repository.ts)）一致，否则 demo 与 production 两种部署下手册说的不是一回事、历史留痕也对不上。
 - **轨道 A 审核内核已落地**：校次契约、`revision` 复核修改、可选 `countersign` 会签、审核轮次、会签表单与意见留痕、改稿后重新预检、实体一致性、L2「待人工复核」、AI 显式/隐式标识和准入结论持久化均已实现。轨道 A migration 使用 `0004`，轨道 C 用户表使用 `0003`。
