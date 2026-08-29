@@ -113,6 +113,14 @@ describe('生产下必须存在的端点', () => {
     // 401 而不是 404：这一组是「挂着且受保护」，与上面那组的区别正在这里。
     expect((await app.request('/api/monitor/overview')).status).toBe(401);
   });
+
+  it('keeps 判定依据 mounted in production, because a real deployment must be able to change it', async () => {
+    // ⚠️ 与遗留的 /policy **不是一回事**：那一套是 demo-only 的内存态旧规格。
+    // 主链在用的词表得能在真实部署里改，也得能查改动史——所以它两种模式都挂着，
+    // 但同样要登录。
+    expect((await app.request('/api/rules')).status).toBe(401);
+    expect((await asUser('/api/rules')).status).toBe(200);
+  });
 });
 
 describe('生产工作台不摆演示夹具的按钮', () => {
