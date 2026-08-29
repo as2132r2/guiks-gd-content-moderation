@@ -44,9 +44,10 @@
 - 背景：`#F5F5F7`；主表面：`#FFFFFF`；主文字：`#1D1D1F`。
 - 语义状态保留低饱和的红、琥珀、蓝、绿，不以纯黑代替状态。
 
-### 米色暖底
+### 纸质暖白
 
-- 背景：`#EEE6D8`；主表面：`#FBF7EF`；主色：`#675B4D`。
+- 背景：`#F7F3EC`；书页面：`#FFFDF8`；主色：`#676057`。
+- 用纯色暖白层级、暖灰细边界和低强度纸页阴影表达纸质感，不添加纸纹、噪点或背景渐变。
 - 用于长文阅读；状态 token 使用主题中已确认的低饱和色。
 
 ### 液态玻璃
@@ -60,7 +61,7 @@
 
 ## 字体与字号
 
-零外部字体。四页统一使用系统字体：`-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif`。数据、时间、规则层级和来源比例使用系统等宽字体；暖底主题通过行距与字重提高长文可读性，不换下载字体。
+零外部字体。四页统一使用系统字体：`-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif`。数据、时间、规则层级和来源比例使用系统等宽字体；纸质暖白主题通过行距与字重提高长文可读性，不换下载字体。
 
 演示模式最低字号 14px：
 

@@ -11,6 +11,7 @@ import {
   themeRuntimeScript,
   themeStorageKey,
   themeStyles,
+  themes,
 } from '../src/views/theme.js';
 
 const pages = [
@@ -52,6 +53,24 @@ describe('shared theme shell', () => {
     expect(themeStyles).toMatch(/prefers-reduced-motion:reduce[\s\S]*body,header\.topbar[\s\S]*transition-duration:\.001ms/);
     expect(themeStyles).toContain('@supports not ((backdrop-filter:blur(2px))');
     expect(themeStyles).not.toContain('transition:all');
+  });
+
+  it('renders warm as a solid near-white paper theme without changing its stable id', () => {
+    expect(themes.warm).toEqual({ label: '纸质暖白', description: '暖白书页、柔和护眼' });
+    expect(token('warm', '--bg')).toBe('#f7f3ec');
+    expect(token('warm', '--bg-effect')).toBe('#f7f3ec');
+    expect(token('warm', '--panel')).toBe('#fffdf8');
+    expect(token('warm', '--panel-2')).toBe('#f8f3ea');
+    expect(token('warm', '--panel-3')).toBe('#eee6da');
+    expect(themeBlock('warm')).not.toMatch(/gradient|url\(/);
+    expect(themeStyles).toContain('.theme-preview.warm { background:#f7f3ec; }');
+  });
+
+  it('elevates the complete topbar stacking context above filtered page surfaces', () => {
+    expect(themeStyles).toMatch(/header\.topbar \{ position:relative; z-index:10; \}/);
+    expect(renderLanding()).toContain('position:sticky; top:0; z-index:5');
+    expect(renderWorkbench()).toContain('position:sticky; top:0; z-index:40');
+    expect(renderWorkbench()).toContain('z-index:100; display:grid; place-items:center');
   });
 
   it('closes the theme popover without stealing focus on an outside pointer action', () => {
@@ -132,6 +151,8 @@ describe('shared theme shell', () => {
     expect(html).toContain('if (!prefersReducedMotion())');
     expect(html).toContain('pathLength="1"');
     expect(html).toContain('Math.min(index, 24)');
+    expect(html).toContain('main { grid-template-columns:minmax(0,1fr); overflow-y:auto; }');
+    expect(html).toContain('aside, section.stage, aside.side { min-width:0; overflow-y:visible; }');
     expect(html).toContain("window.matchMedia('(prefers-reduced-motion: reduce)').matches");
   });
 
@@ -144,7 +165,7 @@ describe('shared theme shell', () => {
   it('keeps small semantic text tokens readable against every theme panel', () => {
     for (const theme of ['mono', 'warm', 'glass']) {
       const panel = token(theme, '--panel-solid');
-      for (const name of ['--muted', '--faint', '--block', '--warn', '--info', '--ai', '--ai-edited', '--human', '--source']) {
+      for (const name of ['--ink', '--muted', '--faint', '--accent', '--accent-deep', '--block', '--warn', '--info', '--ai', '--ai-edited', '--human', '--source']) {
         expect(contrast(token(theme, name), panel), `${theme} ${name}`).toBeGreaterThanOrEqual(4.5);
       }
     }
@@ -173,10 +194,16 @@ function fakeElement() {
 }
 
 function token(theme: string, name: string): string {
-  const block = new RegExp(`html\\[data-theme="${theme}"\\] \\{([\\s\\S]*?)\\n\\}`).exec(themeStyles)?.[1];
+  const block = themeBlock(theme);
   const value = block && new RegExp(`${name}:([^;]+);`).exec(block)?.[1]?.trim();
   if (!value?.startsWith('#')) throw new Error(`missing hex token ${theme} ${name}`);
   return value;
+}
+
+function themeBlock(theme: string): string {
+  const block = new RegExp(`html\\[data-theme="${theme}"\\] \\{([\\s\\S]*?)\\n\\}`).exec(themeStyles)?.[1];
+  if (!block) throw new Error(`missing theme block ${theme}`);
+  return block;
 }
 
 function contrast(a: string, b: string): number {

@@ -110,6 +110,13 @@ ${themeBootstrap}<style>${themeStyles}
   aside, section.stage, aside.side { padding:18px; overflow-y:auto; }
   aside.list { border-right:1px solid var(--line); background:var(--panel); }
   aside.side { border-left:1px solid var(--line); background:var(--panel); }
+  @media (max-width:720px) {
+    main { grid-template-columns:minmax(0,1fr); overflow-y:auto; }
+    section.stage { grid-row:1; }
+    aside.list { grid-row:2; border-right:0; border-top:1px solid var(--line); }
+    aside.side { grid-row:3; border-left:0; border-top:1px solid var(--line); }
+    aside, section.stage, aside.side { min-width:0; overflow-y:visible; }
+  }
   h2.hd {
     font-size:11px; font-family:var(--mono); letter-spacing:.7px; color:var(--faint);
     text-transform:uppercase; margin:0 0 12px; font-weight:500;
