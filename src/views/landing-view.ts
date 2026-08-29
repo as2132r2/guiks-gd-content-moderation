@@ -221,11 +221,12 @@ export function renderLanding(): string {
 
   <section class="hero">
     <p class="eyebrow">让 AI 写的稿子，敢发出去。</p>
-    <h1>AI 把稿子写快十倍，审核跟不上就等于没提速。</h1>
-    <p class="lede">AI 让编辑一天能写五十篇稿，但三审三校还是那几个人——把关人就是补这个缺口的。</p>
+    <h1>无监管，无审核，不AI！</h1>
+    <p class="lede">AI 可以写，但署名的是人。稿子出了事，追的是责任人，不是模型。</p>
     <p class="body">
-      把关人把三审三校里<strong>机械的校对自动化、判断留给人、每一步留痕</strong>，
-      让 AI 写的稿子敢发出去。一条六步主链，从粘贴通稿到签发追溯，十分钟能走完一遍。
+      监管防的是<strong>人滥用 AI</strong>，审核保的是<strong>AI 写的稿子能合规发出去</strong>，
+      留痕定的是<strong>出了事谁负责</strong>。三样立住，AI 才敢放开用——一条六步主链，
+      从粘贴通稿到签发追溯，十分钟能走完一遍。
     </p>
 
     <div class="cta">
