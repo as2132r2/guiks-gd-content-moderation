@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ALL_SEED_MANUSCRIPTS, SEED_ACCOUNTS, SEED_MANUSCRIPTS } from '../src/demo-dataset.js';
 import { parseResetArguments } from '../src/reset-demo.js';
+import { pendingManuscripts } from '../src/seed-demo.js';
 import { isSystemRole } from '../src/domain/contracts.js';
 import { transitions } from '../src/domain/workflow.js';
 import { runAdmission } from '../src/rules/index.js';
@@ -141,6 +142,37 @@ describe('本底数据撑起监控看板', () => {
     );
     expect(walked.length).toBeGreaterThanOrEqual(1);
     for (const seed of walked) expect(seed.reason, seed.title).toBeTruthy();
+  });
+});
+
+describe('播种只增不删', () => {
+  const titles = ALL_SEED_MANUSCRIPTS.map((seed) => seed.title);
+
+  it('seeds everything into an empty database', () => {
+    expect(pendingManuscripts([])).toHaveLength(ALL_SEED_MANUSCRIPTS.length);
+  });
+
+  it('does nothing on a second run', () => {
+    // 重复播种是空操作，不是「推平重来」。删数据是另一条命令，且要显式确认。
+    expect(pendingManuscripts(titles)).toEqual([]);
+  });
+
+  it('fills only the gap when part of the set is already there', () => {
+    const half = titles.slice(0, 5);
+    const pending = pendingManuscripts(half);
+    expect(pending).toHaveLength(titles.length - 5);
+    expect(pending.map((seed) => seed.title)).not.toContain(half[0]);
+  });
+
+  it('ignores manuscripts nobody seeded, instead of treating them as strays', () => {
+    // 库里有试用者自己建的稿子是正常的。播种不认识它们，也不该动它们。
+    const pending = pendingManuscripts(['试用者自己建的稿子', ...titles]);
+    expect(pending).toEqual([]);
+  });
+
+  it('keys on titles that are actually unique', () => {
+    // 判重用标题。两条夹具同名的话，第二条永远播不进去，而且不会报错。
+    expect(new Set(titles).size).toBe(titles.length);
   });
 });
 
