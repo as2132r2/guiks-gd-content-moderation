@@ -387,6 +387,45 @@ describe('带单位的数字怎么抽出来', () => {
   });
 });
 
+describe('比对只看数值与量级，不看量词', () => {
+  const SRC =
+    '8月28日，会议召开。全市已建成新时代文明实践中心 12 个，注册志愿者 8.6万人，园区累计完成投资 3.2亿元。';
+  const inconsistencies = (sentence: string) =>
+    runPreflight({ artifactId: 'a', sentences: [sentence], sourceText: SRC })
+      .annotations.filter((annotation) => annotation.category === 'inconsistency')
+      .map((annotation) => annotation.title);
+
+  it('does not cry wolf when the copy swaps the measure word', () => {
+    // 回归：原通稿「注册志愿者 8.6 万人」，短视频写「8.6 万志愿者」——同一个数。
+    // 量词是行文不是数据，按字面比会把它标成「原通稿里找不到」。
+    expect(inconsistencies('12个实践中心、8.6万志愿者齐上阵。')).toEqual([]);
+    expect(inconsistencies('建成实践中心12家。')).toEqual([]);
+  });
+
+  it('does not cry wolf when the copy drops 元 after a magnitude', () => {
+    expect(inconsistencies('园区投资3.2亿。')).toEqual([]);
+  });
+
+  it('still catches a number that actually changed', () => {
+    expect(inconsistencies('注册志愿者达9.9万人。')).toHaveLength(1);
+    expect(inconsistencies('园区投资3.6亿元。')).toHaveLength(1);
+    expect(inconsistencies('带动农户 5000 户增收。')).toHaveLength(1);
+  });
+
+  it('compares dates and years literally', () => {
+    // 「2026 年」和「2026 元」不该被算成同一个东西。
+    expect(inconsistencies('8月29日，会议召开。')).toHaveLength(1);
+    expect(inconsistencies('8月28日，会议召开。')).toEqual([]);
+  });
+
+  it('documents the blind spot instead of pretending it is covered', () => {
+    // 量纲被换（元 → 人）比不出来：两边都规范成「3.2亿」。这是明知的取舍——
+    // 量词替换在改写里极常见，量纲替换极罕见，拿高频误报换低频漏报不划算。
+    // 真要补，得给量词分类再比类别，而不是回到按字面比。
+    expect(inconsistencies('园区投资3.2亿人。')).toEqual([]);
+  });
+});
+
 describe('数字一致性比对是精确匹配', () => {
   it('catches a number that is a substring of the original', () => {
     // 回归：`source.includes()` 会让原文「15 人」放过生成稿里的「5 人」，

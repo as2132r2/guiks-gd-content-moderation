@@ -102,18 +102,26 @@ export function runAdmission(
 // ————————————————————————— 输出预检 —————————————————————————
 
 /**
- * 比对前的归一。
+ * 比对用的规范形：**只留数值与量级，量词丢掉。**
  *
- * 去空格之外还去掉量级后面的「元」：原通稿写「3.2 亿元」、生成稿写「3.2 亿」是
- * **同一个数**，把它标成「这个数字在原通稿里找不到」是误报。误报比漏报更伤——
- * 编辑被假警报教育两次之后就不再看这一档了，而这一档正是幻觉唯一的出口。
+ * 量词是行文，不是数据。同一个数在改写里换个量词太常见了——原通稿「注册志愿者
+ * 8.6 万人」，短视频写「8.6 万志愿者」，是同一个数；早前按字面比，这会被标成
+ * 「原通稿里找不到」。误报比漏报更伤：编辑被假警报教育两次之后就不再看这一档，
+ * 而这一档正是幻觉唯一的出口。
  *
- * 「100 元」不动：那里的「元」是量词本身，不是量级的尾巴。
- * 量词不同仍然算不同（「3.2 亿元」≠「3.2 亿人」），靠 NUMBER_PATTERN 把量级后面
- * 的量词一起抽出来保证。
+ * 日期与年份原样比——把「2026 年」和「2026 元」算成同一个东西没有道理。
+ *
+ * **已知盲点**：这样比不出量纲被换（原通稿「3.2 亿元」、生成稿「3.2 亿人」两边都
+ * 规范成「3.2亿」）。这是明知的取舍：量词替换在改写里极常见，量纲替换极罕见，
+ * 拿一个高频误报去换一个低频漏报不划算。真要补，得给量词分类（金额 / 人 / 面积
+ * …）再比类别，而不是回到按字面比。
  */
-const normalizeDigits = (text: string) =>
-  text.replace(/\s+/g, '').replace(/([亿万])元$/, '$1');
+const comparisonKey = (literal: string): string => {
+  const text = literal.replace(/\s+/g, '');
+  if (/[年月日]/.test(text)) return text;
+  const match = /^(\d+(?:\.\d+)?)([亿万])?/.exec(text);
+  return match ? `${match[1]}${match[2] ?? ''}` : text;
+};
 
 /**
  * 原通稿里出现过的数字/日期，去空格后的**精确**集合。
@@ -125,7 +133,7 @@ const normalizeDigits = (text: string) =>
 function sourceNumbers(sourceText: string): Set<string> {
   const found = new Set<string>();
   NUMBER_PATTERN.lastIndex = 0;
-  for (const match of sourceText.matchAll(NUMBER_PATTERN)) found.add(normalizeDigits(match[0]));
+  for (const match of sourceText.matchAll(NUMBER_PATTERN)) found.add(comparisonKey(match[0]));
   return found;
 }
 
@@ -373,7 +381,7 @@ export function runPreflight(
     NUMBER_PATTERN.lastIndex = 0;
     for (const match of sentence.matchAll(NUMBER_PATTERN)) {
       const literal = match[0];
-      if (source.has(normalizeDigits(literal))) continue;
+      if (source.has(comparisonKey(literal))) continue;
       add(ordinal, match.index, match.index + literal.length, {
         action: 'redact',
         category: 'inconsistency',
