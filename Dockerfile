@@ -5,6 +5,9 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
+# 试用手册随构建拷进 dist/——运行镜像只带 dist/，读不到 docs/。
+COPY scripts ./scripts
+COPY docs/deploy/user-manual.html ./docs/deploy/user-manual.html
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-slim AS runtime

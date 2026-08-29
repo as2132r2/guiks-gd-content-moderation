@@ -5,7 +5,7 @@
 | 文档 | 给谁看 | 内容 |
 | --- | --- | --- |
 | [user-manual.md](user-manual.md) | **试用者** | 拿着就能用：登录、十来分钟走完六步主链、看监控看板、常见问题，附六份可直接粘贴的素材 |
-| [user-manual.html](user-manual.html) | **试用者** | 同一份手册的网页版，**双击就能开**，可随部署包发出去。零外部资源，素材带一键复制 |
+| [user-manual.html](user-manual.html) | **试用者** | 同一份手册的网页版。双击就能开，也由服务端以 `/manual` 提供——介绍页的「试用手册」按钮指向它。零外部资源，素材带一键复制 |
 | [operations.md](operations.md) | **部署与运维** | 环境变量、播种、清理、**demo → production 切换**、备份、排错 |
 
 > 两份手册同源，**改一份必须同步另一份**——`test/seed-scripts.test.ts` 会核对

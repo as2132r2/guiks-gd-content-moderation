@@ -96,7 +96,6 @@ ${themeBootstrap}<style>${themeStyles}
   .cred .line { font-size:15px; }
   .cred .line b { font-family:var(--mono); color:var(--accent-deep); font-weight:600; letter-spacing:.02em; }
   .cred .hint { font-size:12.5px; color:var(--faint); }
-  .secondary-links { display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; }
 
   /* ---------- 因果三段 ---------- */
   .because { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
@@ -205,7 +204,7 @@ ${themeBootstrap}<style>${themeStyles}
   <span class="demo-badge">模拟 / 脱敏演示环境</span>
   <nav class="nav">
     ${renderThemeControl()}
-    <a href="/monitor">全流程监控看板</a>
+    <a href="/manual" target="_blank" rel="noopener">试用手册</a>
     <a class="primary" href="/workbench">进入试用</a>
   </nav>
 </header>
@@ -224,13 +223,11 @@ ${themeBootstrap}<style>${themeStyles}
 
     <div class="cta">
       <a class="btn" href="/workbench">进入试用</a>
+      <a class="btn ghost" href="/manual" target="_blank" rel="noopener">试用手册</a>
       <div class="cred">
-        <div class="line">试用账号 <b>zhangmin</b>　密码 <b>gatekeeper-demo</b></div>
-        <div class="hint">这个账号一人持有编辑 / 部门主任 / 分管领导三个角色，可以独自走完全流程。</div>
+        <div class="line">不知道从哪下手？<b>试用账号和口令都写在手册里。</b></div>
+        <div class="hint">手册在新标签页打开，十来分钟走完六步主链，另附六份可直接粘贴的模拟通稿。</div>
       </div>
-    </div>
-    <div class="secondary-links">
-      <a class="btn ghost" href="/monitor">看全流程监控看板</a>
     </div>
   </section>
 
@@ -375,7 +372,7 @@ ${themeBootstrap}<style>${themeStyles}
     <div class="tail">
       <div>
         <h3>十分钟走一遍整条链路</h3>
-        <p>不需要看代码，也不需要装任何东西。用 <span class="mono">zhangmin</span> / <span class="mono">gatekeeper-demo</span> 登录，左栏已有 7 篇准备好的稿件。</p>
+        <p>不需要看代码，也不需要装任何东西。左栏已经备好稿件，账号与分步路径见<a href="/manual" target="_blank" rel="noopener">试用手册</a>。</p>
       </div>
       <a class="btn" href="/workbench">进入试用</a>
     </div>

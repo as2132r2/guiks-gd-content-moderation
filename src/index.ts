@@ -10,6 +10,7 @@ import { authRoutes } from './routes/auth.js';
 import { eventsRoutes, requireAuditRead } from './routes/events.js';
 import { gatewayRoutes } from './routes/gateway.js';
 import { landingRoutes } from './routes/landing.js';
+import { manualRoutes } from './routes/manual.js';
 import { monitorRoutes } from './routes/monitor.js';
 import { manuscriptRoutes } from './routes/manuscripts.js';
 import { oversightRoutes } from './routes/oversight.js';
@@ -87,6 +88,7 @@ app.get('/api/meta', (c) =>
 );
 
 app.route('/', landingRoutes);
+app.route('/', manualRoutes);
 app.route('/', eventsRoutes);
 app.route('/', gatewayRoutes);
 app.route('/', manuscriptRoutes);

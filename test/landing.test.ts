@@ -19,12 +19,21 @@ describe('产品介绍首页', () => {
     expect(workbench.headers.get('location')).toBe('/login?next=/workbench');
   });
 
-  it('把「进入试用」和试用账号放在一起，不用去翻文档', async () => {
+  it('不再从公开介绍页指向监控看板', async () => {
+    // 监控看板要登录才看得到，放在公开介绍页上只会把人送去登录墙。
+    // 工作台顶栏那个入口是另一回事，不受这条影响。
+    expect(await landing()).not.toContain('/monitor');
+  });
+
+  it('把「进入试用」和试用手册放在一起，账号在手册里', async () => {
+    // 原来首页直接印张敏一个账号。改成指向手册：手册里五个账号都有、
+    // 还有分步路径和可粘贴素材——**同一件事不在两处各说一套**。
     const html = await landing();
     expect(html).toContain('进入试用');
     expect(html).toContain('href="/workbench"');
-    expect(html).toContain('zhangmin');
-    expect(html).toContain('gatekeeper-demo');
+    expect(html).toContain('href="/manual"');
+    expect(html).toContain('target="_blank"');
+    expect(html).not.toContain('gatekeeper-demo');
   });
 
   it('零外部资源，会场断网也能开', async () => {
