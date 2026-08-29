@@ -124,6 +124,61 @@ export const traceEvents = sqliteTable(
 );
 
 
+/**
+ * 判定依据（词表）。运行时读的是这张表，`src/rules/terms.ts` 是它的内置基线定义。
+ *
+ * `source`（出处）NOT NULL 是刻意的：判定依据说不出出处，整个「说得清」就塌了。
+ */
+export const ruleTerms = sqliteTable(
+  'rule_terms',
+  {
+    ruleId: text('rule_id').primaryKey(),
+    scope: text('scope').notNull(),
+    term: text('term').notNull(),
+    source: text('source').notNull(),
+    origin: text('origin').notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    admissionBucket: text('admission_bucket'),
+    category: text('category'),
+    action: text('action'),
+    title: text('title'),
+    detail: text('detail'),
+    suggestion: text('suggestion'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [index('rule_terms_scope_idx').on(table.scope, table.enabled)],
+);
+
+/** 词表改动留痕。只 INSERT——判定依据被谁改过必须查得到。 */
+export const ruleChangeLog = sqliteTable(
+  'rule_change_log',
+  {
+    id: text('id').primaryKey(),
+    rulesetVersion: integer('ruleset_version').notNull(),
+    ruleId: text('rule_id').notNull(),
+    action: text('action').notNull(),
+    beforeJson: text('before_json'),
+    afterJson: text('after_json'),
+    reason: text('reason').notNull(),
+    acknowledgedWarning: text('acknowledged_warning'),
+    actorUserId: text('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+    actor: text('actor').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    index('rule_change_log_rule_idx').on(table.ruleId, table.createdAt),
+    index('rule_change_log_time_idx').on(table.createdAt),
+  ],
+);
+
+/** 单行：词表整体的版本号。写进准入与预检的留痕，用来回答「当时按哪一版判的」。 */
+export const rulesetMeta = sqliteTable('ruleset_meta', {
+  id: integer('id').primaryKey(),
+  version: integer('version').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
 export const schema = {
   users,
   manuscripts,
@@ -132,4 +187,7 @@ export const schema = {
   sentenceSegments,
   reviewRecords,
   traceEvents,
+  ruleTerms,
+  ruleChangeLog,
+  rulesetMeta,
 };

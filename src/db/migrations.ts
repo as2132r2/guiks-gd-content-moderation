@@ -131,6 +131,57 @@ export const migrations: Migration[] = [
         ON manuscripts(coverage_topic);
     `,
   },
+  {
+    id: '0006_managed_ruleset',
+    sql: `
+      -- 判定依据落库（词表管理）。内置基线由 ensureBuiltinRuleTerms() 幂等灌入，
+      -- 不写在迁移里：基线的权威定义在 src/rules/terms.ts，一处定义好过两处。
+      CREATE TABLE rule_terms (
+        rule_id TEXT PRIMARY KEY NOT NULL,
+        scope TEXT NOT NULL,
+        term TEXT NOT NULL,
+        -- 出处。NOT NULL 是刻意的：没有出处的判定依据不该存在。
+        source TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        admission_bucket TEXT,
+        category TEXT,
+        action TEXT,
+        title TEXT,
+        detail TEXT,
+        suggestion TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX rule_terms_scope_idx ON rule_terms(scope, enabled);
+
+      -- 改动日志。只 INSERT，永不 UPDATE 也不 DELETE——判定依据被谁改过必须查得到。
+      -- actor 存显示名快照而不只是外键：账号被删之后这条词是谁加的还得答得上来。
+      CREATE TABLE rule_change_log (
+        id TEXT PRIMARY KEY NOT NULL,
+        ruleset_version INTEGER NOT NULL,
+        rule_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        before_json TEXT,
+        after_json TEXT,
+        reason TEXT NOT NULL,
+        acknowledged_warning TEXT,
+        actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        actor TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX rule_change_log_rule_idx ON rule_change_log(rule_id, created_at);
+      CREATE INDEX rule_change_log_time_idx ON rule_change_log(created_at);
+
+      -- 单行。词表整体的版本号，任何一次写操作 +1，写进准入与预检的留痕。
+      CREATE TABLE ruleset_meta (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO ruleset_meta (id, version, updated_at) VALUES (1, 0, 0);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

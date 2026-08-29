@@ -428,6 +428,33 @@ footer {
   <p>看板底部有一栏叫<strong>「这一版还没有的」</strong>，明写着哪些数还不可信（比如环节停留时长——试用环境里的流转是连点出来的，不代表真实工时）。<strong>主动说明，比被问出来强。</strong></p>
 </section>
 
+<section class="step" id="s3-8">
+  <div class="step-head"><span class="step-num">8</span><h3>看这套系统凭什么这么判 <span class="step-time">· 1 分钟</span></h3></div>
+  <p>前七步看的是判定的<strong>结果</strong>，这一屏看的是判定的<strong>依据本身</strong>。</p>
+  <p>点顶栏的<strong>「判定依据」</strong>（<code>/rules</code>，五个账号都进得去，但<strong>只有 <code>stationadmin</code> 能改</strong>，其余是只读）。四个页签：</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>页签</th><th>里面是什么</th></tr></thead>
+    <tbody>
+      <tr><td><strong>入口准入</strong></td><td>55 条，分硬拦 / 要理由 / 公器私用三档</td></tr>
+      <tr><td><strong>输出预检</strong></td><td>62 条禁用词、慎用词、领导表述规范与错别字</td></tr>
+      <tr><td><strong>内置判定逻辑</strong></td><td>不落库、只能改代码的那部分（标点、格式、当事人姓名保护、一致性比对、L2 判断）。<strong>列在这里是为了不让人以为词表就是判定的全部</strong></td></tr>
+      <tr><td><strong>改动史</strong></td><td>谁在什么时候改了哪一条、从什么改成什么、为什么</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>每一条词都写着<strong>出处</strong>——新华社《禁用词》的就写新华社，本台自己加的就得自己填一句依据。<strong>没有出处加不进去</strong>，这不是前端提示，是接口直接拒。</p>
+  <p>用 <code>stationadmin</code> 试三件事：</p>
+  <ol>
+    <li><strong>加一条词</strong>：出处和理由都必填，填完提交，右上角的版本号从「第 N 版」跳到「第 N+1 版」。</li>
+    <li><strong>试着删一条内置基线</strong>：删不掉，也改不了词面——<strong>「基线是什么」必须永远查得回去</strong>。想让它不生效请<strong>停用</strong>，停用同样留痕。</li>
+    <li><strong>试着往「硬拦」档加一个题材词</strong>（比如「涉黑」）：系统会拦一下，告诉你按题材硬拦会把「扫黑除恶专项行动」这类正经选题拦死。<strong>它不禁止</strong>——勾选确认就能提交，但这次确认会原样记进改动史。</li>
+  </ol>
+  <div class="note">
+    <p><strong>为什么改动史这么较真。</strong> 词表是判定的依据。依据一旦可以改，「这一篇当时按什么判的」就不能只靠规则编号回答了——那条规则可能已经被改过。所以每一次判定的留痕都带着词表版本号，而每一版是什么，由改动史逐条重建。<strong>判定依据自己也得是被追溯的对象</strong>，否则留痕就开始说谎。</p>
+  </div>
+</section>
+
 <h2 id="s4">四、还想试什么</h2>
 
 <div class="scroll">

@@ -5,6 +5,7 @@ import type { UserAccount } from '../src/domain/auth.js';
 import { systemRoles, workflowRoles, type SystemRole } from '../src/domain/contracts.js';
 import {
   hasPermission,
+  type Permission,
   mayPerformAs,
   permissions,
   requiredPermissionForTransition,
@@ -40,6 +41,7 @@ describe('fixed permission matrix', () => {
         'workflow:submit-initial-review',
         'workflow:initial-review',
         'audit:read',
+        'rules:read',
       ],
       'department-head': [
         'manuscript:read',
@@ -47,6 +49,7 @@ describe('fixed permission matrix', () => {
         'workflow:department-review',
         'workflow:countersign',
         'audit:read',
+        'rules:read',
       ],
       'supervising-leader': [
         'manuscript:read',
@@ -55,8 +58,9 @@ describe('fixed permission matrix', () => {
         'workflow:sign',
         'workflow:publish',
         'audit:read',
+        'rules:read',
       ],
-      'station-leader': ['manuscript:read', 'audit:read'],
+      'station-leader': ['manuscript:read', 'audit:read', 'rules:read', 'rules:write'],
     });
 
     expect(Object.keys(rolePermissions).sort()).toEqual([...systemRoles].sort());
@@ -86,16 +90,25 @@ describe('fixed permission matrix', () => {
     }
   });
 
-  it('keeps station leader read-only across the whole permission vocabulary', () => {
+  it('keeps station leader out of the state machine while owning the ruleset', () => {
     const stationLeader = account(['station-leader']);
     expect(hasPermission(stationLeader, 'manuscript:read')).toBe(true);
     expect(hasPermission(stationLeader, 'audit:read')).toBe(true);
+    // 判定依据归台领导——这是这个角色唯一的写权限，也是它存在的理由之一。
+    expect(hasPermission(stationLeader, 'rules:read')).toBe(true);
+    expect(hasPermission(stationLeader, 'rules:write')).toBe(true);
 
-    const writePermissions = permissions.filter(
-      (permission) => permission !== 'manuscript:read' && permission !== 'audit:read',
-    );
-    for (const permission of writePermissions) {
+    // 但它一步都不能推：能改判定依据的人不该同时是被这套依据考核的人。
+    const readable: Permission[] = ['manuscript:read', 'audit:read', 'rules:read', 'rules:write'];
+    for (const permission of permissions.filter((item) => !readable.includes(item))) {
       expect(hasPermission(stationLeader, permission), permission).toBe(false);
+    }
+  });
+
+  it('gives every other role read-only access to the ruleset', () => {
+    for (const role of workflowRoles) {
+      expect(hasPermission(account([role]), 'rules:read'), role).toBe(true);
+      expect(hasPermission(account([role]), 'rules:write'), role).toBe(false);
     }
   });
 });

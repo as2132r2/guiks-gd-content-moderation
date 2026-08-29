@@ -7,6 +7,10 @@
  *
  * 判定全部是确定性的：同一份稿子在同一份词表下永远得到同一个结果。彩排靠这个
  * 性质站住，审计留痕也靠它——不确定的东西没法作为责任链的一环。
+ *
+ * 词表落库后两个入口都多一个 `ruleset` 参数，**默认是内置基线**：不关心库状态的
+ * 调用点（测试、准入案例）拿到的仍是确定性的基线结果，一行都不用改；工作台传
+ * `activeRuleset()`（[active.ts](active.ts)），并把 `ruleset.version` 写进留痕。
  */
 import {
   summarize,
@@ -17,17 +21,14 @@ import {
   type RuleHit,
 } from '../domain/gatekeeping.js';
 import type { ProofreadPass } from '../domain/contracts.js';
+import { builtinRuleset, type Ruleset } from './ruleset.js';
 import {
-  ADMISSION_BLOCK_TERMS,
-  ADMISSION_OFF_DUTY_TERMS,
-  ADMISSION_REASON_TERMS,
   AI_LABEL_MARKERS,
   NUMBER_PATTERN,
   PAIRED_MARKS,
   PATTERN_RULES,
   PROTECTED_IDENTITIES,
   SURNAMES,
-  TERM_RULES,
   type AdmissionTerm,
 } from './terms.js';
 
@@ -42,18 +43,21 @@ const collect = (text: string, rules: readonly AdmissionTerm[]): RuleHit[] =>
  * 硬拦那一档是整条链路上唯一免费的一档 —— 输入侧拦掉，token 没烧、内容没产生、
  * 模型一次都没被碰到。
  */
-export function runAdmission(input: { title: string; sourceText: string }): AdmissionResult {
+export function runAdmission(
+  input: { title: string; sourceText: string },
+  ruleset: Ruleset = builtinRuleset(),
+): AdmissionResult {
   const text = `${input.title}\n${input.sourceText}`;
 
   // 公器私用是**标记不是闸门**（gatekeeping.ts 的 `offDutyUse` 注释）：它与三档
   // 判定正交，所以只置字段、绝不提前 return。早前它排在敏感题材前面并直接返回，
   // 结果是「帮我把这次事故写成一篇小说」被当成公器私用放行——**多写两个字反而
   // 绕过了「要理由」**。闸门只能因为更严的理由收紧，不能因为多一条线索放松。
-  const offDutyHits = collect(text, ADMISSION_OFF_DUTY_TERMS);
+  const offDutyHits = collect(text, ruleset.admissionOffDuty);
   const offDutyUse = offDutyHits.length > 0;
   const offDutyFlag = offDutyUse ? { offDutyUse: true as const } : {};
 
-  const blocked = collect(text, ADMISSION_BLOCK_TERMS);
+  const blocked = collect(text, ruleset.admissionBlock);
   if (blocked.length > 0) {
     return {
       decision: 'blocked',
@@ -64,7 +68,7 @@ export function runAdmission(input: { title: string; sourceText: string }): Admi
     };
   }
 
-  const sensitive = collect(text, ADMISSION_REASON_TERMS);
+  const sensitive = collect(text, ruleset.admissionReason);
   if (sensitive.length > 0) {
     return {
       decision: 'reason-required',
@@ -263,11 +267,14 @@ const JUDGMENT_RULES: ReadonlyArray<{
  * 产出是**标注**，不是**闸门**（business-process.md §一之二）。人少，阻断就是
  * 卡死，卡死就是弃用 —— 除入口那一层的硬拦外，一律标出来让人决定。
  */
-export function runPreflight(input: {
-  artifactId: string;
-  sentences: readonly string[];
-  sourceText: string;
-}): PreflightResult {
+export function runPreflight(
+  input: {
+    artifactId: string;
+    sentences: readonly string[];
+    sourceText: string;
+  },
+  ruleset: Ruleset = builtinRuleset(),
+): PreflightResult {
   const annotations: Annotation[] = [];
   const source = sourceNumbers(input.sourceText);
   let seq = 0;
@@ -294,7 +301,7 @@ export function runPreflight(input: {
 
   input.sentences.forEach((sentence, ordinal) => {
     // —— 词表：按字面找，同一条词可以在一句里命中多次 ——
-    for (const rule of TERM_RULES) {
+    for (const rule of ruleset.termRules) {
       let from = sentence.indexOf(rule.term);
       while (from !== -1) {
         add(ordinal, from, from + rule.term.length, {

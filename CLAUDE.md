@@ -46,7 +46,7 @@ npm run provision:user           # 建账号（production 部署用）
 | 状态 | `src/lib/store.ts` 内存环形缓冲（audits / findings / guardrail / usage），进程重启即失 | SQLite（`src/db/`），事务写入，启动时幂等迁移 |
 | 契约 | `src/types.ts` | `src/domain/contracts.ts` |
 | 入口 | `/gateway/v1/messages`、`/api/state`、`/api/usage`、`/redteam`、`/report` | `/api/manuscripts*`、`/api/workbench*`、`/api/monitor/overview` |
-| 页面 | `/console`、`/policy`、`/runtime`、`/report`（后四个只在 `APP_MODE=demo` 下挂载） | **`/`**（产品介绍页，公开）、`/workbench`（工作台）、`/monitor`（全流程监控看板） |
+| 页面 | `/console`、`/policy`、`/runtime`、`/report`（后四个只在 `APP_MODE=demo` 下挂载） | **`/`**（产品介绍页，公开）、`/workbench`（工作台）、`/monitor`（全流程监控看板）、`/rules`（判定依据管理） |
 
 两套都通过 `src/lib/bus.ts` 往同一条 SSE `/events` 发事件，浏览器按 event name 区分。
 
@@ -58,6 +58,7 @@ npm run provision:user           # 建账号（production 部署用）
 4. **生产 fail closed。** `APP_MODE=production` 且未配模型时，除非显式 `ALLOW_MOCK_UPSTREAM`，`/readyz` 返回 503。上游失败不得伪造成功内容。
 5. **`main` 必须随时能演示。** 短分支小 PR，`npm run check` 通过再提。
 6. **真实模型不裸奔。** `GATEWAY_TOKEN` 只保护原始网关接口；工作台、靶场、红队和 runtime 要等轨道 C 登录鉴权或部署层统一保护后，才能带真实上游公开部署。Mock 演示不受此限制。
+7. **判定依据自己也要被追溯。** 词表可改，所以每一次准入/预检留痕都带 `rulesetVersion`，每一次词表改动都写不可变的 `rule_change_log`（谁、何时、哪条、从什么改成什么、为什么）。**出处与理由都是服务端必填**，内置基线删不掉、词面与出处改不了——「基线是什么」必须永远查得回去。
 
 ### 双向治理的两个钩子
 
@@ -85,6 +86,11 @@ npm run provision:user           # 建账号（production 部署用）
 - **试用数据集与用户手册已落地**：数据定义在 [src/demo-dataset.ts](src/demo-dataset.ts)（**全部模拟/脱敏素材**，人名地名数字均为虚构），执行器是 [src/seed-demo.ts](src/seed-demo.ts)，手册在 [docs/deploy/user-manual.md](docs/deploy/user-manual.md)（另有同名 `.html` 一份，含监控一节与可粘贴素材）。试用账号的用户名与显示名必须与 `ensureDemoUsers`（[src/db/repository.ts](src/db/repository.ts)）一致，否则 demo 与 production 两种部署下手册说的不是一回事、历史留痕也对不上。
 - **轨道 A 审核内核已落地**：校次契约、`revision` 复核修改、可选 `countersign` 会签、审核轮次、会签表单与意见留痕、改稿后重新预检、实体一致性、L2「待人工复核」、AI 显式/隐式标识和准入结论持久化均已实现。轨道 A migration 使用 `0004`，轨道 C 用户表使用 `0003`。
 - **轨道 C 登录鉴权已落地**：SQLite 用户与角色、scrypt 密码、签名会话、固定权限矩阵、真人留痕、production 强凭据与建号边界均已接入；模型列表和稿件业务接口同样受会话保护。
+- **判定依据落库并可管理**：词条在 `rule_terms`（migration `0006`），页面 `/rules`（[src/views/rules-view.ts](src/views/rules-view.ts)）+ REST `/api/rules*`（[src/routes/rules.ts](src/routes/rules.ts)），持久层在 [src/db/ruleset.ts](src/db/ruleset.ts)。
+  **[src/rules/terms.ts](src/rules/terms.ts) 不再是运行时数据，而是「内置基线」的权威定义**，由启动时幂等的 `ensureBuiltinRuleTerms()` 灌库（只补缺失的 ruleId，不覆盖已有行，所以停用状态不会被重启冲掉）。
+  引擎 `runAdmission()` / `runPreflight()` 多一个 `ruleset` 参数，**默认仍是内置基线**——测试与准入案例拿到的是确定性的基线结果；工作台传 [src/rules/active.ts](src/rules/active.ts) 的 `activeRuleset()`。
+  **只有词条落库**：正则（标点/格式/叠字）、共现规则（当事人姓名保护）、一致性比对与 L2 判断留在代码里，界面只读展示——让人从浏览器塞任意正则等于开一个远程拒绝服务的口子。
+  权限：`rules:read` 给全部系统角色，`rules:write` 只给 `station-leader`。
 - **真实模型协议与切换已落地**：OpenAI 兼容 `/chat/completions` 可接 GLM / DeepSeek；模型配置档把供应商 URL、Key、思考模式与超时绑定到模型，工作台可按次切换并写入模型留痕。DeepSeek V4 已用真实 Key 完成双产物、服务商计量与失败恢复验收；GLM-5.3 / GLM-5.3-Flash 的真实请求均已到达服务端并识别模型，但当前账户因余额或资源包不足返回 429，待充值后补成功响应验收。仓库不保存真实 URL/Key。
 - **红队与评分已转为广电口径**：12 发探针覆盖导向、事实、标识、可追溯、版权，评分使用同名五维。
 
@@ -92,7 +98,7 @@ npm run provision:user           # 建账号（production 部署用）
 
 - [src/lib/detectors.ts](src/lib/detectors.ts) 的 `scanRequest()` / `scanResponse()` 仍是 AuditGate 旧规格（提示注入词表 / PII + 密钥），**网关那条路还没接上广电规则**——新规则目前只在 `src/rules/` 里被工作台调用，两边最终要合，否则「绕不过网关就绕不过准入」这句在代码里还不成立。
 - DeepSeek V4 已完成本地 Docker 真实联调；GLM 两个模型待账户补充余额或资源包后完成成功响应验收。其他部署环境仍需自行安全注入模型配置档与网关令牌。
-- `/console`、`/policy`、`/runtime`、`/report` 四个遗留页面未改（2238 行，讲广电时一个都不用）；后三个连同 `/redteam`、靶场与 demo 重置端点现在只在 `APP_MODE=demo` 下挂载。
+- `/console`、`/policy`、`/runtime`、`/report` 四个遗留页面未改（2238 行，讲广电时一个都不用）；后三个连同 `/redteam`、靶场与 demo 重置端点现在只在 `APP_MODE=demo` 下挂载。⚠️ **`/policy` 与 `/rules` 不是一回事**：前者作用在 `src/lib/detectors.ts` 的遗留规格上、内存态、进程重启即失，且不作用于主链；主链在用的判定依据在 `/rules`。
 - `test/fixtures/` 仍不存在；`docs/demo/` 已建（演示脚本、runbook、准入案例、展台易拉宝）。
 
 ## 措辞纪律（用户可见文案与文档都适用）
