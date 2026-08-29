@@ -1,11 +1,11 @@
 import type BetterSqlite3 from 'better-sqlite3';
 
-interface Migration {
+export interface Migration {
   id: string;
   sql: string;
 }
 
-const migrations: Migration[] = [
+export const migrations: Migration[] = [
   {
     id: '0001_workflow_foundation',
     sql: `
@@ -80,7 +80,29 @@ const migrations: Migration[] = [
     `,
   },
   {
-    // 0003 is reserved by track C for users/sessions (requirements 7.12).
+    id: '0003_track_c_accounts',
+    sql: `
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY NOT NULL,
+        username TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        roles_json TEXT NOT NULL,
+        is_demo INTEGER NOT NULL DEFAULT 0,
+        disabled INTEGER NOT NULL DEFAULT 0,
+        session_version INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX users_username_idx ON users(username);
+
+      ALTER TABLE review_records ADD COLUMN actor_user_id TEXT
+        REFERENCES users(id) ON DELETE SET NULL;
+      ALTER TABLE trace_events ADD COLUMN actor_user_id TEXT
+        REFERENCES users(id) ON DELETE SET NULL;
+    `,
+  },
+  {
     id: '0004_track_a_workflow',
     sql: `
       ALTER TABLE manuscripts ADD COLUMN review_round INTEGER NOT NULL DEFAULT 1;

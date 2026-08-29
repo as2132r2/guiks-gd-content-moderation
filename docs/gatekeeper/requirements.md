@@ -227,28 +227,28 @@
 **2026-08-29 决定新增。** 采用**固定组合方案**：角色与权限的对应关系写死在代码里，
 不做权限配置界面——这是为省时间刻意做的取舍，也让边界仍然清楚。
 
-现状：**零鉴权**。全仓库没有 auth / session / login / cookie。
-`role` 是请求体里一个字段（`z.enum(workflowRoles)`），服务端只校验它是合法值之一，
-**不校验你是不是这个人**；留痕里的 `actor` 是 `actorNames` 常量映射出的三个固定假人。
+实现现状：SQLite 用户与角色是唯一真源；签名 cookie 只保存用户 ID、会话版本和到期时间。
+客户端 `role` 只是本次行使身份，服务端会复核账号持有角色与固定权限矩阵；留痕同时保存稳定
+`actor_user_id` 和事件发生时的 `角色·显示名` 快照。
 
 > **好消息：不需要任何新依赖。** hono 自带 `setSignedCookie` / `getSignedCookie`，
 > `node:crypto` 自带 `scrypt`。不引 bcrypt、不引 session 中间件。
 
 | # | 功能点 | 状态 | 负责人 | 证据 / 要点 |
 | --- | --- | --- | --- | --- |
-| 7.12 | `users` 表 + migration `0003` | ⬜ | 轨道 C | 固定组合方案下角色直接存 `users.roles` JSON 数组，**不建 roles / permissions 表**，省一半工作量 |
-| 7.13 | 种子账号 4 个 | ⬜ | 轨道 C | ⚠️ `display_name` **必须沿用现有假名**（编辑·张敏 / 部门主任·李建国 / 分管领导·王志远），否则演示截图与留痕对不上 |
-| 7.14 | 密码哈希（`node:crypto` scrypt） | ⬜ | 轨道 C | 无需新依赖 |
-| 7.15 | 会话 cookie（hono 内置签名 cookie） | ⬜ | 轨道 C | 无需新依赖；新增 `SESSION_SECRET`，生产未配则 fail closed（对齐现有 `/readyz` 口径） |
-| 7.16 | `POST /api/auth/login` / `logout` + `GET /api/auth/me` | ⬜ | 轨道 C | 无 |
-| 7.17 | 登录页 | ⬜ | 轨道 C | 新 view 文件，不碰 `workbench-view.ts` 主体。含「一键以 X 身份登录」的演示按钮，免打密码 |
-| 7.18 | **角色类型分层**：`WorkflowRole` ⊂ `SystemRole` | ⬜ | 轨道 C | ⚠️ 台领导不进流程。直接塞进 `workflowRoles` 会让 `nextActions()` 给它算按钮、`waitingOn()` 可能返回它。**状态机只认 `WorkflowRole`** |
-| 7.19 | 新增 `station-leader`（台领导 / 管理员） | ⬜ | 轨道 C | business-process §二 角色表第四行「只看审计报表，不进流程」，**代码里一直不存在**。它正是 6.21 看板的使用者 |
-| 7.20 | 权限矩阵（固定组合，代码内写死） | ⬜ | 轨道 C | 新建 `src/domain/permissions.ts`。**不做权限配置界面**——这是刻意的边界 |
-| 7.21 | 授权中间件：role 从会话取，不再信请求体 | ⬜ | 轨道 C | ⚠️ 与轨道 A 同改 transition handler，**见第十二节冲突 ③** |
-| 7.22 | 顶栏改造：当前用户 + 登出 + 只显示持有的角色 | ⬜ | 轨道 C | ⚠️ 与轨道 B 同文件，**见冲突 ⑥** |
-| 7.23 | 留痕 `actor` 接真人，废弃 `actorNames` 常量 | ⬜ | 轨道 C | 直接喂 6.20 生产者维度，**待定 ① 就此解除** |
-| 7.24 | 测试夹具 + 修复受影响用例 | ⬜ | 轨道 C | ⚠️ `workbench-api` 12 例 + `manuscripts-api` 4 例加鉴权后**全部 401**。夹具与修复必须同一个 PR |
+| 7.12 | `users` 表 + migration `0003` | ✅ | 轨道 C | `users.roles_json` + 两张审计表可空 `actor_user_id`；不建 roles / permissions 表 |
+| 7.13 | 种子账号 4 个 | ✅ | 轨道 C | demo/test 幂等种子；production 不创建已知密码账号 |
+| 7.14 | 密码哈希（`node:crypto` scrypt） | ✅ | 轨道 C | 随机 salt、版本化编码、`timingSafeEqual`，无新依赖 |
+| 7.15 | 会话 cookie（hono 内置签名 cookie） | ✅ | 轨道 C | 8 小时最小载荷；production 缺强 `SESSION_SECRET` 时 `/readyz` 503 |
+| 7.16 | `POST /api/auth/login` / `logout` + `GET /api/auth/me` | ✅ | 轨道 C | logout 递增 `session_version`，复制的旧 cookie 同时失效 |
+| 7.17 | 登录页 | ✅ | 轨道 C | 标准表单 + 仅 demo 可用的一键登录 |
+| 7.18 | **角色类型分层**：`WorkflowRole` ⊂ `SystemRole` | ✅ | 轨道 C | 未知、空、损坏角色 fail closed；状态机只认前三个流程角色 |
+| 7.19 | 新增 `station-leader`（台领导 / 管理员） | ✅ | 轨道 C | 可读稿件聚合，不进状态机且无写权限 |
+| 7.20 | 权限矩阵（固定组合，代码内写死） | ✅ | 轨道 C | `src/domain/permissions.ts`；不做权限配置界面 |
+| 7.21 | 授权中间件：role 从会话取，不再信请求体 | ✅ | 轨道 C | 请求 role 仅为操作意图；数据库角色和固定权限共同校验后才进入状态机 |
+| 7.22 | 顶栏改造：当前用户 + 登出 + 只显示持有的角色 | ✅ | 轨道 C | 台领导不显示操作按钮，多角色账号无需重新登录 |
+| 7.23 | 留痕 `actor` 接真人，废弃 `actorNames` 常量 | ✅ | 轨道 C | `actor_user_id` 稳定真源 + `角色·显示名` 快照；客户端 actor 被忽略 |
+| 7.24 | 测试夹具 + 修复受影响用例 | ✅ | 轨道 C | 真实签名 cookie 夹具与鉴权、迁移、留痕回归同一 PR |
 | 7.25 | 遗留四页挂「需登录」粗保护 | ⬜ | 轨道 C | 细权限等 7.11 定了再说 |
 
 > **权限矩阵（固定组合）**：

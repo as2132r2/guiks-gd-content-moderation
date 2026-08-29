@@ -17,6 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run typecheck && npm test",
+    "provision:user": "tsx src/provision-user.ts",
+    "provision:user:prod": "node dist/provision-user.js",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio"
   },

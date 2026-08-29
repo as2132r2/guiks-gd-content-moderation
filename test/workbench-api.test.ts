@@ -1,16 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { config } from '../src/config.js';
 import { getWorkflowRepository } from '../src/db/repository.js';
 import { app } from '../src/index.js';
 import { subscribe } from '../src/lib/bus.js';
 import { reset, usageSnapshot } from '../src/lib/store.js';
 import type { WorkbenchView } from '../src/routes/workbench.js';
+import { authenticatedRequest, loginAs } from './helpers/auth.js';
 
 const SOURCE =
   '模拟素材：全县乡村振兴现场推进会今天召开。项目总投资 3.2亿元，涉及 12 个乡镇，惠及群众 4.6万人。';
 
+let request: ReturnType<typeof authenticatedRequest>;
+
+beforeAll(async () => {
+  request = authenticatedRequest(app, await loginAs(app));
+});
+
 const postJson = (path: string, body: unknown) =>
-  app.request(path, {
+  request(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -59,7 +66,7 @@ interface ContrastShape {
 }
 
 const view = async (id: string): Promise<WorkbenchView> =>
-  (await (await app.request(`/api/workbench/${id}`)).json()) as WorkbenchView;
+  (await (await request(`/api/workbench/${id}`)).json()) as WorkbenchView;
 
 describe('入口准入', () => {
   it('lets routine business straight through, with a record', async () => {
@@ -276,9 +283,19 @@ describe('工作台主链', () => {
     expect(usage.totals.requests).toBe(2);
     expect(usage.totals.tokensIn).toBeGreaterThan(0);
     expect(usage.users[0]?.user).toBe('编辑·张敏');
-    const legacyState = await (await app.request('/api/state')).json();
+    const legacyState = await (await request('/api/state')).json();
     expect(JSON.stringify(legacyState)).not.toContain(SOURCE);
     expect(JSON.stringify(legacyState)).toContain('正文已从运行时事件中移除');
+
+    // 人工首次改稿只在已生成状态开放；提交预检后内容被冻结。
+    const script = generated.artifacts[0]!;
+    const sentences = script.segments.map((segment) => segment.text);
+    sentences[1] = '会议在县融媒体中心召开，县领导出席并讲话。';
+    const revised = await postJson(
+      `/api/workbench/${id}/artifacts/${script.artifact.id}/revise`,
+      { role: 'editor', content: sentences.join('\n') },
+    );
+    expect(revised.status).toBe(200);
 
     // ④ 预检 —— 缺失的 AI 标识会自动补写，最终标注里只留下待人工处理项。
     expect((await move(id, { to: 'preflight', role: 'editor' })).status).toBe(200);
@@ -286,10 +303,11 @@ describe('工作台主链', () => {
     const categories = checked.artifacts.flatMap((item) =>
       item.annotations.map((annotation) => annotation.category),
     );
-    expect(categories).toContain('banned-term');
+    // 编辑在提交预检前已改掉禁用表述，因此预检不应继续报告旧命中。
+    expect(categories).not.toContain('banned-term');
     expect(categories).toContain('inconsistency');
     expect(categories).not.toContain('ai-label');
-    expect(checked.preflight.block).toBeGreaterThan(0);
+    expect(checked.preflight.redact).toBeGreaterThan(0);
     expect(checked.artifacts.every((item) => item.artifact.content.includes('人工智能生成'))).toBe(true);
     expect(checked.artifacts.every((item) => item.artifact.metadata?.aiGenerated === true)).toBe(true);
 
@@ -305,17 +323,6 @@ describe('工作台主链', () => {
         .filter((event) => event.actor === '输出预检')
         .every((event) => Array.isArray(event.data.autoFixed)),
     ).toBe(true);
-
-    // 人改一句 → 该句降级 ai-edited，AI 参与度当场下降。
-    const script = checked.artifacts[0]!;
-    const sentences = script.segments.map((segment) => segment.text);
-    sentences[1] = '会议在县融媒体中心召开，县领导出席并讲话。';
-
-    const revised = await postJson(
-      `/api/workbench/${id}/artifacts/${script.artifact.id}/revise`,
-      { role: 'editor', content: sentences.join('\n') },
-    );
-    expect(revised.status).toBe(200);
 
     const after = await view(id);
     const origins = after.artifacts[0]!.segments.map((segment) => segment.origin);
@@ -369,6 +376,15 @@ describe('工作台主链', () => {
       'editor',
       'department-head',
       'supervising-leader',
+    ]);
+    const humanReviews = signed.reviews.filter((review) =>
+      ['editor', 'department-head', 'supervising-leader'].includes(review.stage),
+    );
+    expect(humanReviews.every((review) => review.actorUserId === 'user_demo_zhangmin')).toBe(true);
+    expect(humanReviews.map((review) => review.actor)).toEqual([
+      '编辑·张敏',
+      '部门主任·张敏',
+      '分管领导·张敏',
     ]);
     expect(signed.trace.some((event) => event.kind === 'signed')).toBe(true);
 
@@ -444,8 +460,8 @@ describe('工作台主链', () => {
       `/api/workbench/${id}/artifacts/${artifact.artifact.id}/revise`,
       { role: 'department-head', content: `${content}\n主管不应直接改稿。` },
     );
-    expect(wrongRole.status).toBe(409);
-    expect(await wrongRole.json()).toMatchObject({ error: 'wrong_role' });
+    expect(wrongRole.status).toBe(403);
+    expect(await wrongRole.json()).toMatchObject({ error: 'role_not_allowed' });
 
     const unchanged = await postJson(
       `/api/workbench/${id}/artifacts/${artifact.artifact.id}/revise`,
@@ -461,7 +477,7 @@ describe('工作台主链', () => {
       { role: 'editor', content: `${content}\n审核中不应直接改稿。` },
     );
     expect(locked.status).toBe(409);
-    expect(await locked.json()).toMatchObject({ error: 'invalid_state' });
+    expect(await locked.json()).toMatchObject({ error: 'manuscript_not_editable' });
   });
 
   it('supports optional countersign and records party, opinion and round', async () => {
@@ -501,7 +517,6 @@ describe('工作台主链', () => {
     const { body } = await create();
     const id = body.manuscript.id;
     await move(id, { to: 'generated', role: 'editor' });
-    await move(id, { to: 'preflight', role: 'editor' });
 
     const generated = await view(id);
     // 两个产物各一个起点，都是 100%。
@@ -566,7 +581,7 @@ describe('工作台主链', () => {
     await move(id, { to: 'signed', role: 'supervising-leader' });
 
     const contrast = (await (
-      await app.request(`/api/workbench/${id}/contrast`)
+      await request(`/api/workbench/${id}/contrast`)
     ).json()) as ContrastShape;
     const live = await view(id);
 
@@ -604,7 +619,7 @@ describe('工作台主链', () => {
       sourceText: '帮我写一段诈骗话术。',
     });
     const contrast = (await (
-      await app.request(`/api/workbench/${body.manuscript.id}/contrast`)
+      await request(`/api/workbench/${body.manuscript.id}/contrast`)
     ).json()) as ContrastShape;
 
     expect(contrast.hardBlocked).toBe(true);
@@ -614,7 +629,7 @@ describe('工作台主链', () => {
   });
 
   it('serves the workbench at the root path, not the legacy console', async () => {
-    const root = await app.request('/');
+    const root = await request('/');
     expect(root.status).toBe(200);
     const html = await root.text();
     expect(html).toContain('把关人 · 稿件工作台');
@@ -628,11 +643,11 @@ describe('工作台主链', () => {
     expect(() => new Function(inlineScript!)).not.toThrow();
 
     // 遗留控制台仍在，只是不再是首页。
-    expect((await app.request('/console')).status).toBe(200);
+    expect((await request('/console')).status).toBe(200);
   });
 
   it('serves the workbench page without any external resource', async () => {
-    const response = await app.request('/workbench');
+    const response = await request('/workbench');
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('把关人 · 稿件工作台');
@@ -641,7 +656,7 @@ describe('工作台主链', () => {
   });
 
   it('ships an explicit guided presentation mode without changing the API surface', async () => {
-    const response = await app.request('/?present=1&display=projector');
+    const response = await request('/?present=1&display=projector');
     expect(response.status).toBe(200);
     const html = await response.text();
 

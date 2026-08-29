@@ -2,7 +2,7 @@
 // the audit store, runs detectors on the way in and out, then forwards to the
 // upstream model. This is the "接管" layer — a target only needs to point its
 // model base_url at POST /gateway/v1/messages.
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { config, requiresGatewayToken, usingMockUpstream } from '../config.js';
 import { getWorkflowRepository } from '../db/repository.js';
@@ -324,14 +324,28 @@ export function auditExchange(
 
 export const gatewayRoutes = new Hono();
 
+const credentialsMatch = (presented: string | undefined, expected: string): boolean => {
+  if (!presented) return false;
+  const left = Buffer.from(presented, 'utf8');
+  const right = Buffer.from(expected, 'utf8');
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+
 // OpenAI-compatible surface: a target points its base_url here.
 gatewayRoutes.post('/gateway/v1/messages', async (c) => {
+  if (requiresGatewayToken() && (!config.gatewayToken || !config.gatewayTokenReady)) {
+    return c.json({ error: 'gateway_auth_not_configured' }, 503);
+  }
   if (config.gatewayToken) {
-    if (c.req.header('authorization') !== `Bearer ${config.gatewayToken}`) {
+    const authorization = c.req.header('authorization');
+    const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+    const apiKey = c.req.header('x-api-key')?.trim();
+    if (
+      !credentialsMatch(bearer, config.gatewayToken) &&
+      !credentialsMatch(apiKey, config.gatewayToken)
+    ) {
       return c.json({ error: 'gateway_unauthorized' }, 401);
     }
-  } else if (requiresGatewayToken()) {
-    return c.json({ error: 'gateway_auth_not_configured' }, 503);
   }
 
   type GatewayBody = { model?: unknown; messages?: unknown; message?: unknown };
