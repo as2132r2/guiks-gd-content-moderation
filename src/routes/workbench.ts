@@ -369,7 +369,7 @@ export const workbenchRoutes = new Hono<AuthEnv>();
 // 访客点进来先看懂这是什么，再决定要不要登录。
 workbenchRoutes.get('/workbench', async (c) =>
   (await readSessionUser(c))
-    ? c.html(renderWorkbench())
+    ? c.html(renderWorkbench({ demoToolsEnabled: config.demoToolsEnabled }))
     : c.redirect('/login?next=/workbench'),
 );
 

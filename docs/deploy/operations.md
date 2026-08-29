@@ -130,7 +130,123 @@ npm run reset:demo -- --yes --accounts   # 连试用账号一起清
 > 删账号不会带走历史。留痕里的 `actor_user_id` 是 `ON DELETE SET NULL`，
 > 那条记录会显示「（无署名）」而不是消失——**责任链不能因为账号注销就断掉**。
 
-## 五、常规运维
+## 五、从 demo 切到 production
+
+### 为什么要切
+
+`APP_MODE=demo` 会额外挂上六组遗留路由（[index.ts](../../src/index.ts) 里的
+`if (config.appMode === 'demo')`），**它们一个 `requireAuth` 都没有**。公网跑 demo，
+等于把这一排接口连同真实模型额度一起开在外面：
+
+| 端点 | demo | production |
+| --- | --- | --- |
+| `/policy`、`/api/policy`、`/api/policy/presets` | 无凭据 200 | 404 |
+| `PUT /api/policy`、`POST /api/policy/preset` | 无凭据可写 | 404 |
+| `/runtime`、`/api/usage`、`/report`、`/target/info` | 无凭据 200 | 404 |
+| `POST /api/runtime/chat`、`POST /target/chat`、`POST /api/redteam/run` | **无凭据即可烧真实模型额度** | 404 |
+| `POST /api/demo/reset`、`POST /api/demo/seed` | 无凭据即可清空整库 | 404 |
+| `POST /api/monitor/start` | 无凭据 200 | 404 |
+
+对照：`/api/monitor/overview` 与 `/workbench` 两种模式下都要登录，它们本来就是对的。
+
+这也是 [CLAUDE.md](../../CLAUDE.md) 硬约束 6「真实模型不裸奔」的落地方式——
+靶场、红队和 runtime 要么等鉴权，要么在生产构建里根本不存在。这里选的是后者。
+
+### 切换步骤
+
+**顺序不能反。** 下面按 compose 部署写；源码部署把 `docker compose exec app node dist/xxx.js`
+换成 `npm run xxx:prod` 即可。
+
+```bash
+# 0. 停服并备份（compose 用的是命名卷，拷贝方式见第六节「备份」）
+docker compose down
+
+# 1. 改 .env：APP_MODE=production，并按第一节生成两个【不同】的强密钥
+#    APP_MODE=production
+#    SESSION_SECRET=base64:...
+#    GATEWAY_TOKEN=base64:...
+
+# 2. 起服。此时 /readyz 返 503（account: missing），是对的，见下一小节
+docker compose up -d --build
+
+# 3. 先清。清的是稿件，账号留着（下一步会自动重建）
+docker compose exec app node dist/reset-demo.js --yes
+
+# 4. 再播。临时走 mock，手册里的数字才对得上
+docker compose exec -e ALLOW_MOCK_UPSTREAM=true app node dist/seed-demo.js
+
+# 5. 验收
+curl -s http://127.0.0.1:3300/readyz          # 期望 {"status":"ready"}
+```
+
+**为什么必须先清后播。** `seed:demo` 在生产模式下遇到 demo 账号（`is_demo=1`）会
+**删掉重建**（[seed-demo.ts](../../src/seed-demo.ts) 的 `ensureAccounts`）——生产下这种账号
+一律拒登，留着没有意义。但留痕的 `actor_user_id` 是 `ON DELETE SET NULL`：
+**先播种的话，库里原有稿件的责任链会集体变成「（无署名）」。** 先清干净，就没有留痕
+可以被孤儿化。
+
+**为什么播种要走 mock。** 第三节那组数字（15 篇 / 已签发 10 / 留痕 315 条 /
+AI 参与度 95.0%）是确定性 mock 的结果。走真实模型播出来对不上，还要花钱。
+`ALLOW_MOCK_UPSTREAM=true` 只加在那一条命令上，`.env` 不动。
+
+### 播种之前 `/readyz` 会返 503
+
+切过去之后、播种之前，库里只有 demo 账号，`hasEnabledProductionUser()` 是 false：
+
+```json
+{"status":"not-ready","checks":{"database":true,"model":"mock","gatewayAuth":"configured","authentication":"configured","account":"missing"}}
+```
+
+**这是设计如此，不是切炸了。** compose 的 healthcheck 会把容器标成 unhealthy，
+但 `restart: unless-stopped` 不会因此重启（没有 autoheal），播完种自动恢复 `ready`。
+如果部署链路上还有别的东西盯着 healthcheck 调流量，把第 2–4 步连着做完，别留窗口。
+
+### 切完会变的东西
+
+| | demo | production |
+| --- | --- | --- |
+| 登录页快捷身份卡 | 4 张，点一下就进 | **0 张**，全部手输用户名口令 |
+| 工作台「演示模式」「演示准备」按钮 | 有 | **无**——两者第一步都是清空整库 |
+| `?present=1` 进引导演示外壳 | 生效 | 不生效 |
+| 六组遗留路由 | 挂着 | 404 |
+| 进程监听地址 | `0.0.0.0` | `127.0.0.1`（[index.ts](../../src/index.ts)），**必须有反向代理** |
+| `SEED_DEMO_USERS` | 生效 | **被忽略**（[config.ts](../../src/config.ts)） |
+| demo 账号（`is_demo=1`） | 可登 | **一律拒登**，口令对也不行 |
+| `/readyz` | 不查账号 | 库里没有启用的非 demo 账号就 503 |
+| 换 `SESSION_SECRET` | — | 全部在线会话立即失效，所有人要重登 |
+
+**不变的**：[user-manual.md](user-manual.md) 一个字都不用改。五个试用账号的用户名、
+显示名、口令（`SEED_PASSWORD`，默认 `gatekeeper-demo`）、15 篇稿件走位、
+「填入示例通稿」按钮、`/`、`/login`、`/workbench`、`/monitor`、`/console` 全部照旧。
+手册不用出第二版——账号名当初就是为此钉死的（见 [demo-dataset.ts](../../src/demo-dataset.ts) 顶部注释）。
+
+演示夹具那两个按钮的消失也不影响手册：它从头到尾没让试用者点过引导演示。
+要做展台路演，另起一个 demo 实例（`docker compose up` 缺省就是 demo），
+**不要在生产实例上跑**——「重建三组样例」清的是生产库。
+
+### 验收清单
+
+```bash
+B=http://127.0.0.1:3300
+for p in /policy /api/policy /api/policy/presets /runtime /api/usage /report          /target/info /api/monitor/start /api/redteam/run          /api/demo/reset /api/demo/seed; do
+  printf '%-24s %s
+' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "$B$p")"   # 期望 404
+done
+curl -s -o /dev/null -w '/api/fixtures         %{http_code}
+' "$B/api/fixtures"                # 期望 401
+curl -s -o /dev/null -w '/api/monitor/overview %{http_code}
+' "$B/api/monitor/overview"        # 期望 401
+curl -s -o /dev/null -w '/workbench            %{http_code}
+' "$B/workbench"                   # 期望 302
+```
+
+再用 `zhangmin` / `gatekeeper-demo` 登一次，按手册第 2 步点「填入示例通稿」——
+填进来 213 字的通稿就说明这条路是通的。**这一步是整个切换里最容易漏的**：
+它的端点曾经和清库端点挂在同一组路由上，切到生产就 404，手册第二步直接撞墙。
+现在它在 [fixtures.ts](../../src/routes/fixtures.ts)，两种模式都挂，`test/production-routes.test.ts`
+钉着这条不让它再退回去。
+
+## 六、常规运维
 
 ### 重置试用环境
 
@@ -160,12 +276,13 @@ npm run provision:user -- --username someone --display-name 某某 --roles edito
 
 真实模型超时或凭据出问题时，**清空 `UPSTREAM_URL` 重启即可**，业务完全不变——内置 mock 是确定性的，同一份通稿永远得到同一个结果。
 
-## 六、排错
+## 七、排错
 
 | 症状 | 原因 | 处置 |
 | --- | --- | --- |
 | 登录返 503 `authentication_unavailable` | `SESSION_SECRET` 不合规 | 按第一节重新生成，必须带 `base64:` 前缀 |
-| `/readyz` 返 503 | 未配模型且未允许 mock | 配 `UPSTREAM_URL`，或设 `ALLOW_MOCK_UPSTREAM=true` |
+| `/readyz` 返 503，`checks.model` 是 `missing` | 未配模型且未允许 mock | 配 `UPSTREAM_URL`，或设 `ALLOW_MOCK_UPSTREAM=true` |
+| `/readyz` 返 503，`checks.account` 是 `missing` | 生产库里还没有启用的非 demo 账号 | 跑一次 `seed:demo`，或 `provision:user` 建一个。切模式后这是正常中间态，见第五节 |
 | 播种报 `requires a persistent DATABASE_PATH` | 落到了 `:memory:` | 显式设 `DATABASE_PATH` |
 | 播种报 `login failed` | 账号口令与 `SEED_PASSWORD` 不一致 | 用 `--accounts` 清掉账号后重播，或改用正确口令 |
 | 播种报 `502 model_upstream_failed` | 未配模型且没开 mock | 这一次加 `ALLOW_MOCK_UPSTREAM=true`（只作用于该进程，`app.env` 不动） |
@@ -173,7 +290,7 @@ npm run provision:user -- --username someone --display-name 某某 --roles edito
 | 端口打不开 | 容器与本地 dev server 抢 3300 | 二选一，`docker compose down` |
 | 页面能开但没数据 | 库是空的 | 跑一次 `npm run seed:demo` |
 
-## 七、相关文档
+## 八、相关文档
 
 | 文档 | 内容 |
 | --- | --- |

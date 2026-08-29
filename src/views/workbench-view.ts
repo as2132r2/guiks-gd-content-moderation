@@ -30,11 +30,16 @@ export function shouldKeepWorkbenchPanel(
  *
  * Boots by GET /api/workbench (list), then GET /api/workbench/:id per
  * manuscript, and subscribes to /events (SSE) for live 留痕 updates.
+ *
+ * `demoToolsEnabled` 决定要不要渲染演示夹具那两个控件（演示准备、引导演示）。
+ * 它们都以「清空整库」开头，生产下既走不通也不该走通，所以**根本不渲染**——
+ * 渲染了再靠后端 404 挡，等于在生产工作台上摆一个点了就报错的按钮。
  */
-export function renderWorkbench(): string {
+export function renderWorkbench(options: { demoToolsEnabled: boolean }): string {
   // 顶栏的「全流程监控」入口只对能读留痕的角色出现。名单由权限矩阵推导，
   // 页面不另抄一份——矩阵哪天收紧 audit:read，入口自动跟着消失。
   const auditReadRoles = systemRoles.filter((role) => rolePermissions[role].includes('audit:read'));
+  const demoTools = options.demoToolsEnabled;
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -830,7 +835,7 @@ ${themeBootstrap}<style>${themeStyles}
     <div class="sub">converged media · production &amp; gatekeeping</div>
   </div>
   <span class="demo-badge">模拟 / 脱敏素材</span>
-  <button class="btn present-launch" id="present-open" type="button">演示模式</button>
+${demoTools ? `  <button class="btn present-launch" id="present-open" type="button">演示模式</button>
   <div class="present-controls" aria-label="演示显示控制">
     <span class="present-mode-badge">引导演示模式 · 模拟 / 脱敏素材</span>
     <div class="display-switch" aria-label="显示档">
@@ -839,7 +844,7 @@ ${themeBootstrap}<style>${themeStyles}
     </div>
     <button class="btn" id="present-fullscreen" type="button">全屏</button>
     <button class="btn" id="present-exit" type="button">退出演示</button>
-  </div>
+  </div>` : ''}
   <div class="roles">
     <span class="lbl">当前身份</span>
     <button class="role-btn" data-role="editor" aria-pressed="false" hidden>编辑 / 记者</button>
@@ -852,7 +857,7 @@ ${themeBootstrap}<style>${themeStyles}
   <div class="account"><span class="account-name" id="account-name">—</span><button class="logout-btn" id="logout-btn">退出</button></div>
 </header>
 
-<div class="present-modal" id="present-modal" hidden>
+${demoTools ? `<div class="present-modal" id="present-modal" hidden>
   <section class="present-dialog" role="dialog" aria-modal="true" aria-labelledby="present-dialog-title">
     <div class="present-dialog-head">
       <div>
@@ -880,14 +885,14 @@ ${themeBootstrap}<style>${themeStyles}
   </section>
 </div>
 
-<button class="present-scrim" id="present-scrim" type="button" aria-label="关闭演示抽屉"></button>
+<button class="present-scrim" id="present-scrim" type="button" aria-label="关闭演示抽屉"></button>` : ''}
 
 <main>
   <aside class="list">
     <div class="present-drawer-tools"><h2>切换稿件</h2><button class="icon-btn" id="present-list-close" type="button" aria-label="关闭稿件列表">×</button></div>
     <h2 class="hd">稿件</h2>
     <button class="btn wide" id="new-btn" hidden>＋ 新建稿件</button>
-    <button class="btn wide" id="seed-btn" style="margin-top:6px" hidden>演示准备（重置并建样例）</button>
+    ${demoTools ? '<button class="btn wide" id="seed-btn" style="margin-top:6px" hidden>演示准备（重置并建样例）</button>' : ''}
     <div id="ms-list" style="margin-top:12px"></div>
   </aside>
 
@@ -946,6 +951,9 @@ ${themeBootstrap}<style>${themeStyles}
     'signed':'签发'
   };
 
+  // 演示夹具工具在生产构建里根本不挂载，所以外壳也不能由 URL 进入——
+  // 否则 ?present=1 会把工作台切成一个永远准备不好的空演示台。
+  var DEMO_TOOLS = ${demoTools ? 'true' : 'false'};
   var query = new URLSearchParams(window.location.search);
   var initialDisplay = query.get('display') === 'led' ? 'led' : 'projector';
   var storedMainId = null;
@@ -956,7 +964,7 @@ ${themeBootstrap}<style>${themeStyles}
     models:[], selectedModel:'', modelDefault:'', modelsError:'',
     editDrafts:{}, appliedSuggestions:{}, activeAnnotation:null,
     error:'', contrast:null, showContrast:false,
-    present:query.get('present') === '1', display:initialDisplay, setupDisplay:'projector',
+    present:DEMO_TOOLS && query.get('present') === '1', display:initialDisplay, setupDisplay:'projector',
     presentPrepared:false, presentFeedback:null, demoFixtures:null, demoFixturesError:'', presentationMainId:storedMainId,
     roleAnimationTimer:null, panelAnimationTimer:null, traceAnimationTimer:null, panelTransition:false
   };
@@ -1038,7 +1046,7 @@ ${themeBootstrap}<style>${themeStyles}
       return AUDIT_READ_ROLES.indexOf(role) !== -1;
     });
     $('new-btn').hidden = roles.indexOf('editor') === -1;
-    $('seed-btn').hidden = true;
+    if (DEMO_TOOLS) $('seed-btn').hidden = true;
   }
 
   // ——————————————————— data ———————————————————
@@ -1067,10 +1075,13 @@ ${themeBootstrap}<style>${themeStyles}
   }
 
   function loadDemoFixtures() {
-    return api('/api/demo/fixtures').then(function (data) {
+    return api('/api/fixtures').then(function (data) {
       state.demoFixtures = data;
       state.demoFixturesError = '';
-      $('seed-btn').hidden = !state.user || (state.user.roles || []).indexOf('editor') === -1;
+      // 素材接口两种模式都通，所以它不再是「有没有演示工具」的判据。
+      if (DEMO_TOOLS) {
+        $('seed-btn').hidden = !state.user || (state.user.roles || []).indexOf('editor') === -1;
+      }
       recoverPresentationMain();
       renderList();
       checkPresentationReadiness();
@@ -1114,7 +1125,7 @@ ${themeBootstrap}<style>${themeStyles}
     if (!warning || !state.present) return;
     if (state.demoFixturesError) {
       warning.hidden = false;
-      warning.textContent = '演示素材接口不可用，页面不会自动清空数据。请退出演示并检查当前是否为 demo 环境。';
+      warning.textContent = '示例素材接口不可用，页面不会自动清空数据。请退出演示并检查服务状态。';
       return;
     }
     if (!state.demoFixtures) {
@@ -2675,7 +2686,7 @@ ${themeBootstrap}<style>${themeStyles}
 
     if (target.closest('#new-btn')) { showNew(); return; }
     if (target.closest('#nf-sample')) {
-      api('/api/demo/fixtures').then(function (data) {
+      api('/api/fixtures').then(function (data) {
         var t = $('nf-title'), y = $('nf-type'), x = $('nf-text'), k = $('nf-topic');
         if (k && data.mainNotice.coverageTopic) k.value = data.mainNotice.coverageTopic;
         if (t) t.value = data.mainNotice.title;

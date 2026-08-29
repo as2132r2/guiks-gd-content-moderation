@@ -59,7 +59,7 @@ describe('演示夹具', () => {
   });
 
   it('serves the main notice for the 填入示例 button', async () => {
-    const data = (await (await request('/api/demo/fixtures')).json()) as {
+    const data = (await (await request('/api/fixtures')).json()) as {
       mainNotice: { title: string; sourceText: string };
       cases: unknown[];
     };
